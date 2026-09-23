@@ -1,0 +1,37 @@
+[package]
+name = "msl-guest"
+version = "0.1.0"
+edition = "2024"
+description = "MSL guest: utility-VM PID 1 (mini-init) and per-distro init/agent"
+license = "MIT"
+
+[dependencies]
+libc = "0.2"
+nix = { version = "0.31", features = ["mount", "sched", "process", "signal", "hostname", "fs", "user", "reboot", "ioctl", "net", "term"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.53", features = ["rt", "net", "sync", "time", "macros", "io-util"] }
+tokio-stream = "0.1"
+tokio-vsock = "0.7"
+futures-util = { version = "0.3", default-features = false }
+tonic = { version = "0.14", default-features = false, features = ["codegen", "router", "server", "transport"] }
+tonic-prost = "0.14"
+prost = "0.14"
+tar = "0.4"
+flate2 = "1"
+lzma-rs = "0.3"
+ruzstd = "0.9"
+nfsserve = "0.11"
+intaglio = "1.6"
+async-trait = "0.1"
+tracing = "0.1"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

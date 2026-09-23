@@ -1,0 +1,12 @@
+#!/bin/sh
+# Run a shell command, show its output, and append command + output to LOG.md.
+#   scripts/logrun '<shell command>' ["description"]
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+LOG="$ROOT/LOG.md"
+CMD="$1"; DESC="${2:-}"
+{
+  printf '\n### %s%s\n```console\n$ %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${DESC:+ — $DESC}" "$CMD"
+} >> "$LOG"
+( cd "$ROOT" && sh -c "$CMD" ) 2>&1 | tee -a "$LOG"
+
+printf '```\n' >> "$LOG"

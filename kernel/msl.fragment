@@ -1,0 +1,20 @@
+# MSL additions on top of apple/containerization's 6.18 config (base.config).
+# USB mass storage (hot-attach for --mount / --import-in-place)
+CONFIG_USB_SUPPORT=y
+CONFIG_USB=y
+CONFIG_USB_PCI=y
+CONFIG_USB_XHCI_HCD=y
+CONFIG_USB_XHCI_PCI=y
+CONFIG_SCSI=y
+CONFIG_BLK_DEV_SD=y
+CONFIG_USB_STORAGE=y
+CONFIG_USB_UAS=y
+# ext4 project quotas (--manage --resize)
+CONFIG_QUOTA=y
+CONFIG_QUOTACTL=y
+CONFIG_QFMT_V2=y
+# NFS server for ~/MSL/<distro>
+CONFIG_NETWORK_FILESYSTEMS=y
+CONFIG_NFSD=y
+CONFIG_NFSD_V4=y
+CONFIG_EXPORTFS=y

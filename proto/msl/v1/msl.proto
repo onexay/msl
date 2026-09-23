@@ -1,0 +1,278 @@
+// MSL host <-> guest protocol (gRPC over vsock).
+//
+// - MiniInit: vsock port 1024, served by msl-guest as the utility VM's PID 1.
+// - Agent:    one per running distro, served inside the distro's namespaces on
+//             the port returned by MiniInit.StartDistro.
+//
+// Bulk bytes (tar streams, process stdio) never go through gRPC: the guest binds
+// an ephemeral vsock port, announces it in a stream event, and the host connects
+// to it. An announced port accepts exactly one connection.
+
+syntax = "proto3";
+
+package msl.v1;
+
+message Empty {}
+
+// ---------------------------------------------------------------- MiniInit
+
+service MiniInit {
+  rpc Ping(Empty) returns (PingReply);
+
+  // Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
+  // directory. Events: data_port, then done.
+  rpc ImportDistro(ImportDistroRequest) returns (stream ImportDistroEvent);
+
+  // Streams the distro's rootfs as a tar. Events: data_port, then done.
+  rpc ExportDistro(ExportDistroRequest) returns (stream ExportDistroEvent);
+
+  // Removes the distro's root filesystem (the distro must be stopped).
+  rpc DeleteDistro(DistroRef) returns (Empty);
+
+  // Starts the distro's namespaces + init and returns once its agent is ready
+  // (and, for systemd distros, once systemd's bus socket exists).
+  rpc StartDistro(StartDistroRequest) returns (StartDistroReply);
+
+  // Kills the distro's PID namespace and cleans up its cgroup.
+  rpc StopDistro(DistroRef) returns (Empty);
+
+  // Lists distros whose namespaces are running.
+  rpc ListRunning(Empty) returns (ListRunningReply);
+
+  // Stops all distros, syncs and powers the VM off.
+  rpc Shutdown(Empty) returns (Empty);
+
+  // TCP ports listening on the (shared) loopback/any address, for localhost
+  // forwarding. Sends the full set now and again on every change.
+  rpc WatchPorts(Empty) returns (stream ListeningPorts);
+
+  // Block devices currently present (before hot-attaching a disk).
+  rpc ListDisks(Empty) returns (DiskList);
+  // Wait for a newly attached disk (not in `before`) and mount it at
+  // /mnt/msl/<name> (shared into every distro), unless `bare`.
+  rpc MountDisk(MountDiskRequest) returns (MountDiskReply);
+  // Unmount /mnt/msl/<name> before the host detaches the disk.
+  rpc UnmountDisk(UnmountDiskRequest) returns (Empty);
+
+  // FITRIM the distro store so freed blocks go back to the Mac (sparse data.img).
+  rpc CompactDisk(Empty) returns (CompactDiskReply);
+
+  // The ~/MSL file view: one folder per distro *name* (bind mounts of the
+  // rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
+  rpc SetFileView(FileViewRequest) returns (Empty);
+}
+
+message FileViewRequest {
+  map<string, string> distros = 1;  // name -> id
+}
+
+message CompactDiskReply {
+  uint64 trimmed_bytes = 1;
+}
+
+message DiskList {
+  repeated string names = 1;  // e.g. "sda"
+}
+
+message MountDiskRequest {
+  repeated string before = 1;
+  string name = 2;
+  string fstype = 3;    // default ext4
+  string options = 4;
+  uint32 partition = 5; // 0 = whole disk
+  bool bare = 6;
+}
+
+message MountDiskReply {
+  string device = 1;       // e.g. /dev/sda1
+  string mount_point = 2;  // empty when bare
+}
+
+message UnmountDiskRequest {
+  string name = 1;
+}
+
+// Connections to vsock port 1025 (the forwarder) start with a 2-byte
+// big-endian TCP port; the guest then relays to 127.0.0.1:<port> (or [::1]).
+message ListeningPorts {
+  repeated uint32 ports = 1;
+}
+
+message PingReply {
+  string kernel_release = 1;
+  double uptime_seconds = 2;
+}
+
+message DistroRef {
+  // Registry GUID (lowercase, hyphenated). Also the on-disk directory name.
+  string id = 1;
+}
+
+message ImportDistroRequest {
+  string id = 1;
+}
+
+message ImportDistroEvent {
+  oneof event {
+    uint32 data_port = 1;
+    ImportDistroDone done = 2;
+  }
+}
+
+message ImportDistroDone {
+  uint64 entries = 1;
+  // From /etc/wsl-distribution.conf ([oobe] section), if present.
+  DistributionConf distribution_conf = 2;
+}
+
+message DistributionConf {
+  string oobe_command = 1;
+  optional uint32 oobe_default_uid = 2;
+  string oobe_default_name = 3;
+}
+
+enum ExportFormat {
+  EXPORT_FORMAT_TAR = 0;
+  EXPORT_FORMAT_TAR_GZ = 1;
+  EXPORT_FORMAT_TAR_XZ = 2;
+}
+
+message ExportDistroRequest {
+  string id = 1;
+  ExportFormat format = 2;
+}
+
+message ExportDistroEvent {
+  oneof event {
+    uint32 data_port = 1;
+    ExportDistroDone done = 2;
+  }
+}
+
+message ExportDistroDone {
+  uint64 entries = 1;
+}
+
+message StartDistroRequest {
+  string id = 1;
+  string name = 2;          // distro name (used for MSL_DISTRO_NAME, cgroup label)
+  string hostname = 3;
+  // DNS tunneling ([wsl2] dnsTunneling): resolv.conf points at the guest stub
+  // (10.255.255.254), which relays queries to the Mac's resolver over vsock.
+  bool dns_tunneling = 4;
+}
+
+message StartDistroReply {
+  uint32 agent_port = 1;
+  bool systemd = 2;
+  double start_seconds = 3;
+}
+
+message ListRunningReply {
+  repeated string ids = 1;
+}
+
+// ---------------------------------------------------------------- Agent
+
+service Agent {
+  // Starts a process. Events: started (stdio ports), then exited. The process
+  // is only exec'd after the host has connected to every announced port, so
+  // no output is lost; `exited` is sent after stdout/stderr are drained.
+  rpc Run(RunRequest) returns (stream RunEvent);
+
+  rpc Resize(ResizeRequest) returns (Empty);
+  rpc Signal(SignalRequest) returns (Empty);
+
+  // Distro facts read from inside its root: wsl.conf, wsl-distribution.conf.
+  rpc Info(Empty) returns (DistroInfo);
+
+  // Resolve a user name in the distro's /etc/passwd.
+  rpc LookupUser(LookupUserRequest) returns (LookupUserReply);
+}
+
+message LookupUserRequest {
+  string name = 1;
+}
+
+message LookupUserReply {
+  bool found = 1;
+  uint32 uid = 2;
+}
+
+enum ShellType {
+  SHELL_TYPE_STANDARD = 0;  // $SHELL -c "<command_line>"
+  SHELL_TYPE_LOGIN = 1;     // $SHELL -l -c "<command_line>"
+  SHELL_TYPE_NONE = 2;      // exec argv directly
+}
+
+message RunRequest {
+  // Empty argv and empty command_line: start the user's shell as a login shell.
+  repeated string argv = 1;
+  // Used with SHELL_TYPE_STANDARD / SHELL_TYPE_LOGIN.
+  string command_line = 2;
+  ShellType shell_type = 3;
+
+  // User name; empty = default user (wsl.conf [user] default, else default_uid).
+  string user = 4;
+  uint32 default_uid = 5;
+
+  // Linux path; "~" = user's home. Falls back to home if it doesn't exist.
+  string cwd = 6;
+  map<string, string> env = 7;
+
+  // Which host stdio fds are terminals. Any true -> a PTY is allocated and used
+  // for those fds; the others get pipes.
+  bool stdin_tty = 8;
+  bool stdout_tty = 9;
+  bool stderr_tty = 10;
+  uint32 rows = 11;
+  uint32 cols = 12;
+
+  // Caller's macOS working directory; used when `cwd` is empty. The guest maps
+  // it under the distro's [automount] root (default /mnt/mac).
+  string mac_cwd = 13;
+  // MSLENV (the WSLENV equivalent) and the macOS values of the variables it
+  // lists; the guest applies the /p and /l path translations.
+  string mslenv = 14;
+  map<string, string> mslenv_values = 15;
+  // macOS home directory (for mslpath -w of Linux-only paths).
+  string mac_home = 16;
+}
+
+message RunEvent {
+  oneof event {
+    Started started = 1;
+    Exited exited = 2;
+  }
+}
+
+message Started {
+  uint64 session_id = 1;
+  // 0 = not used. tty_port carries the PTY master (both directions).
+  uint32 tty_port = 2;
+  uint32 stdin_port = 3;
+  uint32 stdout_port = 4;
+  uint32 stderr_port = 5;
+}
+
+message Exited {
+  int32 code = 1;  // exit status, or 128 + signal
+}
+
+message ResizeRequest {
+  uint64 session_id = 1;
+  uint32 rows = 2;
+  uint32 cols = 3;
+}
+
+message SignalRequest {
+  uint64 session_id = 1;
+  int32 signal = 2;
+}
+
+message DistroInfo {
+  string default_user = 1;        // wsl.conf [user] default (empty if unset)
+  bool systemd = 2;               // wsl.conf [boot] systemd
+  DistributionConf distribution_conf = 3;
+  string os_pretty_name = 4;
+}
