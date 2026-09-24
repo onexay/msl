@@ -10,6 +10,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - `kernel/fetch.sh` works without the GitHub CLI.
 
 ### Changed
+- msl now stands for **Modern Subsystem for Linux**; the old name used Apple's "macOS" trademark. CLI messages use the new name.
 - msl is licensed under Apache-2.0.
 
 ## [0.1.0] - 2026-09-24

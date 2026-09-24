@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
-# msl installer: macOS Subsystem for Linux.
+# msl installer: Modern Subsystem for Linux.
 #
 #   sh install.sh [options]
 #   curl -fsSL <url>/install.sh | sh          (prompts are read from the terminal)
@@ -68,7 +68,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 say ""
-say "${B}macOS Subsystem for Linux${N}: installer"
+say "${B}Modern Subsystem for Linux${N}: installer"
 say ""
 
 # --- System checks -----------------------------------------------------------

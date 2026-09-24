@@ -1,4 +1,4 @@
-## macOS Subsystem for Linux
+## msl: Modern Subsystem for Linux
 
 **Linux as the development environment on macOS, the way WSL made it on Windows.**
 

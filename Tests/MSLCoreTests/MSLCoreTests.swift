@@ -91,7 +91,7 @@ import Testing
     ]
 
     @Test func plain() {
-        #expect(ListFormat.render(d, ListSpec()).text == "macOS Subsystem for Linux Distributions:\nUbuntu-24.04 (Default)\nDebian")
+        #expect(ListFormat.render(d, ListSpec()).text == "Modern Subsystem for Linux Distributions:\nUbuntu-24.04 (Default)\nDebian")
     }
 
     @Test func verbose() {
