@@ -25,7 +25,6 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - Support for PGP-signed release checksums (`.sha256.asc`): `install.sh` verifies the signature when `gpg` is installed and a signature is published; see SECURITY.md.
 - Releases include the full licence texts of all dependencies (`share/doc/msl/licenses/`), and the GPL source of BusyBox and the kernel.
 - `kernel/fetch.sh` works without the GitHub CLI.
-
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
 [Unreleased]: https://github.com/onexay/msl/compare/v0.1.1...HEAD
