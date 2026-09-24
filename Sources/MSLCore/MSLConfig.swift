@@ -17,7 +17,7 @@ public struct MSLConfig: Equatable, Sendable {
     // [experimental]
     /// Accepted for .wslconfig compatibility; has no effect on macOS: the
     /// Virtualization.framework balloon doesn't return pages to the host, so memory
-    /// comes back when the VM exits (vmIdleTimeout). See docs/memory-reclaim.md.
+    /// comes back when the VM exits (vmIdleTimeout). See docs/design/memory-reclaim.md.
     public enum MemoryReclaim: String, Sendable { case disabled, gradual, dropCache }
     public var autoMemoryReclaim: MemoryReclaim = .dropCache
 

@@ -105,7 +105,7 @@ msl (CLI) ──XPC──▶ msld (per-user LaunchAgent)
 - **Guest:** one static Rust binary (`msl-guest`) is VM init, per-distro init and agent, `mslpath`, NFS server and DNS stub. It is bind-mounted into each distro; the only file msl adds to an image is the `/usr/bin/mslpath` symlink.
 - **Distros are the WSL images, unmodified.** Windows-only systemd units are masked at runtime, WSL detection stays off (`MSL_DISTRO_NAME` is set instead), and the distro's OOBE runs as it does on Windows.
 
-Details: [`docs/PLAN.md`](docs/PLAN.md) (architecture and the WSL → msl feature mapping), [`docs/vsock-flow-control.md`](docs/vsock-flow-control.md), [`docs/memory-reclaim.md`](docs/memory-reclaim.md).
+Details: [`docs/architecture.md`](docs/architecture.md) (architecture and the WSL → msl feature mapping), [`docs/design/vsock-flow-control.md`](docs/design/vsock-flow-control.md), [`docs/design/memory-reclaim.md`](docs/design/memory-reclaim.md).
 
 ### Configuration
 
@@ -136,11 +136,11 @@ Changes apply at the next VM start. `msl --status` shows the effective settings 
 
 ### How msl compares
 
-Among Mac tools, msl is the only one that is a drop-in for `wsl.exe` and runs Microsoft's WSL distro images unmodified, so Windows and Mac developers share one workflow. OrbStack is the closest in design (one shared VM, full distros, Finder access). It is ahead on polish, x86_64, dynamic memory and containers, but it is proprietary and runs Mac binaries from Linux. Apple's `container machine` (container 1.0+) gives persistent systemd environments from OCI images, with one VM per machine. Lima/Colima, Docker Desktop, Podman, Multipass, UTM, Rancher Desktop and Tart solve neighbouring problems. The feature matrix, per-project notes and gaps are in [`docs/COMPARISON.md`](docs/COMPARISON.md).
+Among Mac tools, msl is the only one that is a drop-in for `wsl.exe` and runs Microsoft's WSL distro images unmodified, so Windows and Mac developers share one workflow. OrbStack is the closest in design (one shared VM, full distros, Finder access). It is ahead on polish, x86_64, dynamic memory and containers, but it is proprietary and runs Mac binaries from Linux. Apple's `container machine` (container 1.0+) gives persistent systemd environments from OCI images, with one VM per machine. Lima/Colima, Docker Desktop, Podman, Multipass, UTM, Rancher Desktop and Tart solve neighbouring problems. The feature matrix, per-project notes and gaps are in [`docs/comparison.md`](docs/comparison.md).
 
 ### Known limitations
 
-Also tracked under "Open items" in [`docs/PLAN.md`](docs/PLAN.md).
+Also tracked under "Open items" in the [roadmap](docs/roadmap.md).
 
 - **x86_64 distros:** not supported yet. arm64 images only in practice. An untested Rosetta path activates only if Rosetta is already installed (msl never installs it); milestone 6 plans qemu-user instead.
 - **Memory:** returned to macOS only when the VM stops (`vmIdleTimeout`). Virtualization.framework's balloon doesn't give pages back, so `autoMemoryReclaim` has no effect.
@@ -177,7 +177,7 @@ Releases: msl ships as `v<version>` releases (the Latest one, used by `install.s
 | `guest/` | `msl-guest`: VM init, per-distro init and agent, NFS server, DNS stub |
 | `proto/msl/v1/msl.proto` | host ↔ guest gRPC protocol |
 | `kernel/` | kernel config (Apple's + `msl.fragment`) and build script |
-| `docs/` | [plan](docs/PLAN.md), [comparison](docs/COMPARISON.md), [spike results](docs/spike-results.md), [vsock flow control](docs/vsock-flow-control.md), [memory reclaim](docs/memory-reclaim.md), [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
+| `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
 | `docs/dev/` | development log (`progress.md`) and the milestone 0 spike |
 
 ### License

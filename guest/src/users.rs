@@ -1,4 +1,4 @@
-//! /etc/passwd and /etc/group lookups by file parsing (no NSS; see PLAN.md).
+//! /etc/passwd and /etc/group lookups by file parsing (no NSS: msl-guest is a static musl binary).
 
 #[derive(Debug, Clone)]
 pub struct User {
