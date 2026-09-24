@@ -65,7 +65,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - **02:18** Started. Order: hostname and hosts generation → localhost forwarding (port watcher + vsock relay) → a design check for `~/MSL/<distro>`.
   - Decision: no subnet pinning. WSL's NAT address also changes between boots, and pinning breaks vmnet DHCP (M1 finding).
 - **02:25** Hostname and hosts generation work (hostname `supernova` from the Mac's name, WSL-style `/etc/hosts` with `host.internal`). Localhost forwarding works over IPv4 and IPv6 (a Python http.server in Ubuntu answers `curl localhost:8765` on the Mac).
-- **02:25** `~/MSL/<distro>` design verified. A normal macOS user can `mount_nfs` a userspace NFSv3 server (tested with nfsserve's mirrorfs: `mounted by akshay`, reads and writes both ways).
+- **02:25** `~/MSL/<distro>` design verified. A normal macOS user can `mount_nfs` a userspace NFSv3 server (tested with nfsserve's mirrorfs: `mounted by the Mac user`, reads and writes both ways).
   - Implemented: nfsserve (BSD-3) in mini-init on guest loopback :21049; msld mounts it at `<msl>/files` (nobrowse, soft) through a private vsock bridge; `~/MSL/<name>` symlinks.
   - New files take their parent directory's owner.
   - Verified: `echo > ~/MSL/Ubuntu-24.04/home/tester/note.txt` gives `tester:tester`.

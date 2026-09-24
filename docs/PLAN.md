@@ -215,7 +215,7 @@ Later: GPU (once Apple ships 3D/compute virtio-gpu), mirrored networking, an FSK
 - The `Tests/e2e/*.sh` scripts, run on this Mac:
   - `msl --install Ubuntu`, then check that `msl -l -v` shows `* Ubuntu Running 2`;
   - `msl -e uname -a` exits 0, and `msl -- exit 7` makes `$?` equal 7;
-  - `msl --cd ~ pwd` and running `msl pwd` from `~/Projects` gives `/mnt/mac/Users/akshay/Projects`;
+  - `msl --cd ~ pwd` and running `msl pwd` from `~/Projects` gives `/mnt/mac/Users/<you>/Projects`;
   - `python3 -m http.server 8000` in the guest, then `curl localhost:8000` on the Mac;
   - export, unregister, import and the file is still there;
   - two distros can reach each other on localhost;
