@@ -10,6 +10,7 @@ REPO=${MSL_REPO:-onexay/msl}
 LINUX=$(sed -n 's/^# Linux\/arm64 \([^ ]*\) Kernel Configuration/\1/p' "$HERE/out/config")
 case $TAG in "kernel-$LINUX-msl."*) ;; *) echo "release.tag ($TAG) doesn't match the built kernel ($LINUX)" >&2; exit 1 ;; esac
 (cd "$HERE/out" && shasum -a 256 Image config) > "$HERE/release.sha256"
-gh release create "$TAG" "$HERE/out/Image" "$HERE/out/config" "$HERE/release.sha256" --repo "$REPO" --latest=false \
+SRC=$("$HERE/../scripts/gpl-sources.sh" kernel)  # GPL-2.0: ship the corresponding source
+gh release create "$TAG" "$HERE/out/Image" "$HERE/out/config" "$HERE/release.sha256" "$SRC" --repo "$REPO" --latest=false \
   --title "MSL kernel $LINUX (${TAG##*-msl.})" \
-  --notes "Linux $LINUX (arm64), built by kernel/build.sh from kernel/base.config + kernel/msl.fragment at $(git -C "$HERE" rev-parse --short HEAD). Used by scripts/build.sh via kernel/fetch.sh. GPL-2.0; source: kernel.org linux-$LINUX plus the config in this repository."
+  --notes "Linux $LINUX (arm64), built by kernel/build.sh from kernel/base.config + kernel/msl.fragment at $(git -C "$HERE" rev-parse --short HEAD). Used by scripts/build.sh via kernel/fetch.sh. GPL-2.0. Corresponding source: linux-$LINUX.tar.xz (attached, unmodified from kernel.org) plus the attached config; kernel/build.sh reproduces the build."
