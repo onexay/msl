@@ -233,6 +233,7 @@ Later: GPU (once Apple ships 3D/compute virtio-gpu), mirrored networking, an FSK
 
 ## Open items (after milestone 5)
 
+- **`~/MSL` NFS view is reachable by other local users** (security): the bridge listens on an unauthenticated `127.0.0.1` port. Fix options: only accept connections from the owning user (check the peer's UID through `LOCAL_PEERCRED`-style lookup of the socket owner), or serve NFS over a user-only Unix socket. See SECURITY.md.
 - **Notarisation:** run `scripts/package.sh` with `MSL_SIGN_IDENTITY` and `MSL_INSTALLER_IDENTITY`, then `scripts/notarize.sh`. Needs the owner's Developer ID and a notarytool profile.
 - ~~**Xcode**~~: done 2026-09-24. Xcode 27.0 (Swift 6.4) is the active toolchain, and the host tests are a swift-testing target again (`swift test`: 16 tests in 5 suites).
 - **`--manage --resize`:** needs an offline `resize2fs`, i.e. a static e2fsprogs in the initrd, run before mounting `/dev/vda`.
