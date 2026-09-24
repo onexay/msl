@@ -21,12 +21,12 @@ $ ls ~/MSL/Ubuntu/home            # the distro's files, from the Mac (also in Fi
 ### Install
 
 ```console
-$ sh install.sh                        # interactive: checks the Mac, asks where (default ~/.local, no sudo),
-                                       # downloads the latest release, verifies it, sets PATH, offers a first distro
-$ sh install.sh --yes --prefix /usr/local   # unattended; also --version <x.y.z>, --from <tarball>, --no-path
+$ curl -fsSL https://raw.githubusercontent.com/onexay/msl/main/install.sh | sh
 ```
 
-The installer downloads from this repo's GitHub releases. While the repo is private, it needs `gh auth login` or `GITHUB_TOKEN`. msl has no Homebrew formula: it's a self-contained environment and updates itself with `msl --update`; `msl --uninstall` removes it and keeps your distros.
+The installer is interactive: it checks the Mac, asks where to install (default `~/.local`, no sudo), downloads the latest release and verifies its SHA-256, offers to add msl to `PATH`, and offers to install a first distro. For unattended installs: `… | sh -s -- --yes [--prefix /usr/local] [--version x.y.z] [--no-path]`; `--from <tarball>` installs a local package.
+
+msl has no Homebrew formula: it's a self-contained environment and updates itself with `msl --update`; `msl --uninstall` removes it and keeps your distros.
 
 ### Quick start (from source)
 
@@ -163,7 +163,7 @@ $ scripts/package.sh 0.1.0         # dist/: tarball + .sha256, .pkg, update.json
 $ scripts/publish.sh 0.1.0         # package and publish GitHub release v0.1.0 (Latest)
 ```
 
-Requirements: Xcode 27 (Swift 6.4), Rust 1.98 with `aarch64-unknown-linux-musl`, `protoc`. `scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, checked against `kernel/release.sha256`); `kernel/build.sh` rebuilds it from source with Apple's `container`.
+Requirements: Xcode 27 (Swift 6.4), Rust 1.98 with `aarch64-unknown-linux-musl`, `protoc`. `scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`); `kernel/build.sh` rebuilds it from source with Apple's `container`.
 
 Releases: msl ships as `v<version>` releases (the Latest one, used by `install.sh` and `msl --update`), each bundling a kernel. The kernel has its own releases, `kernel-<linux version>-msl.<n>`, published only when the kernel changes (`kernel/publish.sh`: bump `n` for config-only changes) and never marked Latest; each msl release's notes name the kernel it contains.
 
