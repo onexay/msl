@@ -179,3 +179,7 @@ Releases: msl ships as `v<version>` releases (the Latest one, used by `install.s
 | `kernel/` | kernel config (Apple's + `msl.fragment`) and build script |
 | `docs/` | [plan](docs/PLAN.md), [comparison](docs/COMPARISON.md), [spike results](docs/spike-results.md), [vsock flow control](docs/vsock-flow-control.md), [memory reclaim](docs/memory-reclaim.md), [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
 | `PROGRESS.md` | development log |
+
+### License
+
+msl is licensed under the [Apache License 2.0](LICENSE) (see also [NOTICE](NOTICE)). Release packages include the Linux kernel and BusyBox, which are GPL-2.0 and run inside the VM as separate programs; see [third-party notices](docs/THIRD_PARTY_NOTICES.md).
