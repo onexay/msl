@@ -169,7 +169,7 @@ msl has no distro builds of its own. A WSL image is a plain rootfs tarball with 
 - `Sources/MSLService` (`msld`): VM manager, registry, port relay, NFS mounter.
 - `proto/`: the shared `.proto` files. `Sources/MSLProtocol` holds the generated Swift.
 - `guest/`: a Cargo crate (`Cargo.toml`, `rust-toolchain.toml` pinning the toolchain and musl targets), with the binary `msl-guest` and modules `miniinit`, `distroinit`, `session`, `portwatch`, `config`, `compat` and `mslpath`. A `Makefile` target runs `cargo build --release --target aarch64-unknown-linux-musl` and packs the result into the initrd.
-- `kernel/`: config fragment and build script. `scripts/`: initrd build, signing, packaging (.pkg plus a Homebrew cask).
+- `kernel/`: config fragment and build script. `scripts/`: initrd build, signing, packaging (tarball, .pkg) and `install.sh`, the interactive installer (no Homebrew).
 - `Tests/`:
   - `MSLCoreTests` (swift-testing, `swift test`): parser, output formats, registry, IPC fd passing, `.mslconfig`, manifest.
   - `e2e/`: shell scripts that drive a real `msl`.
@@ -186,7 +186,7 @@ msl has no distro builds of its own. A WSL image is a plain rootfs tarball with 
 2. ✅ **Distros and config** (done 2026-09-24; `Tests/e2e/m2.sh` 25/25; `--manage --resize/--compact` deferred to M5): online `--install` and `-l -o`, OOBE and default user (the distro's own OOBE, with msl's OOBE as fallback), the `compat` layer (unit masks, cloud-init fallback), `wsl.conf`/`msl.conf`, `.mslconfig`, `--set-default`, `--status`, `--manage`, idle timeouts.
 3. ✅ **Host integration** (done 2026-09-24; `Tests/e2e/m3.sh` 24/24): `/mnt/mac` with uid mapping, cwd translation, `MSLENV` (Mac → Linux), `mslpath`.
 4. ✅ **Networking and files** (done 2026-09-24; `Tests/e2e/m4.sh` 33/33): localhost forwarding, DNS proxy, hosts file, hostname, NFS export to `~/MSL/<distro>`.
-5. ✅ **Remainder** (done 2026-09-24; `Tests/e2e/m5.sh` 20/20, `Tests/e2e/release.sh`): `--debug-shell` (BusyBox in the initrd), `--mount`/`--unmount` (USB hot-attach, shared `/mnt/msl`), `--manage --compact` (FITRIM, plus trim on every shutdown), `--update`/`--uninstall`, packaging (`scripts/package.sh`: tarball, `.pkg`, update manifest, Homebrew formula; `scripts/notarize.sh`). Not done: `--manage --resize`, memory reclaim, x86_64 distros, notarisation (see Open items).
+5. ✅ **Remainder** (done 2026-09-24; `Tests/e2e/m5.sh` 20/20, `Tests/e2e/release.sh`): `--debug-shell` (BusyBox in the initrd), `--mount`/`--unmount` (USB hot-attach, shared `/mnt/msl`), `--manage --compact` (FITRIM, plus trim on every shutdown), `--update`/`--uninstall`, packaging (`scripts/package.sh`: tarball, `.pkg`, update manifest; `scripts/notarize.sh`; `install.sh` interactive installer, Homebrew formula dropped. Not done: `--manage --resize`, memory reclaim, x86_64 distros, notarisation (see Open items).
 6. **x86_64 emulation with qemu-user** (planned 2026-09-24): run x86_64 distros and binaries without Rosetta.
    - **Why:** general-purpose Rosetta 2 ends after macOS 27. Apple says Rosetta for Intel binaries in Linux VMs continues, but a Rosetta-free path removes the dependency (and the owner prefers not to install Rosetta).
    - **What:** QEMU *user-mode* (`qemu-x86_64`, optionally `qemu-i386`) inside the guest, registered with `binfmt_misc` (`F` flag, like the Rosetta entry, so it works in every distro namespace). No full-system QEMU on the Mac, so the Apple-only host rule holds.
