@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Run the guest's unit tests natively on Linux, inside a container (Apple `container`).
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

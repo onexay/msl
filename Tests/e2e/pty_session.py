@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Drive `msl` through a real PTY (interactive path): optional OOBE prompts,
 shell, resize, exit code.
 

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Notarize and staple a Developer ID signed release (not runnable with ad-hoc signing).
 #   xcrun notarytool store-credentials msl-notary --apple-id … --team-id … --password <app-specific>
 #   MSL_NOTARY_PROFILE=msl-notary scripts/notarize.sh dist/msl-<version>.pkg

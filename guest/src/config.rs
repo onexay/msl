@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Minimal INI reader for /etc/wsl.conf, /etc/msl.conf and /etc/wsl-distribution.conf.
 //! Sections and keys are case-insensitive; `#`/`;` start comments.
 

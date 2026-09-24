@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Per-distro init (`msl-distro-init <json>`), a fresh single-threaded process
 //! spawned by mini-init, so fork/unshare/pivot_root are safe here.
 //!

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Utility-VM PID 1 (the `mini_init` equivalent).
 //!
 //! Stage 1 (initramfs): move to a tmpfs root so child mount namespaces can

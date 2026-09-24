@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Boot the spike VM in the foreground. Extra args pass through (e.g. --net nat).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)

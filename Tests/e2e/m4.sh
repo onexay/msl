@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Milestone 4 end-to-end test: hostname/hosts, localhost forwarding, DNS tunneling, ~/MSL file view.
 #   Tests/e2e/m4.sh [path/to/msl]
 set -u

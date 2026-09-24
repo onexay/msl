@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Download (and verify) the complete corresponding source of the GPL-2.0
 # binaries msl ships, for attaching to GitHub releases:
 #   kernel   dist/sources/linux-<ver>.tar.xz   (+ our config: kernel/base.config, kernel/msl.fragment)

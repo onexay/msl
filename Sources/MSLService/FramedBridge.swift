@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 
 /// Flow-controlled byte stream over vsock: the host half of guest/src/framed.rs.

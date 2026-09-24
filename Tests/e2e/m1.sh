@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Milestone 1 end-to-end test. Uses a throwaway MSL_HOME. The Debian and Ubuntu
 # .wsl images come from Microsoft's distribution list (checksum-verified, cached).
 #   Tests/e2e/m1.sh [path/to/msl]

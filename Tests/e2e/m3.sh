@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Milestone 3 end-to-end test: cwd translation, mslpath, MSLENV, [automount] root.
 #   Tests/e2e/m3.sh [path/to/msl]
 set -u

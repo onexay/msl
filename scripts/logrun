@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Run a shell command, show its output, and append command + output to LOG.md.
 #   scripts/logrun '<shell command>' ["description"]
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

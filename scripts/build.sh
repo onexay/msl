@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Build everything into build/:
 #   build/bin/{msl,msld}            (msld signed with the virtualization entitlement)
 #   build/share/msl/{Image,initrd.gz,kernel.version}

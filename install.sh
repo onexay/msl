@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # msl installer: macOS Subsystem for Linux.
 #
 #   sh install.sh [options]
@@ -31,7 +32,7 @@ step() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
 ok()   { printf '%s✔%s %s\n' "$G" "$N" "$*"; }
 die()  { printf '%serror:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,/^[^#]/{/^#/p;}' "$0" | grep -v SPDX | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
   case $1 in

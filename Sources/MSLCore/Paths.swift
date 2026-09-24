@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 
 /// Where MSL keeps its state. Overridable with MSL_HOME (used by tests).

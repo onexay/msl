@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 
 /// The VM's settings after defaults are applied (what `.mslconfig` resolves to).

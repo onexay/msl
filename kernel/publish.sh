@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Publish kernel/out/{Image,config} as the GitHub release named in
 # kernel/release.tag (kernel-<linux version>-msl.<n>; bump n for config-only
 # changes). Updates kernel/release.sha256; commit both files with the change.

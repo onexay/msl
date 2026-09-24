@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // msl-spike: milestone 0 VM runner (throwaway; the real host is msld).
 //
 // Boots the utility VM (kernel + initrd with msl-guest as /init) and exposes:

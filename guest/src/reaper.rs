@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Single reaper for a process that is PID 1 or a subreaper.
 //!
 //! Exactly one thread calls `waitpid(-1)`. Everyone else asks the reaper for a

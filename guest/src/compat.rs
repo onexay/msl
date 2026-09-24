@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Compatibility layer for unmodified WSL images (see docs/architecture.md, "Distro compatibility").
 //! Nothing here writes to the distro image: masks live on the distro's /run tmpfs.
 

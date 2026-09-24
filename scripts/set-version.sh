@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Set msl's version everywhere: VERSION (the source of truth), the Swift
 # constant (MSLBuild.version) and the guest crate (Cargo.toml + Cargo.lock).
 #   scripts/set-version.sh 0.2.0

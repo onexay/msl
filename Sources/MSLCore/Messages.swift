@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 
 // User-facing text. Wording follows wsl.exe (localization/strings/en-US/Resources.resw,

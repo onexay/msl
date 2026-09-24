@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! msl's built-in first-run setup (`/run/msl/init msl-oobe`), used in place of
 //! distro OOBE scripts that only differ by Windows-specific wording.
 //! Same behaviour as Debian's oobe.sh: create UID 1000 in the usual admin groups.

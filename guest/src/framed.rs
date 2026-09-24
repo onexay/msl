@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Flow-controlled byte streams over vsock.
 //!
 //! Virtualization.framework's vsock device blocks (and with it every vsock

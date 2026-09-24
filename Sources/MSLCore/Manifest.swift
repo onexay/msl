@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 
 /// Microsoft's WSL distribution manifest (`distributions/DistributionInfo.json`).

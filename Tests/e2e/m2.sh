@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Milestone 2 end-to-end test: online install, compat layer, built-in OOBE,
 # wsl.conf keys, .mslconfig, --manage, idle timeouts.
 #   Tests/e2e/m2.sh [path/to/msl]

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Regenerate Sources/MSLProtocol from proto/msl/v1/msl.proto (output is checked in).
 # The guest generates its Rust code itself (guest/build.rs).
 set -eu

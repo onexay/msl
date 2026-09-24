@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 //! `~/MSL/<distro>` file server: an NFSv3 server (userspace, TCP) exporting the
 //! distros' root filesystems, mounted on the Mac by msld (the `\\wsl.localhost`
 //! equivalent).
