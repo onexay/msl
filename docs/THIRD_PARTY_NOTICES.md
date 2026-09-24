@@ -1,6 +1,6 @@
 # Third-party components shipped with msl
 
-This file is installed as `share/doc/msl/THIRD_PARTY_NOTICES.md`. Before a public release, add the full license texts of every Rust and Swift dependency (generate them with `cargo about` and the SwiftPM equivalent).
+msl itself is Apache-2.0 (`LICENSE`, `NOTICE`). This file is installed as `share/doc/msl/THIRD_PARTY_NOTICES.md`. Before a public release, add the full license texts of every Rust and Swift dependency (generate them with `cargo about` and the SwiftPM equivalent).
 
 | Component | Where | License | Notes |
 |---|---|---|---|

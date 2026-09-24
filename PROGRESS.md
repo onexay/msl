@@ -130,3 +130,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-24 10:28: repo is public
 - The unauthenticated `curl -fsSL https://raw.githubusercontent.com/onexay/msl/main/install.sh | sh` installs v0.1.0 with its SHA-256 verified, and `msl --update` reads the public update.json ("already installed"). The README shows the one-liner.
 - `kernel/fetch.sh` falls back to curl when gh isn't logged in, so building from source no longer needs gh.
+
+## 2026-09-24 10:35: licensed Apache-2.0
+- Added LICENSE (canonical Apache-2.0 text) and NOTICE. The README has a License section, `guest/Cargo.toml` changes from MIT to Apache-2.0, THIRD_PARTY_NOTICES names the licence, and packages install LICENSE and NOTICE in `share/doc/msl`.
+- Future commits use `onexay <…noreply…>`. Rewriting the earlier commits' author was blocked by the permission check and is left to the user.

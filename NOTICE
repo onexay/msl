@@ -1,0 +1,8 @@
+msl: macOS Subsystem for Linux
+Copyright 2026 onexay and the msl contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Release packages also contain third-party software under their own licences,
+including the Linux kernel and BusyBox (GPL-2.0), which run inside the virtual
+machine as separate programs. See docs/THIRD_PARTY_NOTICES.md.
