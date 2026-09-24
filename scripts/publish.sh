@@ -14,6 +14,10 @@ TAG=v$VERSION
 NAME=msl-$VERSION-macos-arm64.tar.gz
 KTAG=$(cat kernel/release.tag)
 
+# The tree must already be at this version (scripts/set-version.sh).
+scripts/check-version.sh >/dev/null
+[ "$(cat VERSION)" = "$VERSION" ] || { echo "VERSION is $(cat VERSION), not $VERSION: run scripts/set-version.sh $VERSION and commit" >&2; exit 1; }
+
 # CHANGELOG.md must have a section for this version (moved out of Unreleased).
 CHANGES=$(awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {s=1; next} /^## \[/ {s=0} /^\[.*\]: / {s=0} s' CHANGELOG.md)
 [ -n "$(printf '%s' "$CHANGES" | tr -d '[:space:]')" ] || { echo "CHANGELOG.md has no section for $VERSION" >&2; exit 1; }
