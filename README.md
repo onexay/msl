@@ -182,4 +182,6 @@ Releases: msl ships as `v<version>` releases (the Latest one, used by `install.s
 
 ### License
 
+msl is an independent project, not affiliated with or endorsed by Microsoft or Apple. WSL and Windows are trademarks of Microsoft Corporation; Mac and macOS are trademarks of Apple Inc.; they are used only to describe compatibility.
+
 msl is licensed under the [Apache License 2.0](LICENSE) (see also [NOTICE](NOTICE)). Release packages include the Linux kernel and BusyBox, which are GPL-2.0 and run inside the VM as separate programs; see [third-party notices](docs/THIRD_PARTY_NOTICES.md).

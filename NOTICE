@@ -6,3 +6,9 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 Release packages also contain third-party software under their own licences,
 including the Linux kernel and BusyBox (GPL-2.0), which run inside the virtual
 machine as separate programs. See docs/THIRD_PARTY_NOTICES.md.
+
+msl is an independent project. It is not affiliated with, sponsored or endorsed
+by Microsoft Corporation or Apple Inc. Windows, WSL and Windows Subsystem for
+Linux are trademarks of Microsoft Corporation; Apple, Mac, macOS and Apple
+silicon are trademarks of Apple Inc. They are used here only to describe
+compatibility.
