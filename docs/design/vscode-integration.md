@@ -1,6 +1,6 @@
 # VS Code integration (for discussion)
 
-Status: **proposal, not scheduled** (recorded 2026-09-24). Tracked as milestone [M7](https://github.com/onexay/msl/milestone/8).
+Status: **proposal, not scheduled** (recorded 2026-09-24). Tracked in the [Oxygen](https://github.com/onexay/msl/milestone/8) milestone.
 
 ## The question
 

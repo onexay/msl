@@ -133,7 +133,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         var status: vmnet_return_t = .VMNET_SUCCESS
         // Note: pinning the subnet (vmnet_network_configuration_set_ipv4_subnet) stops
         // vmnet's DHCP from answering the kernel's `ip=dhcp` (M1 finding); pinning
-        // needs static guest addressing (milestone 4).
+        // needs static guest addressing.
         if let cfg = vmnet_network_configuration_create(.VMNET_SHARED_MODE, &status) {
             if let net = vmnet_network_create(cfg, &status) {
                 return VZVmnetNetworkDeviceAttachment(network: net)

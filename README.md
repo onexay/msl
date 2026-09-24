@@ -123,7 +123,7 @@ Among Mac tools, msl is the only one that is a drop-in for `wsl.exe` and runs Mi
 
 Tracked as [issues](https://github.com/onexay/msl/issues); planned work is in the [milestones](https://github.com/onexay/msl/milestones).
 
-- **x86_64 distros:** not supported yet. arm64 images only in practice. An untested Rosetta path activates only if Rosetta is already installed (msl never installs it); milestone 6 plans qemu-user instead.
+- **x86_64 distros:** not supported yet. arm64 images only in practice. An untested Rosetta path activates only if Rosetta is already installed (msl never installs it); the [Nitrogen](https://github.com/onexay/msl/milestone/7) milestone adds qemu-user instead.
 - **Memory:** returned to macOS only when the VM stops (`vmIdleTimeout`). Virtualization.framework's balloon doesn't give pages back, so `autoMemoryReclaim` has no effect.
 - **Disk:** `--manage --resize` isn't supported (no online resize of the shared 256 GiB sparse store). `--compact` and trim on shutdown do shrink `data.img`.
 - **`~/MSL`** is only available while the VM runs.

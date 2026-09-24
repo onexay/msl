@@ -88,7 +88,7 @@ These run containers, not your day-to-day distro, but they are what many Mac tea
 ## Gaps (where others are ahead)
 
 - **Maturity.** msl is pre-release: not notarised, no signed public build, no licence chosen yet, and tested on one Mac. WSL, OrbStack, Docker Desktop and Lima have years of users.
-- **x86_64.** OrbStack, Apple `container`, Lima, Colima, Docker Desktop and Rancher Desktop run amd64 through Rosetta, and UTM and QEMU-based tools emulate it fully. msl has an untested Rosetta path (only when Rosetta is already installed) and plans qemu-user in milestone 6. Until then x86-only WSL distros (Arch, SLES, eLxr) are out.
+- **x86_64.** OrbStack, Apple `container`, Lima, Colima, Docker Desktop and Rancher Desktop run amd64 through Rosetta, and UTM and QEMU-based tools emulate it fully. msl has an untested Rosetta path (only when Rosetta is already installed) and plans qemu-user in the [Nitrogen](https://github.com/onexay/msl/milestone/7) milestone. Until then x86-only WSL distros (Arch, SLES, eLxr) are out.
 - **Memory.** OrbStack, Docker VMM, libkrun-based tools and WSL return memory while the VM runs. msl only returns it when the VM idles out, which is the same Virtualization.framework limit Apple `container`, Lima and ArcBox's VZ backend hit.
 - **GPU and GUI apps.** WSL has WSLg and GPU compute. Podman (libkrun), Lima/Colima (krunkit), UTM 5 and Parallels have Vulkan/3D in Linux guests. msl has neither, and Virtualization.framework offers only 2D virtio-gpu.
 - **Containers.** OrbStack, Docker Desktop, Podman, Rancher and Apple `container` ship a container engine and Kubernetes integration. With msl you install Docker or Podman inside a distro yourself.

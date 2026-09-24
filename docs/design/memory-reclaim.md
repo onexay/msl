@@ -1,6 +1,6 @@
 # Memory reclaim on Virtualization.framework
 
-Status: investigated in milestone 5 (2026-09-24). **`autoMemoryReclaim` has no effect on macOS.** Memory goes back to macOS when the VM exits (`vmIdleTimeout`).
+Status: investigated in the Carbon milestone (2026-09-24). **`autoMemoryReclaim` has no effect on macOS.** Memory goes back to macOS when the VM exits (`vmIdleTimeout`).
 
 ## The problem
 
