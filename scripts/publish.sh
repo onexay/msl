@@ -1,8 +1,9 @@
 #!/bin/sh
 # Package and publish msl <version> as GitHub release v<version>, marked Latest:
 # tarball + .sha256 (install.sh), .pkg, update.json (msl --update).
-#   scripts/publish.sh <version> [--prerelease]
-# Requires a clean, pushed tree; the release is tagged at HEAD.
+#   [MSL_GPG_KEY=<key id>] scripts/publish.sh <version> [--prerelease]
+# Requires a clean, pushed tree; the release is tagged at HEAD. With
+# MSL_GPG_KEY, the tarball's .sha256 is signed (.sha256.asc) for install.sh.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
@@ -25,12 +26,21 @@ KSUM=$(awk '$2=="Image"{print $1}' kernel/release.sha256)
 [ "$(shasum -a 256 build/share/msl/Image | cut -d' ' -f1)" = "$KSUM" ] \
   || { echo "build/share/msl/Image is not $KTAG (run kernel/fetch.sh or kernel/publish.sh)" >&2; exit 1; }
 
+# Sign the checksum with the release key (see SECURITY.md) when it's available.
+SIG=
+if [ -n "${MSL_GPG_KEY:-}" ]; then
+  gpg --batch --yes --local-user "$MSL_GPG_KEY" --armor --detach-sign -o "dist/$NAME.sha256.asc" "dist/$NAME.sha256"
+  SIG=dist/$NAME.sha256.asc
+else
+  echo "note: MSL_GPG_KEY not set; publishing without a signature" >&2
+fi
+
 # GPL-2.0 BusyBox (in initrd.gz): ship its corresponding source with the release.
 BUSYBOX_SRC=$(scripts/gpl-sources.sh busybox | tr '\n' ' ')
 
 set -- --repo "$REPO" --target "$(git rev-parse HEAD)" --title "msl $VERSION"
 if [ "$PRE" = --prerelease ]; then set -- "$@" --prerelease; else set -- "$@" --latest; fi
-gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" "dist/msl-$VERSION.pkg" dist/update.json $BUSYBOX_SRC "$@" --notes "$(cat <<NOTES
+gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" $SIG "dist/msl-$VERSION.pkg" dist/update.json $BUSYBOX_SRC "$@" --notes "$(cat <<NOTES
 Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an existing install with \`msl --update\`.
 
 | | |
@@ -39,7 +49,7 @@ Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an 
 | Commit | $(git rev-parse --short HEAD) |
 | Requires | Apple silicon, macOS 26 or later |
 | GPL sources | BusyBox: the attached Debian source package \`busybox_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG). |
-| Signing | $( [ -n "${MSL_SIGN_IDENTITY:-}" ] && echo "Developer ID" || echo "ad-hoc (not notarised)") |
+| Signing | $( [ -n "${MSL_SIGN_IDENTITY:-}" ] && echo "Developer ID" || echo "ad-hoc (not notarised)"); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |
 
 \`$NAME\` SHA-256: \`$(cut -d' ' -f1 "dist/$NAME.sha256")\`
 NOTES

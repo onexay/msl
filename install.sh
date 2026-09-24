@@ -17,6 +17,8 @@
 set -eu
 
 REPO=${MSL_REPO:-onexay/msl}
+# Release signing key (SECURITY.md); checksums signed with it are verified when gpg is installed.
+RELEASE_KEY=E8803CF7DBA78BCB3F0B8F1D43E89DC44167036A
 PREFIX=${MSL_PREFIX:-}
 VERSION=${MSL_VERSION:-}
 FROM=
@@ -136,6 +138,7 @@ else
   [ "$REL" != null ] || die "release v$VERSION not found in github.com/$REPO"
   TAR_ID=$(js "(d.assets.find(x=>x.name==='$NAME')||{}).id||''" "$REL")
   SUM_ID=$(js "(d.assets.find(x=>x.name==='$NAME.sha256')||{}).id||''" "$REL")
+  SIG_ID=$(js "(d.assets.find(x=>x.name==='$NAME.sha256.asc')||{}).id||''" "$REL")
   [ -n "$TAR_ID" ] || die "release v$VERSION has no $NAME"
   step "Downloading msl $VERSION"
   fetch() {  # fetch <asset id> <file>
@@ -152,6 +155,17 @@ else
     fetch "$SUM_ID" "$TARBALL.sha256" || die "checksum download failed"
     (cd "$TMP" && shasum -a 256 -c "$NAME.sha256" >/dev/null) || die "checksum mismatch: the download is corrupt"
     ok "Downloaded and verified (SHA-256)"
+    if [ -n "$SIG_ID" ] && command -v gpg >/dev/null 2>&1; then
+      fetch "$SIG_ID" "$TARBALL.sha256.asc" || die "signature download failed"
+      export GNUPGHOME="$TMP/gnupg"; mkdir -m 700 "$GNUPGHOME"
+      curl -fsSL "https://keys.openpgp.org/vks/v1/by-fingerprint/$RELEASE_KEY" | gpg --batch --quiet --import 2>/dev/null \
+        || die "could not fetch the release signing key $RELEASE_KEY"
+      gpg --batch --status-fd 1 --verify "$TARBALL.sha256.asc" "$TARBALL.sha256" 2>/dev/null | grep "VALIDSIG" | grep -q "$RELEASE_KEY" \
+        || die "the release signature is invalid"
+      ok "Signature verified (release key ${RELEASE_KEY#????????????????????????})"
+    elif [ -n "$SIG_ID" ]; then
+      say "note: install gpg to also verify the release signature"
+    fi
   else
     say "note: release v$VERSION has no $NAME.sha256; not verified"
   fi
