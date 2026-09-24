@@ -1,6 +1,6 @@
 # Architecture
 
-How msl is built, and how each WSL feature maps onto macOS. For what's done and what's next, see the [roadmap](roadmap.md).
+How msl is built, and how each WSL feature maps onto macOS. Planned work is tracked in the [milestones](https://github.com/onexay/msl/milestones).
 
 ## Key decision: one shared utility VM (matches WSL2)
 Research on the open-sourced WSL repo: WSL2 runs **one utility VM**.

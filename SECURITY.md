@@ -43,7 +43,7 @@ msl runs Linux distributions in one lightweight VM (Apple's Virtualization.frame
 
 ### Known limitations
 
-- **`~/MSL` file view.** Distro files are served over NFSv3 on a `127.0.0.1` port without authentication, so **other local user accounts on the same Mac** can reach it. On a shared Mac, avoid keeping secrets in distros until this is fixed (see "Open items" in [docs/roadmap.md](docs/roadmap.md)).
+- **`~/MSL` file view.** Distro files are served over NFSv3 on a `127.0.0.1` port without authentication, so **other local user accounts on the same Mac** can reach it. On a shared Mac, avoid keeping secrets in distros until this is fixed ([#1](https://github.com/onexay/msl/issues/1)).
 - **Forwarded ports.** As with WSL's localhost forwarding, a port forwarded from a distro can be reached by every local user on the Mac.
 - **Release signing.** Releases are ad-hoc signed and not notarised yet. v0.1.0 is verified only by a SHA-256 checksum published in the same GitHub release; later releases also carry a PGP signature (see above). `install.sh` removes the quarantine attribute from the files it installs.
 - **`curl | sh` install.** Read `install.sh` before piping it to a shell if that matters to you. It's short, and it can also install a downloaded tarball with `--from`.

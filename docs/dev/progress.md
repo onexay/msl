@@ -152,3 +152,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 18. Shorter README; the configuration reference is in `docs/configuration.md`, and build and release details are in CONTRIBUTING.
 19. A single `VERSION` file, with `scripts/set-version.sh` and `check-version.sh`; the guest crate is `publish = false`.
 20. SPDX headers in 76 source files (`nfs.rs`: Apache-2.0 AND BSD-3-Clause).
+
+## 2026-09-24 11:27: roadmap moved to GitHub
+- Milestones created from the roadmap: M0–M5 (closed), M6 x86_64 via qemu-user, M7 VS Code integration, and Later.
+- Open items became issues #1–#6: the NFS view exposure (security), notarisation, `--resize`, testing x86_64 distros (M6), the vsock Apple report and dial-back, and `~/MSL` auto-start (Later).
+- Removed `docs/roadmap.md` and `docs/dev/plan.md`, and renamed `docs/architecture.md` to `docs/ARCHITECTURE.md`. References now point to the milestones and issues.
