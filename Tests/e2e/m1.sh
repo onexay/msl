@@ -1,12 +1,28 @@
 #!/bin/bash
-# Milestone 1 end-to-end test. Uses a throwaway MSL_HOME and the WSL images in spike/cache/.
+# Milestone 1 end-to-end test. Uses a throwaway MSL_HOME. The Debian and Ubuntu
+# .wsl images come from Microsoft's distribution list (checksum-verified, cached).
 #   Tests/e2e/m1.sh [path/to/msl]
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
 export MSL_HOME=$(mktemp -d /tmp/msl-e2e.XXXXXX)
 export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/MSL
-CACHE=$ROOT/spike/cache
+CACHE=${MSL_E2E_CACHE:-$HOME/Library/Caches/msl/e2e}
+mkdir -p "$CACHE"
+# image <distro-name> <file>: download the arm64 image into $CACHE/<file> once;
+# reuses msl's own download cache (files named by SHA-256) when it has it.
+image() {
+  [ -s "$CACHE/$2" ] && return
+  read -r url sha < <(curl -fsSL https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json |
+    python3 -c 'import json,sys; n=sys.argv[1]; d=json.load(sys.stdin)
+e=[e for f in d["ModernDistributions"].values() for e in f if e["Name"]==n][0]["Arm64Url"]; print(e["Url"], e["Sha256"].lower())' "$1")
+  local have=$HOME/Library/Caches/msl/downloads/$sha.wsl
+  if [ -s "$have" ]; then cp "$have" "$CACHE/$2.part"; else curl -fL# -o "$CACHE/$2.part" "$url"; fi
+  [ "$(shasum -a 256 "$CACHE/$2.part" | cut -d' ' -f1)" = "$sha" ] || { echo "checksum mismatch: $1" >&2; exit 1; }
+  mv "$CACHE/$2.part" "$CACHE/$2"
+}
+image Debian debian.wsl
+image Ubuntu-24.04 ubuntu-24.04.wsl
 WORK=$(mktemp -d)
 pass=0; fails=0
 check() {  # check "description" <expected-substring> <actual>

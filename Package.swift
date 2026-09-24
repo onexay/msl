@@ -41,7 +41,7 @@ let package = Package(
             ],
             swiftSettings: v5
         ),
-        .executableTarget(name: "msld", dependencies: ["MSLService"], swiftSettings: v5),
+        .executableTarget(name: "msld", dependencies: ["MSLService"], exclude: ["msld.entitlements"], swiftSettings: v5),
         .executableTarget(name: "msl", dependencies: ["MSLCore"], swiftSettings: v5),
         .testTarget(name: "MSLCoreTests", dependencies: ["MSLCore"], swiftSettings: v5),
     ]
