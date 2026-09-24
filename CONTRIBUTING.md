@@ -1,6 +1,6 @@
 # Contributing to msl
 
-Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. The open items are in the [roadmap](docs/roadmap.md) and the [issues](https://github.com/onexay/msl/issues).
+Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. Planned work is in the [milestones](https://github.com/onexay/msl/milestones) and [issues](https://github.com/onexay/msl/issues).
 
 ## Before you start
 
@@ -33,7 +33,7 @@ $ build/bin/msl --help
 | `kernel/` | kernel config (Apple's + `msl.fragment`), build, fetch and publish scripts |
 | `scripts/` | build, initrd, packaging, publishing, licence and GPL-source tools; `install.sh` is at the root |
 | `Tests/` | `MSLCoreTests` (swift-testing) and `e2e/` suites driving a real `msl` |
-| `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
+| `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/ARCHITECTURE.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
 | `docs/dev/` | development log (`progress.md`) and the milestone 0 spike |
 
 ## Test

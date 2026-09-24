@@ -106,7 +106,7 @@ msl (CLI) ──XPC──▶ msld (per-user LaunchAgent)
 - **Guest:** one static Rust binary (`msl-guest`) is VM init, per-distro init and agent, `mslpath`, NFS server and DNS stub. It is bind-mounted into each distro; the only file msl adds to an image is the `/usr/bin/mslpath` symlink.
 - **Distros are the WSL images, unmodified.** Windows-only systemd units are masked at runtime, WSL detection stays off (`MSL_DISTRO_NAME` is set instead), and the distro's OOBE runs as it does on Windows.
 
-Details: [`docs/architecture.md`](docs/architecture.md) (architecture and the WSL → msl feature mapping), [`docs/design/vsock-flow-control.md`](docs/design/vsock-flow-control.md), [`docs/design/memory-reclaim.md`](docs/design/memory-reclaim.md).
+Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (architecture and the WSL → msl feature mapping), [`docs/design/vsock-flow-control.md`](docs/design/vsock-flow-control.md), [`docs/design/memory-reclaim.md`](docs/design/memory-reclaim.md).
 
 ### Configuration
 
@@ -121,7 +121,7 @@ Among Mac tools, msl is the only one that is a drop-in for `wsl.exe` and runs Mi
 
 ### Known limitations
 
-Also tracked under "Open items" in the [roadmap](docs/roadmap.md).
+Tracked as [issues](https://github.com/onexay/msl/issues); planned work is in the [milestones](https://github.com/onexay/msl/milestones).
 
 - **x86_64 distros:** not supported yet. arm64 images only in practice. An untested Rosetta path activates only if Rosetta is already installed (msl never installs it); milestone 6 plans qemu-user instead.
 - **Memory:** returned to macOS only when the VM stops (`vmIdleTimeout`). Virtualization.framework's balloon doesn't give pages back, so `autoMemoryReclaim` has no effect.
