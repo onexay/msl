@@ -34,7 +34,7 @@ $ build/bin/msl --help
 | `scripts/` | build, initrd, packaging, publishing, licence and GPL-source tools; `install.sh` is at the root |
 | `Tests/` | `MSLCoreTests` (swift-testing) and `e2e/` suites driving a real `msl` |
 | `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/ARCHITECTURE.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
-| `docs/dev/` | development log (`progress.md`) and the milestone 0 spike |
+| `docs/dev/` | development log (`progress.md`) and the Hydrogen (milestone 0) spike |
 
 ## Test
 

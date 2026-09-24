@@ -157,3 +157,4 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Milestones created from the roadmap: M0–M5 (closed), M6 x86_64 via qemu-user, M7 VS Code integration, and Later.
 - Open items became issues #1–#6: the NFS view exposure (security), notarisation, `--resize`, testing x86_64 distros (M6), the vsock Apple report and dial-back, and `~/MSL` auto-start (Later).
 - Removed `docs/roadmap.md` and `docs/dev/plan.md`, and renamed `docs/architecture.md` to `docs/ARCHITECTURE.md`. References now point to the milestones and issues.
+- Milestones renamed to elements, with short goals only: Hydrogen … Carbon (done), Nitrogen (x86_64 via qemu-user), Oxygen (VS Code), and Fluorine (was "Later"). The detail moved into issues: #7–#9 and #4 (Nitrogen), #10–#12 (Oxygen), and #13–#17 plus #6 (Fluorine). Docs refer to milestones by name.

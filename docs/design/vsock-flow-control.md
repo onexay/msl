@@ -1,6 +1,6 @@
 # vsock flow control on Virtualization.framework
 
-Status: fixed in milestone 4 (2026-09-24).
+Status: fixed in the Boron milestone (2026-09-24).
 Code: `guest/src/framed.rs` and `Sources/MSLService/FramedBridge.swift`.
 Regression checks: `Tests/e2e/m4.sh`, "Flow control" section.
 
@@ -16,7 +16,7 @@ Guest-initiated connections, accepted through a `VZVirtioSocketListener`, do **n
 
 ## How it showed up
 
-The milestone 4 end-to-end test hung partway through, at `msl --export Ubuntu-24.04 - | msl --import Second <dir> -`.
+The Boron end-to-end test (`Tests/e2e/m4.sh`) hung partway through, at `msl --export Ubuntu-24.04 - | msl --import Second <dir> -`.
 
 What we saw:
 - **msld:** every request (`--status`, `-l`, run, import) blocked. A stack sample showed each thread waiting on a gRPC reply from the guest's mini-init.
@@ -39,7 +39,7 @@ What we saw:
 | Export piped into import (both directions, and export outruns import) | **Frozen** |
 | `msl -e sh -c 'head -c 200000000 /dev/zero' \| (sleep 30; cat >/dev/null)` | **Frozen** from t+3 s, **still frozen after the reader drained** |
 
-The last row is the minimal reproduction. The only ingredient is a host-side consumer that stops reading a guest→host stream for a while. That happens routinely (`msl cat bigfile | less`, a terminal paused with Ctrl-S, a slow network client behind localhost forwarding), so this was a latent bug from milestone 1 onwards.
+The last row is the minimal reproduction. The only ingredient is a host-side consumer that stops reading a guest→host stream for a while. That happens routinely (`msl cat bigfile | less`, a terminal paused with Ctrl-S, a slow network client behind localhost forwarding), so this was a latent bug from the Helium milestone onwards.
 
 ## Connection direction matters (verified 2026-09-24)
 

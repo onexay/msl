@@ -21,4 +21,4 @@
 
 **Development history**
 - [Progress log](dev/progress.md): the timestamped development diary
-- [Spike results](dev/spike-results.md) (milestone 0; code in [dev/spike](dev/spike/))
+- [Spike results](dev/spike-results.md) (Hydrogen milestone; code in [dev/spike](dev/spike/))
