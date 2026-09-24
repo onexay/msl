@@ -317,15 +317,84 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     Ok(pb::StartDistroReply { agent_port: port, systemd, start_seconds: t0.elapsed().as_secs_f64() })
 }
 
+/// How long a distro gets to shut down cleanly before it is killed.
+const STOP_GRACE: Duration = Duration::from_secs(10);
+
 fn stop_blocking(id: &str) {
-    let r = running().lock().unwrap().remove(id);
-    if let Some(r) = r {
-        // Killing the pidns init tears down the whole namespace.
-        unsafe { libc::kill(r.pid, libc::SIGKILL) };
-        let (lock, cv) = &*r.exited;
-        let guard = lock.lock().unwrap();
-        let _ = cv.wait_timeout_while(guard, Duration::from_secs(10), |done| !*done);
+    stop_many(&[id.to_string()]);
+}
+
+/// Stop distros cleanly, all at once: a systemd distro gets SIGRTMIN+4 (systemd
+/// powers off, so services and journald flush and close their files); any
+/// other distro gets SIGTERM for every process in its cgroup. Whatever is still
+/// running after STOP_GRACE is killed with its pid namespace.
+fn stop_many(ids: &[String]) {
+    let stopping: Vec<(String, Running)> = {
+        let mut map = running().lock().unwrap();
+        ids.iter().filter_map(|id| map.remove(id).map(|r| (id.clone(), r))).collect()
+    };
+    for (id, r) in &stopping {
+        if r.systemd {
+            unsafe { libc::kill(r.pid, libc::SIGRTMIN() + 4) };
+        } else {
+            for pid in user_pids(&cgroup_of(id)) {
+                unsafe { libc::kill(pid, libc::SIGTERM) };
+            }
+        }
     }
+    let deadline = Instant::now() + STOP_GRACE;
+    for (id, r) in &stopping {
+        if !r.systemd {
+            // Without systemd, msl's own init never exits by itself: wait for
+            // the user's processes, then end the namespace.
+            while !user_pids(&cgroup_of(id)).is_empty() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            if user_pids(&cgroup_of(id)).is_empty() {
+                unsafe { libc::kill(r.pid, libc::SIGKILL) };
+            }
+        }
+        if !wait_exited(r, deadline.saturating_duration_since(Instant::now())) {
+            sys::log(&format!("distro {id} did not stop within {}s; killing it", STOP_GRACE.as_secs()));
+            // Killing the pidns init tears down the whole namespace.
+            unsafe { libc::kill(r.pid, libc::SIGKILL) };
+            wait_exited(r, Duration::from_secs(10));
+        }
+    }
+}
+
+fn wait_exited(r: &Running, timeout: Duration) -> bool {
+    let (lock, cv) = &*r.exited;
+    let guard = lock.lock().unwrap();
+    *cv.wait_timeout_while(guard, timeout, |done| !*done).unwrap().0
+}
+
+/// The distro's own processes: everything in its cgroup except msl's
+/// (msl-distro-init and the agent run this same binary).
+fn user_pids(dir: &Path) -> Vec<i32> {
+    use std::os::unix::fs::MetadataExt;
+    let me = std::fs::metadata("/proc/self/exe").map(|m| (m.dev(), m.ino())).ok();
+    cgroup_pids(dir)
+        .into_iter()
+        .filter(|pid| std::fs::metadata(format!("/proc/{pid}/exe")).map(|m| (m.dev(), m.ino())).ok() != me)
+        .collect()
+}
+
+/// Every process in a cgroup subtree.
+fn cgroup_pids(dir: &Path) -> Vec<i32> {
+    let mut pids: Vec<i32> = std::fs::read_to_string(dir.join("cgroup.procs"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                pids.extend(cgroup_pids(&e.path()));
+            }
+        }
+    }
+    pids
 }
 
 type EventStream<T> = Pin<Box<dyn futures_util::Stream<Item = Result<T, Status>> + Send>>;
@@ -556,9 +625,7 @@ impl MiniInit for MiniInitService {
     async fn shutdown(&self, _: Request<pb::Empty>) -> Result<Response<pb::Empty>, Status> {
         blocking(|| {
             let ids: Vec<String> = running().lock().unwrap().keys().cloned().collect();
-            for id in ids {
-                stop_blocking(&id);
-            }
+            stop_many(&ids);
             nix::unistd::sync();
             // Keep data.img compact: hand freed blocks back to the Mac.
             let _ = sys::fstrim(DATA);

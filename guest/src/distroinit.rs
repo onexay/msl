@@ -82,7 +82,8 @@ pub fn main(args: &[String]) -> sys::Result<()> {
     sys::write_fd_line(fd, if systemd { "systemd 1" } else { "systemd 0" });
 
     if systemd {
-        let masked = crate::compat::mask_units();
+        let mut masked = crate::compat::mask_units();
+        masked.extend(crate::compat::mask_links());
         if !masked.is_empty() {
             sys::log(&format!("{}: masked {}", cfg.name, masked.join(", ")));
         }

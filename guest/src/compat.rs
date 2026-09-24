@@ -31,6 +31,31 @@ pub fn mask_units() -> Vec<String> {
     masked
 }
 
+/// systemd's catch-all `.link` file. It gives the NIC a "predictable" name
+/// (`eth0` -> `enp0s1`). msl passes `net.ifnames=0` on the kernel command line,
+/// but systemd 259+ sees the distro's pid namespace as a container and then
+/// reads boot options from PID 1's arguments instead. Every distro's udev acts
+/// on the one shared NIC, and WSL users and scripts expect `eth0`.
+pub const MASKED_LINKS: &[&str] = &["99-default.link"];
+
+/// Runtime-mask the `.link` files above (`/run/systemd/network/<file> -> /dev/null`),
+/// unless the admin has their own copy in /etc. Must run before systemd starts.
+pub fn mask_links() -> Vec<String> {
+    let run = Path::new("/run/systemd/network");
+    let mut masked = Vec::new();
+    for link in MASKED_LINKS {
+        let shipped = ["/usr/lib/systemd/network", "/lib/systemd/network"].iter().any(|d| Path::new(d).join(link).exists());
+        if !shipped || Path::new("/etc/systemd/network").join(link).exists() {
+            continue;
+        }
+        let _ = std::fs::create_dir_all(run);
+        if std::os::unix::fs::symlink("/dev/null", run.join(link)).is_ok() {
+            masked.push(link.to_string());
+        }
+    }
+    masked
+}
+
 /// OOBE commands replaced by msl's own (`/run/msl/init msl-oobe`), because the
 /// original only adds Windows-specific wording to an otherwise generic flow.
 const OOBE_OVERRIDES: &[&str] = &["/usr/lib/wsl/oobe.sh"]; // Debian

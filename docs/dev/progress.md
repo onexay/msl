@@ -168,3 +168,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - The name is now "Modern Subsystem for Linux". Deleted the v0.1.0 release and tag, merged the changelog into a single 0.1.1 entry, and set the version to 0.1.1 everywhere.
 - Published **v0.1.1** (Latest): tarball + .sha256, .pkg, update.json and the BusyBox source. Not PGP-signed, because the key isn't on the build Mac.
 - Checked the public one-liner install: msl 0.1.1 with kernel 6.18.15-msl, the new name in CLI output, LICENSE/NOTICE/licences in share/doc/msl, and `msl --update` reporting it's current.
+
+## 2026-09-24 12:31: clean distro stop (#19) and eth0 on systemd 259 (#20)
+- A user reported unclean journals and `eth0` renamed to `enp0s1` in Ubuntu 26.04.
+- #19: stopping used `SIGKILL`. Now a systemd distro gets `SIGRTMIN+4` (poweroff), and other distros' processes get `SIGTERM`, with the namespace ending once only msl's processes are left. Anything left after 10 s is killed. `--shutdown` stops distros in parallel. Measured: Ubuntu 26.04 stops in 3.2 s with a clean journal; a distro without systemd stops in 0.07 s; a process ignoring TERM is killed at 10 s.
+- #20: systemd 259 treats the pid namespace as a container and ignores `net.ifnames=0`. The compat layer now runtime-masks `99-default.link`, and the NIC stays `eth0`.
+- e2e m1–m5 all pass (40/25/24/45/20).

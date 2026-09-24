@@ -148,8 +148,9 @@ msl has no distro builds of its own. A WSL image is a plain rootfs tarball with 
   - If it's missing or exits non-zero, msl uses its **own OOBE**: prompt for a username (defaulting to the macOS short name), create it as UID 1000, add it to the sudo/wheel group, and set it as the default user.
   - OOBE commands that only add Windows wording are replaced by msl's built-in OOBE (`guest/src/compat.rs` `OOBE_OVERRIDES`; currently Debian's `oobe.sh`).
 - **cloud-init:** Ubuntu's is `disabled-by-generator` on msl (spike finding), so no override is needed.
-- **Kernel command line:** `net.ifnames=0`, otherwise the distro's udev renames the shared NIC `eth0` → `enp0s1` (spike finding).
-- **Readiness:** a systemd distro is reported `Running` only after `/run/systemd/private` exists and `systemctl is-system-running --wait` has returned. Stopping a distro removes its cgroup tree (`msl/<name>`); otherwise a restart fails with `EBUSY`.
+- **Interface name:** the NIC stays `eth0`. The kernel command line has `net.ifnames=0` (spike finding), but systemd 259+ detects the distro's pid namespace as a container and then reads boot options from PID 1's arguments instead. So `99-default.link` is also runtime-masked (`/run/systemd/network/99-default.link` → `/dev/null`; `MASKED_LINKS` in `guest/src/compat.rs`), unless the image has its own in `/etc/systemd/network`.
+- **Readiness:** a systemd distro is reported `Running` only after `/run/systemd/private` exists and `systemctl is-system-running --wait` has returned.
+- **Stopping** (`--terminate`, idle timeout, `--shutdown`) is clean. A systemd distro gets `SIGRTMIN+4` and powers off, so services and journald close their files. Otherwise every process in the distro's cgroup gets `SIGTERM`, and the namespace ends once only msl's own processes are left. Anything still running after 10 s is killed with the pid namespace. `--shutdown --force` stops the VM immediately. Stopping also removes the distro's cgroup tree (`msl/<name>`); otherwise a restart fails with `EBUSY`.
 
 **Later:** msl's own distro list (`MSL_DISTRIBUTION_LIST_URL`) combining the same WSL tarballs with OCI images (`docker.io/library/*`, which need systemd/init packages added). An `msl-setup` package only if the upstream WSL-specific pieces cause real problems.
 
