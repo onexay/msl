@@ -178,7 +178,7 @@ Releases: msl ships as `v<version>` releases (the Latest one, used by `install.s
 | `proto/msl/v1/msl.proto` | host ↔ guest gRPC protocol |
 | `kernel/` | kernel config (Apple's + `msl.fragment`) and build script |
 | `docs/` | [plan](docs/PLAN.md), [comparison](docs/COMPARISON.md), [spike results](docs/spike-results.md), [vsock flow control](docs/vsock-flow-control.md), [memory reclaim](docs/memory-reclaim.md), [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
-| `PROGRESS.md` | development log |
+| `docs/dev/` | development log (`progress.md`) and the milestone 0 spike |
 
 ### License
 

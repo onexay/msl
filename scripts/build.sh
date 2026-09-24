@@ -36,5 +36,5 @@ install_bin() {  # install_bin <src> <name> [entitlements]
   mv -f "$tmp" "$OUT/bin/$2"
 }
 install_bin "$BIN/msl" msl
-install_bin "$BIN/msld" msld "$ROOT/msld.entitlements"
+install_bin "$BIN/msld" msld "$ROOT/Sources/msld/msld.entitlements"
 echo "built: build/bin/{msl,msld} build/share/msl/{Image,initrd.gz} (kernel $(cat "$OUT/share/msl/kernel.version"))"

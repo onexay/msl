@@ -35,7 +35,7 @@ cp -R docs/licenses "$STAGE/share/doc/msl/licenses"
 
 if [ -n "${MSL_SIGN_IDENTITY:-}" ]; then
   codesign --force --options runtime --timestamp -s "$MSL_SIGN_IDENTITY" "$STAGE/bin/msl"
-  codesign --force --options runtime --timestamp --entitlements msld.entitlements -s "$MSL_SIGN_IDENTITY" "$STAGE/libexec/msl/msld"
+  codesign --force --options runtime --timestamp --entitlements Sources/msld/msld.entitlements -s "$MSL_SIGN_IDENTITY" "$STAGE/libexec/msl/msld"
 fi
 codesign -v "$STAGE/bin/msl" "$STAGE/libexec/msl/msld"
 

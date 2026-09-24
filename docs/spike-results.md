@@ -6,19 +6,19 @@ Date: 2026-09-24. Host: macOS 27.0, Apple Silicon, arm64 only.
 - **`guest/`**: the Rust `msl-guest` binary, statically linked for `aarch64-unknown-linux-musl` with `rust-lld` (no zig, no C toolchain). It is **660 KB** stripped, and the initrd is 359 KB.
   - It works as mini-init (PID 1) and as `msl-distro-init` (namespace setup plus the in-distro agent).
   - The control protocol is newline-delimited JSON over vsock. This is spike-only; gRPC comes in milestone 1.
-- **`spike/host/`**: the Swift `msl-spike` VM runner.
+- **`docs/dev/spike/host/`**: the Swift `msl-spike` VM runner.
   - Uses Virtualization.framework, with ContainerizationEXT4 formatting the data disk.
   - Bridges guest vsock ports to Unix sockets.
   - Has a control socket for USB attach/detach and the balloon.
-- **`spike/mslctl.py`**: a client for the guest control socket.
+- **`docs/dev/spike/mslctl.py`**: a client for the guest control socket.
 - **`kernel/`**: Apple's 6.18.15 config plus `msl.fragment` (USB/XHCI/usb-storage, quota, nfsd). It is built in a Linux container with Apple's `container` tool.
 
 Reproduce:
 ```sh
-spike/build.sh && spike/run.sh --cmdline-extra net.ifnames=0 &
-spike/mslctl.py 1024 '{"op":"import","name":"ubuntu-24.04","file":"/mnt/share/ubuntu-24.04.wsl"}'
-spike/mslctl.py 1024 '{"op":"start","name":"ubuntu-24.04","systemd":true}'
-spike/mslctl.py 2000 '{"op":"exec","argv":["systemctl","is-system-running","--wait"]}'
+docs/dev/spike/build.sh && docs/dev/spike/run.sh --cmdline-extra net.ifnames=0 &
+docs/dev/spike/mslctl.py 1024 '{"op":"import","name":"ubuntu-24.04","file":"/mnt/share/ubuntu-24.04.wsl"}'
+docs/dev/spike/mslctl.py 1024 '{"op":"start","name":"ubuntu-24.04","systemd":true}'
+docs/dev/spike/mslctl.py 2000 '{"op":"exec","argv":["systemctl","is-system-running","--wait"]}'
 ```
 
 ## Results
