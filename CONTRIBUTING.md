@@ -43,7 +43,7 @@ Run what your change touches, and say in the pull request what you ran:
 ```console
 $ swift test                       # host unit tests
 $ scripts/test-guest.sh            # guest unit tests (in Linux, via Apple's container)
-$ Tests/e2e/m1.sh … m5.sh          # end-to-end, against a real VM
+$ Tests/e2e/m1.sh … m5.sh, neon.sh # end-to-end, against a real VM
 $ Tests/e2e/release.sh             # packaging, install, --update, --uninstall
 ```
 

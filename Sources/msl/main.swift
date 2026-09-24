@@ -10,10 +10,21 @@ let failureExit: Int32 = 255  // wsl.exe returns -1 on failure
 func out(_ s: String) { FileHandle.standardOutput.write((s + "\n").data(using: .utf8)!) }
 func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
 
+/// `--json`: query results as JSON on stdout, errors as JSON on stderr.
+nonisolated(unsafe) var jsonMode = false
+
 func fail(_ message: String, _ code: String) -> Never {
     TTY.restore()
-    out(Messages.failure(message, code))
+    if jsonMode {
+        FileHandle.standardError.write(Data(JSONOutput.encode(JSONOutput.Failure(error: .init(message: message, code: code)), pretty: isatty(2) != 0).utf8 + [0x0a]))
+    } else {
+        out(Messages.failure(message, code))
+    }
     exit(failureExit)
+}
+
+func outJSON<T: Encodable>(_ value: T) {
+    out(JSONOutput.encode(value, pretty: isatty(1) != 0))
 }
 
 // MARK: - terminal
@@ -179,7 +190,12 @@ func openOutput(_ file: String) -> Int32 {
 
 let command: CLICommand
 do {
-    command = try Arguments.parse(Array(CommandLine.arguments.dropFirst()))
+    let invocation = try Arguments.parseInvocation(Array(CommandLine.arguments.dropFirst()))
+    command = invocation.command
+    jsonMode = invocation.json
+} catch ArgumentError.jsonUnsupported {
+    jsonMode = true
+    fail(Messages.jsonUnsupported, ErrorCode.invalidArgument)
 } catch ArgumentError.invalid(let a) {
     fail(Messages.invalidCommandLine(a), ErrorCode.invalidArgument)
 } catch ArgumentError.missingValue(let a) {
@@ -197,19 +213,39 @@ case .version:
     expectOK(reply)
     guard case .versionInfo(let kernel) = reply else { exit(failureExit) }
     let os = ProcessInfo.processInfo.operatingSystemVersion
-    out(Messages.versions(msl: mslVersion, kernel: kernel, macOS: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"))
+    let macOS = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+    if jsonMode {
+        outJSON(JSONOutput.Version(msl: mslVersion, kernel: kernel, macOS: macOS, prefix: Installation.prefix?.path))
+    } else {
+        out(Messages.versions(msl: mslVersion, kernel: kernel, macOS: macOS))
+    }
 
 case .status:
-    printConfigWarnings()
+    let warnings = MSLConfig.load().warnings
+    if !jsonMode { printConfigWarnings() }
     let reply = request(.status)
     expectOK(reply)
     guard case .status(let ds, let vm) = reply else { exit(failureExit) }
     guard let def = ds.first(where: \.isDefault) else { fail(Messages.noDefaultDistro, ErrorCode.noDistros) }
-    out(StatusFormat.render(defaultDistro: def.name, vm))
+    if jsonMode {
+        outJSON(JSONOutput.status(defaultDistro: def.name, vm, warnings: warnings))
+    } else {
+        out(StatusFormat.render(defaultDistro: def.name, vm))
+    }
 
 case .list(let spec):
     if spec.online {
-        out(Online.manifest().onlineListing(rosetta: Online.rosettaInstalled))
+        let manifest = Online.manifest()
+        if jsonMode {
+            outJSON(JSONOutput.online(manifest, rosetta: Online.rosettaInstalled))
+        } else {
+            out(manifest.onlineListing(rosetta: Online.rosettaInstalled))
+        }
+        exit(0)
+    }
+    if jsonMode {
+        guard let list = JSONOutput.list(distros(), spec) else { fail(Messages.noDefaultDistro, ErrorCode.noDistros) }
+        outJSON(list)
         exit(0)
     }
     let (text, isError) = ListFormat.render(distros(), spec)

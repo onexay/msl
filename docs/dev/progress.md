@@ -177,3 +177,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-24 12:35: v0.1.2
 - Published **v0.1.2** (Latest) with the fixes for #19 and #20. Checked the upgrade from the public one-liner: installed v0.1.1, `msl --update` moved it to 0.1.2, and a second `--update` reports it's current.
+
+## 2026-09-25 00:10: Neon: --json for the query commands
+- `--json` works with `--list` (all variants), `--list --online`, `--status` and `--version`. The models are in `MSLCore/JSONOutput.swift`, and `Arguments.parseInvocation` accepts the flag first or among those commands' options, never inside a Linux command line. Other commands reject it with `Msl/E_INVALIDARG`.
+- Conventions: one object on stdout with `schema: 1`, sorted camelCase keys, raw numbers, no nulls; pretty on a terminal, compact when piped. Errors go to stderr as JSON, with wsl.exe's exit codes (e.g. `-l --json` with nothing installed exits 255). In `--status`, `.mslconfig` warnings go into the JSON instead of stderr.
+- Docs: `docs/json.md` (examples from real output), `--help`, README, CHANGELOG.
+- Tests: 5 new unit tests (24 in total), a new `Tests/e2e/neon.sh` (19/19), and m1 40/40 and m2 25/25 still pass.

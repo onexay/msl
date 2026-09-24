@@ -216,3 +216,72 @@ import Testing
         #expect(StatusFormat.bytes(1536 << 20) == "1.5 GB" && StatusFormat.timeout(500) == "500 ms")
     }
 }
+
+@Suite struct JSONOutputTests {
+    let distros = [DistroSummary(name: "Ubuntu", id: "u-1", running: true, version: 2, isDefault: true),
+                   DistroSummary(name: "Debian", id: "d-1", running: false, version: 2, isDefault: false)]
+
+    @Test func parsesJSONFlagOnlyForQueries() throws {
+        #expect(try Arguments.parseInvocation(["--list", "-v", "--json"]) == Invocation(command: .list({ var s = ListSpec(); s.verbose = true; return s }()), json: true))
+        #expect(try Arguments.parseInvocation(["--json", "--status"]) == Invocation(command: .status, json: true))
+        #expect(try Arguments.parseInvocation(["-v", "--json"]).json)
+        #expect(try Arguments.parseInvocation(["--list"]).json == false)
+        // Other commands reject it, however it's placed.
+        #expect(throws: ArgumentError.jsonUnsupported) { try Arguments.parseInvocation(["--terminate", "Ubuntu", "--json"]) }
+        #expect(throws: ArgumentError.jsonUnsupported) { try Arguments.parseInvocation(["--json", "-e", "ls"]) }
+        #expect(throws: ArgumentError.jsonUnsupported) { try Arguments.parseInvocation(["--json"]) }
+        // Inside a Linux command line it belongs to the program.
+        let run = try Arguments.parseInvocation(["-d", "Ubuntu", "-e", "jq", "--json"])
+        #expect(run.json == false)
+        if case .run(let spec) = run.command { #expect(spec.argv == ["jq", "--json"]) } else { Issue.record("expected run") }
+    }
+
+    @Test func listFollowsFiltersAndWSLErrors() throws {
+        var spec = ListSpec()
+        #expect(JSONOutput.list(distros, spec)?.distributions.map(\.name) == ["Ubuntu", "Debian"])
+        spec.running = true
+        let running = try #require(JSONOutput.list(distros, spec))
+        #expect(running.distributions == [.init(name: "Ubuntu", id: "u-1", state: "Running", version: 2, default: true)])
+        // Nothing installed is an error (as in wsl.exe); nothing running is an empty list.
+        #expect(JSONOutput.list([], ListSpec()) == nil)
+        #expect(JSONOutput.list([distros[1]], spec)?.distributions == [])
+        let text = JSONOutput.encode(running, pretty: false)
+        #expect(text == #"{"distributions":[{"default":true,"id":"u-1","name":"Ubuntu","state":"Running","version":2}],"schema":1}"#)
+    }
+
+    @Test func onlineMarksArchitectures() throws {
+        let json = """
+            {"ModernDistributions": {"Ubuntu": [
+              {"Name": "Ubuntu", "FriendlyName": "Ubuntu", "Default": true, "Arm64Url": {"Url": "u", "Sha256": "s"}, "Amd64Url": {"Url": "u", "Sha256": "s"}}],
+             "arch": [{"Name": "archlinux", "FriendlyName": "Arch Linux", "Amd64Url": {"Url": "u", "Sha256": "s"}}]},
+             "Default": "Ubuntu"}
+            """
+        let m = try Manifest.parse(Data(json.utf8))
+        #expect(JSONOutput.online(m, rosetta: false).distributions.map(\.name) == ["Ubuntu"])
+        let all = JSONOutput.online(m, rosetta: true).distributions
+        #expect(all[0] == .init(name: "Ubuntu", friendlyName: "Ubuntu", architectures: ["arm64", "x86_64"], emulated: false, default: true))
+        #expect(all[1].emulated && all[1].architectures == ["x86_64"] && !all[1].default)
+    }
+
+    @Test func statusHasRawValuesAndPendingChanges() {
+        let a = VMSettings(memoryBytes: 8 << 30, processors: 4, kernel: "k", kernelCommandLine: "c",
+                           localhostForwarding: true, dnsTunneling: true, vmIdleTimeoutMs: 60_000, instanceIdleTimeoutMs: 15_000)
+        var b = a
+        b.memoryBytes = 4 << 30
+        b.dnsTunneling = false
+        let s = VMStatus(running: true, uptimeSeconds: 1.5, effective: a, configured: b, configPath: "/x/.mslconfig", configExists: true)
+        let j = JSONOutput.status(defaultDistro: "Ubuntu", s, warnings: ["bad key"])
+        #expect(j.vm.uptimeMs == 1500 && j.vm.settings == a && j.warnings == ["bad key"])
+        #expect(j.vm.pendingChanges == [.init(setting: "dnsTunneling", from: "true", to: "false"),
+                                        .init(setting: "memoryBytes", from: "\(8 << 30)", to: "\(4 << 30)")])
+        // Stopped: no uptime field at all, no pending changes.
+        let stopped = JSONOutput.status(defaultDistro: "Ubuntu", VMStatus(running: false, uptimeSeconds: nil, effective: nil, configured: b, configPath: "/x", configExists: false), warnings: [])
+        let text = JSONOutput.encode(stopped, pretty: false)
+        #expect(!text.contains("uptimeMs") && !text.contains("null") && text.contains(#""schema":1"#) && stopped.vm.pendingChanges.isEmpty)
+    }
+
+    @Test func errorShape() {
+        let text = JSONOutput.encode(JSONOutput.Failure(error: .init(message: "No.", code: ErrorCode.noDistros)), pretty: false)
+        #expect(text == #"{"error":{"code":"Msl/Service/MSL_E_DEFAULT_DISTRO_NOT_FOUND","message":"No."},"schema":1}"#)
+    }
+}

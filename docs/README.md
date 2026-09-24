@@ -3,6 +3,7 @@
 **Using msl**
 - [README](../README.md): install, quick start, known limitations
 - [Configuration](configuration.md): `.mslconfig`, `wsl.conf`/`msl.conf`, environment variables
+- [JSON output](json.md): `--json` for `--list`, `--status` and `--version`
 - [Comparison](comparison.md): msl next to WSL, OrbStack, Lima, Apple `container` and others
 - [Security](../SECURITY.md): reporting, release verification, security model
 - [Changelog](../CHANGELOG.md)

@@ -88,9 +88,51 @@ public enum CLICommand: Equatable, Sendable {
 public enum ArgumentError: Error, Equatable {
     case invalid(String)
     case missingValue(String)
+    /// `--json` with a command that doesn't print data.
+    case jsonUnsupported
+}
+
+/// A parsed command line plus msl's own output options.
+public struct Invocation: Equatable, Sendable {
+    public var command: CLICommand
+    /// `--json`: machine-readable output (query commands only).
+    public var json = false
+    public init(command: CLICommand, json: Bool = false) { self.command = command; self.json = json }
 }
 
 public enum Arguments {
+    /// The commands that take `--json`.
+    static let queryArguments: Set<String> = ["--list", "-l", "--status", "--version", "-v"]
+
+    /// `parse`, plus `--json` (an msl extension; wsl.exe has none). It is
+    /// accepted as the first argument, or among the options of --list,
+    /// --status and --version. Never inside a Linux command line.
+    public static func parseInvocation(_ args: [String]) throws -> Invocation {
+        var args = args
+        var json = false
+        if args.first == "--json" {
+            json = true
+            args.removeFirst()
+            if args.isEmpty { throw ArgumentError.jsonUnsupported }
+        } else if let first = args.first, queryArguments.contains(first), let i = args.firstIndex(of: "--json") {
+            json = true
+            args.remove(at: i)
+        }
+        let command: CLICommand
+        do {
+            command = try parse(args)
+        } catch ArgumentError.invalid("--json") {
+            throw ArgumentError.jsonUnsupported  // e.g. `--terminate X --json`
+        }
+        if json {
+            switch command {
+            case .list, .status, .version: break
+            default: throw ArgumentError.jsonUnsupported
+            }
+        }
+        return Invocation(command: command, json: json)
+    }
+
     public static func parse(_ args: [String]) throws -> CLICommand {
         guard let first = args.first else { return .run(RunSpec()) }
         var rest = Array(args.dropFirst())

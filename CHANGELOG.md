@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+- `--json` for the query commands (`--list` and its variants, `--list --online`, `--status`, `--version`). Errors go to stderr as JSON, with wsl.exe's exit codes. See [docs/json.md](docs/json.md).
+
 ## [0.1.2] - 2026-09-24
 
 ### Fixed

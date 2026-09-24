@@ -45,6 +45,7 @@ public enum Messages {
     public static func invalidDistributionName(_ name: String) -> String { "Invalid distribution name: \"\(name)\"." }
     public static func unsupportedOnMacOS(_ arg: String) -> String { "'\(arg)' is not supported on macOS." }
     public static func notImplemented(_ arg: String) -> String { "'\(arg)' is not implemented yet in this version of \(exe)." }
+    public static let jsonUnsupported = "--json is only supported with --list, --status and --version."
     public static let wsl1NotSupported = "WSL1-style distributions are not supported on macOS; only version 2 is available."
 
     /// How msl reports a failure: the message, plus wsl.exe's `Error code: …` line
@@ -127,6 +128,9 @@ public enum Messages {
 
             --version, -v
                 Display version information.
+
+            --json
+                With --list, --status or --version: print JSON instead of text.
 
         Arguments for managing distributions in \(product):
 

@@ -83,6 +83,7 @@ $ echo $MSL_DISTRO_NAME
 - **Files from the Mac:** each distro's filesystem at `~/MSL/<distro>` (NFS over vsock), listed in Finder › Locations under its own name and logo, while the VM runs.
 - **Disks and debugging:** `--mount`/`--unmount` (images at `/mnt/msl/<name>` in every distro), `--debug-shell`, `--manage --compact`.
 - **Service:** `--update`, `--uninstall`, `.mslconfig` (the `.wslconfig` equivalent), `--status`. Errors print just the message; set `MSL_ERROR_CODES=1` to add wsl.exe-style `Error code:` lines.
+- **Scripting:** `--json` on `--list`, `--list --online`, `--status` and `--version` prints JSON ([docs/json.md](docs/json.md)).
 
 msl never runs macOS binaries inside distros: Linux sees only Linux binaries. `npm`, `node-gyp`, `configure` and friends can only find Linux toolchains, so build output is always Linux ELF, even under `/mnt/mac`.
 
