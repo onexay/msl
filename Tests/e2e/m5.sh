@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Milestone 5 end-to-end test: --debug-shell, --mount/--unmount, --manage --compact/--resize,
 # --update/--uninstall on a development build, replaced-binary handling.
 #   Tests/e2e/m5.sh [path/to/msl]

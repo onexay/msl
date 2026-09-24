@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // wsl.exe-compatible command line parsing.
 //
 // Mirrors `wsl.exe [Argument] [Options...] [CommandLine]`: a management

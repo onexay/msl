@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Fail if the version in VERSION, Version.swift, guest/Cargo.toml and guest/Cargo.lock disagree.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

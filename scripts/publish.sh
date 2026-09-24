@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Package and publish msl <version> as GitHub release v<version>, marked Latest:
 # tarball + .sha256 (install.sh), .pkg, update.json (msl --update).
 #   [MSL_GPG_KEY=<key id>] scripts/publish.sh <version> [--prerelease]

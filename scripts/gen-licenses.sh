@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Regenerate the third-party licence texts in docs/licenses/:
 #   rust-dependencies.txt   crates linked into msl-guest (cargo-about; guest/about.toml)
 #   swift-dependencies.txt  SwiftPM packages msl/msld are built from (Package.resolved)

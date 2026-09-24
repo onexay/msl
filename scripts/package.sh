@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Build a release: dist/msl-<version>-macos-arm64.tar.gz (+ .sha256, for
 # install.sh), dist/msl-<version>.pkg and dist/update.json (for `msl --update`).
 #

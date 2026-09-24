@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include "msl_support.h"
 #include <string.h>
 #include <sys/socket.h>

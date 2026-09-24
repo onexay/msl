@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Build guest (arm64 musl), initrd, and the signed spike host.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)

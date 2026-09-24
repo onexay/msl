@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! macOS <-> Linux path translation, `mslpath` (the `wslpath` equivalent) and
 //! `MSLENV` (the `WSLENV` equivalent, macOS -> Linux only).
 

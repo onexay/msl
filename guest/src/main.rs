@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `msl-guest`: a single static multi-call binary for the MSL utility VM.
 //!
 //! Role is chosen by argv[0] (basename):

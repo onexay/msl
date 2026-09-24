@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! DNS tunneling (WSL's `dnsTunneling`): a stub resolver on 10.255.255.254:53
 //! (UDP and TCP) that relays every query to the Mac over vsock, where msld
 //! answers it with macOS's own resolver (VPN/split DNS, /etc/resolver, .local).

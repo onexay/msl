@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Networking helpers: listening-port watcher, the localhost forwarder, and
 //! /etc/hosts generation.
 

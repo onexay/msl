@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Release path: package 0.1.0 and 0.1.1, install the 0.1.0 tarball into a scratch
 # prefix, run a distro from it, --update to 0.1.1 through dist/update.json, --uninstall.
 #   Tests/e2e/release.sh

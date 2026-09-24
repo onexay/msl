@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The in-distro Agent gRPC service.
 
 use crate::pb::{self, agent_server::Agent};

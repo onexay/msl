@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // msl: the wsl.exe-compatible command line.
 import Darwin
 import Foundation

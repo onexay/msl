@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! gRPC-over-vsock plumbing and one-shot vsock data ports.
 
 use crate::sys;

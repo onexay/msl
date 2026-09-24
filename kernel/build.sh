@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Build the MSL kernel inside a Linux container (Apple `container`).
 # Output: kernel/out/Image
 set -eu

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Download the prebuilt MSL kernel (Image + config) from the GitHub release
 # instead of building it (kernel/build.sh). The tag is kernel/release.tag;
 # files are verified against kernel/release.sha256.

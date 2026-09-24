@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 
 /// `~/.mslconfig`, the `.wslconfig` equivalent (same INI sections and keys).

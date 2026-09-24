@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Write a gzipped newc cpio initramfs: /dev, /dev/console (c 5:1), /init.
 Done in Python so no root/mknod is needed on macOS."""
 import gzip, os, sys, time

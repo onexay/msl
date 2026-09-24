@@ -1,4 +1,5 @@
 // swift-tools-version: 6.0
+// SPDX-License-Identifier: Apache-2.0
 // Milestone 0 spike: boots the utility VM and bridges guest vsock ports to
 // Unix sockets so scripts can drive the guest. Not the real msld.
 import PackageDescription

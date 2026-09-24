@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The ~/MSL NFS filesystem: `MirrorFS` plus an in-memory store for macOS
 //! metadata files.
 //!

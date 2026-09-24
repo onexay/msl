@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #ifndef MSL_SUPPORT_H
 #define MSL_SUPPORT_H
 #include <stddef.h>

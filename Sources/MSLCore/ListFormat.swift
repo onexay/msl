@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /// `msl --list` output, laid out like wsl.exe.
 public enum ListFormat {
     public static func render(_ distros: [DistroSummary], _ spec: ListSpec) -> (text: String, isError: Bool) {

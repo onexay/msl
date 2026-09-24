@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Spike client.
   mslctl.py <port> '<json request>'     guest control (1024) or a distro agent (2000+)
   mslctl.py ctl '<command>'             host control socket (usb-attach, balloon, state, stop)

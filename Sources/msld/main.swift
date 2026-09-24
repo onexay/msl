@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import Foundation
 // msld: the MSL service (wslservice.exe equivalent). Started on demand by msl.
 import MSLService

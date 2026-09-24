@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Thin syscall helpers shared by mini-init and distro-init.
 
 use nix::mount::{MsFlags, mount};

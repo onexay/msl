@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Rootfs import/export as tar streams (plain / gzip / xz / zstd), pure Rust.
 
 use crate::pb::ExportFormat;

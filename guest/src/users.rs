@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! /etc/passwd and /etc/group lookups by file parsing (no NSS: msl-guest is a static musl binary).
 
 #[derive(Debug, Clone)]
