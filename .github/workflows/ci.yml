@@ -1,0 +1,44 @@
+# Unit tests and lints. The e2e suites (Tests/e2e) need a real VM, which hosted
+# runners can't start; run them locally (see CONTRIBUTING.md).
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: Host (Swift)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select the newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)" && swift --version
+      - run: swift build
+      - run: swift test
+
+  guest:
+    name: Guest (Rust)
+    runs-on: ubuntu-24.04-arm
+    defaults: { run: { working-directory: guest } }
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+      - name: Unit tests (native Linux, as scripts/test-guest.sh)
+        run: cargo test --target aarch64-unknown-linux-gnu --config 'build.target="aarch64-unknown-linux-gnu"'
+      - name: Static musl build (what ships in the initrd)
+        run: cargo build --release
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: shellcheck
+        run: |
+          shellcheck -S warning install.sh scripts/*.sh kernel/*.sh
+          shellcheck -S error Tests/e2e/*.sh

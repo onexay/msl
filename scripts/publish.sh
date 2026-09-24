@@ -15,7 +15,7 @@ NAME=msl-$VERSION-macos-arm64.tar.gz
 KTAG=$(cat kernel/release.tag)
 
 [ -z "$(git status --porcelain)" ] || { echo "commit your changes first" >&2; exit 1; }
-git fetch -q origin && [ "$(git rev-parse HEAD)" = "$(git rev-parse @{u})" ] || { echo "push HEAD first" >&2; exit 1; }
+git fetch -q origin && [ "$(git rev-parse HEAD)" = "$(git rev-parse "@{u}")" ] || { echo "push HEAD first" >&2; exit 1; }
 
 export MSL_RELEASE_BASE_URL=https://github.com/$REPO/releases/download/$TAG
 export MSL_UPDATE_CHANNEL_URL=${MSL_UPDATE_CHANNEL_URL:-https://github.com/$REPO/releases/latest/download/update.json}
