@@ -10,6 +10,6 @@ msl itself is Apache-2.0 (`LICENSE`, `NOTICE`). This file is installed as `share
 | tokio, tonic, prost, nix, tar, flate2, lzma-rs, ruzstd, tokio-vsock, … | `msl-guest` (static) | MIT and/or Apache-2.0 | See `guest/Cargo.lock`. |
 | Apple Containerization (ContainerizationEXT4) | `msld` | Apache-2.0 | Formats the data disk. |
 | grpc-swift-2, grpc-swift-nio-transport, grpc-swift-protobuf, SwiftNIO, swift-protobuf | `msld` | Apache-2.0 | |
-| Microsoft WSL strings | CLI messages | MIT | Wording adapted from `localization/strings/en-US/Resources.resw`. |
+| Microsoft WSL strings | CLI messages (`Sources/MSLCore/Messages.swift`) | MIT | Wording adapted from `localization/strings/en-US/Resources.resw` in github.com/microsoft/WSL. Copyright (c) Microsoft Corporation; full notice in `licenses/WSL-MIT.txt`. |
 
 Distribution images are downloaded from their publishers (Microsoft's `DistributionInfo.json`) and are not redistributed by msl.

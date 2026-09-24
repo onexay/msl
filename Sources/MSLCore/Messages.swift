@@ -1,6 +1,7 @@
 import Foundation
 
-// User-facing text. Wording follows wsl.exe (localization/strings/en-US/Resources.resw)
+// User-facing text. Wording follows wsl.exe (localization/strings/en-US/Resources.resw,
+// Copyright (c) Microsoft Corporation, MIT License: docs/licenses/WSL-MIT.txt)
 // with product names adapted: "Windows Subsystem for Linux" -> "macOS Subsystem for Linux",
 // "wsl.exe" -> "msl".
 

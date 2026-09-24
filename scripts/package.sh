@@ -31,6 +31,7 @@ cp build/bin/msl "$STAGE/bin/msl"
 cp build/bin/msld "$STAGE/libexec/msl/msld"
 cp build/share/msl/Image build/share/msl/initrd.gz build/share/msl/kernel.version "$STAGE/share/msl/"
 cp LICENSE NOTICE docs/THIRD_PARTY_NOTICES.md guest/vendor/busybox.COPYRIGHT "$STAGE/share/doc/msl/"
+cp -R docs/licenses "$STAGE/share/doc/msl/licenses"
 
 if [ -n "${MSL_SIGN_IDENTITY:-}" ]; then
   codesign --force --options runtime --timestamp -s "$MSL_SIGN_IDENTITY" "$STAGE/bin/msl"
