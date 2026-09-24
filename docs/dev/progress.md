@@ -158,3 +158,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Open items became issues #1–#6: the NFS view exposure (security), notarisation, `--resize`, testing x86_64 distros (M6), the vsock Apple report and dial-back, and `~/MSL` auto-start (Later).
 - Removed `docs/roadmap.md` and `docs/dev/plan.md`, and renamed `docs/architecture.md` to `docs/ARCHITECTURE.md`. References now point to the milestones and issues.
 - Milestones renamed to elements, with short goals only: Hydrogen … Carbon (done), Nitrogen (x86_64 via qemu-user), Oxygen (VS Code), and Fluorine (was "Later"). The detail moved into issues: #7–#9 and #4 (Nitrogen), #10–#12 (Oxygen), and #13–#17 plus #6 (Fluorine). Docs refer to milestones by name.
+
+## 2026-09-24 11:48: history rewrite and repo protections
+- Rewrote the history so every commit is authored as `onexay` with the no-reply email, and scrubbed the user name and paths from the old PROGRESS/PLAN text. Force-pushed `main` and the two tags (both now at `c97549e`) and updated the commit hash in the release notes. GitHub still keeps the pre-rewrite commits reachable through `refs/pull/18/head` (Dependabot's merged PR); only GitHub Support can purge them.
+- Protected `main`: no force pushes or deletion; pull requests need Lint, Host (Swift) and Guest (Rust) to pass, with conversations resolved; admins can still push directly.
+- Turned on private vulnerability reporting, Dependabot alerts and security updates, and secret scanning with push protection. Added topics: wsl, linux, macos, virtualization-framework, apple-silicon, developer-experience.
