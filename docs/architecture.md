@@ -154,15 +154,5 @@ msl has no distro builds of its own. A WSL image is a plain rootfs tarball with 
 **Later:** msl's own distro list (`MSL_DISTRIBUTION_LIST_URL`) combining the same WSL tarballs with OCI images (`docker.io/library/*`, which need systemd/init packages added). An `msl-setup` package only if the upstream WSL-specific pieces cause real problems.
 
 ## Repo layout
-- `Package.swift`:
-  - Pins `apple/containerization` at exactly 0.46.0. We use `ContainerizationEXT4` (formatting the data disk), `ContainerizationOCI` (optional `--install` from OCI images) and `ContainerizationOS`.
-  - Also depends on grpc-swift and swift-protobuf.
-- `Sources/msl`: the CLI.
-- `Sources/MSLCore`: argument parser, message catalogue, INI parser, config models.
-- `Sources/MSLService` (`msld`): VM manager, registry, port relay, NFS mounter.
-- `proto/`: the shared `.proto` files. `Sources/MSLProtocol` holds the generated Swift.
-- `guest/`: a Cargo crate (`Cargo.toml`, `rust-toolchain.toml` pinning the toolchain and musl targets), with the binary `msl-guest` and modules `miniinit`, `distroinit`, `session`, `portwatch`, `config`, `compat` and `mslpath`. A `Makefile` target runs `cargo build --release --target aarch64-unknown-linux-musl` and packs the result into the initrd.
-- `kernel/`: config fragment and build script. `scripts/`: initrd build, signing, packaging (tarball, .pkg) and `install.sh`, the interactive installer (no Homebrew).
-- `Tests/`:
-  - `MSLCoreTests` (swift-testing, `swift test`): parser, output formats, registry, IPC fd passing, `.mslconfig`, manifest.
-  - `e2e/`: shell scripts that drive a real `msl`.
+
+See the code layout table in [CONTRIBUTING.md](../CONTRIBUTING.md#code-layout).
