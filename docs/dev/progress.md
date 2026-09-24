@@ -163,3 +163,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Rewrote the history so every commit is authored as `onexay` with the no-reply email, and scrubbed the user name and paths from the old PROGRESS/PLAN text. Force-pushed `main` and the two tags (both now at `c97549e`) and updated the commit hash in the release notes. GitHub still keeps the pre-rewrite commits reachable through `refs/pull/18/head` (Dependabot's merged PR); only GitHub Support can purge them.
 - Protected `main`: no force pushes or deletion; pull requests need Lint, Host (Swift) and Guest (Rust) to pass, with conversations resolved; admins can still push directly.
 - Turned on private vulnerability reporting, Dependabot alerts and security updates, and secret scanning with push protection. Added topics: wsl, linux, macos, virtualization-framework, apple-silicon, developer-experience.
+
+## 2026-09-24 11:57: v0.1.1 replaces v0.1.0
+- The name is now "Modern Subsystem for Linux". Deleted the v0.1.0 release and tag, merged the changelog into a single 0.1.1 entry, and set the version to 0.1.1 everywhere.
+- Published **v0.1.1** (Latest): tarball + .sha256, .pkg, update.json and the BusyBox source. Not PGP-signed, because the key isn't on the build Mac.
+- Checked the public one-liner install: msl 0.1.1 with kernel 6.18.15-msl, the new name in CLI output, LICENSE/NOTICE/licences in share/doc/msl, and `msl --update` reporting it's current.
