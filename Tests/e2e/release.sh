@@ -24,4 +24,4 @@ echo "\$ msl --uninstall"; $P/bin/msl --uninstall
 echo "left in prefix: $(find $P -type f | wc -l | tr -d ' ') files"; ls $MSL_HOME | tr '\n' ' '; echo
 pgrep -fl "msl-prefix/libexec" || echo "no msld left"
 rm -rf $P /tmp/msl-0.1.0.tgz
-"$ROOT/scripts/build.sh" >/dev/null 2>&1  # back to the development build (0.1.0)
+"$ROOT/scripts/build.sh" >/dev/null 2>&1  # back to the development build
