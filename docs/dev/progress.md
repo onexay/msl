@@ -186,3 +186,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-25 00:12: e2e suites named after milestones
 - `Tests/e2e/m1.sh`…`m5.sh` are now `helium`, `lithium`, `beryllium`, `boron` and `carbon`, next to `neon`. Their headers and temp-dir prefixes match, and `release.sh` keeps its name. Updated CONTRIBUTING, the vsock doc, and issue #4 (Nitrogen's suite will be `nitrogen.sh`).
+
+## 2026-09-25 00:16: v0.1.3
+- Published **v0.1.3** (Latest) with `--json` for the query commands (Neon). Checked: installed v0.1.2 with the public one-liner, ran `msl --update` to 0.1.3, and `--version --json` reports 0.1.3 with the install prefix.
