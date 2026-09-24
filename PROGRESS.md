@@ -115,3 +115,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-24 05:08: published to GitHub (private)
 - Created the private repo github.com/onexay/msl and pushed `main` (1 commit, 100 files). LOG.md and build outputs are git-ignored.
 - Published the kernel as release `kernel-6.18.15-msl` (Image, config, release.sha256). `scripts/build.sh` fetches it through `kernel/fetch.sh` (gh + checksum) when `kernel/out/Image` is missing. Tested from a fresh clone: Image OK, config OK.
+
+## 2026-09-24 10:18: interactive installer replaces Homebrew
+- New `install.sh` (POSIX sh, repo root). It checks for Apple silicon and macOS 26+, then asks for a prefix (default `~/.local`, no sudo; `/usr/local` uses sudo). It downloads the latest `v*` release through `gh` or the GitHub API with GITHUB_TOKEN, and parses the JSON with macOS's own JavaScript. It verifies the SHA-256, asks before stopping a running msld, swaps each tree in with a rename, and restarts msld the same way `--update` does. It then offers to add msl to PATH in the shell's rc file and to install a first distro. Prompts come from /dev/tty, so `curl | sh` stays interactive. Also supports `--yes`, `--prefix`, `--version`, `--from` and `--no-path`.
+- Removed the Homebrew formula (packaging/). `scripts/package.sh` now also writes `<tarball>.sha256`.
+- Tested in a scratch HOME and prefix: interactive install through a PTY, the PATH line, the file tree, a reinstall with msld running (the old msld exits), a bad checksum (refused) and `--uninstall`. Not yet tested: the GitHub download path, because there is no `v0.1.0` release yet.
