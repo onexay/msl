@@ -1,7 +1,7 @@
 # MSL — a WSL2-equivalent for macOS
 
 ## Context
-Build `msl`, a macOS equivalent of WSL2. It should have the same CLI surface and the same behaviour as `wsl.exe` (distro lifecycle, shells, interop, networking and config), built only on Apple-native technology. The repo (`/Users/akshay/Projects/msl`) is empty apart from a README. Host: macOS 27 on Apple Silicon, Swift 6.3, Apple `container` 1.1.0 installed.
+Build `msl`, a macOS equivalent of WSL2. It should have the same CLI surface and the same behaviour as `wsl.exe` (distro lifecycle, shells, interop, networking and config), built only on Apple-native technology. The repo is empty apart from a README. Host: macOS 27 on Apple Silicon, Swift 6.3, Apple `container` 1.1.0 installed.
 
 Decisions so far:
 - **v1 scope:** core lifecycle plus host integration: the Mac filesystem, cwd translation, env passing and localhost networking.
