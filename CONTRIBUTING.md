@@ -1,6 +1,6 @@
 # Contributing to msl
 
-Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. The open items are in [`docs/PLAN.md`](docs/PLAN.md) and the [issues](https://github.com/onexay/msl/issues).
+Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. The open items are in the [roadmap](docs/roadmap.md) and the [issues](https://github.com/onexay/msl/issues).
 
 ## Before you start
 

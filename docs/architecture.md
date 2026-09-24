@@ -1,13 +1,6 @@
-# MSL — a WSL2-equivalent for macOS
+# Architecture
 
-## Context
-Build `msl`, a macOS equivalent of WSL2. It should have the same CLI surface and the same behaviour as `wsl.exe` (distro lifecycle, shells, interop, networking and config), built only on Apple-native technology. The repo is empty apart from a README. Host: macOS 27 on Apple Silicon, Swift 6.3, Apple `container` 1.1.0 installed.
-
-Decisions so far:
-- **v1 scope:** core lifecycle plus host integration: the Mac filesystem, cwd translation, env passing and localhost networking.
-- **Out of scope:** running macOS executables from inside a distro. Distros see Linux binaries only.
-- **Binary name:** `msl`.
-- **Stack:** Apple-only, with GPU deferred. Virtualization.framework only offers 2D virtio-gpu. The only GPU path today is libkrun/Venus, which is not Apple-native.
+How msl is built, and how each WSL feature maps onto macOS. For what's done and what's next, see the [roadmap](roadmap.md).
 
 ## Key decision: one shared utility VM (matches WSL2)
 Research on the open-sourced WSL repo: WSL2 runs **one utility VM**.
@@ -125,8 +118,8 @@ msl (CLI) ──XPC──▶ msld (per-user LaunchAgent: wslservice + wslhost + 
 | cwd inheritance | The macOS cwd is translated to `/mnt/mac/...`. `--cd` accepts Linux paths, `~` or Mac paths. |
 | Localhost forwarding (NAT) | The guest streams its listening TCP ports (`MiniInit.WatchPorts`); `msld` binds `127.0.0.1`/`::1` for each (skipping ports in use on the Mac) and relays connections over vsock to a guest forwarder. `host.internal` in the generated `/etc/hosts` points at the vmnet gateway. |
 | `dnsTunneling` | Guest stub at `10.255.255.254:53` (UDP+TCP) relays queries over vsock; `msld` answers with `DNSServiceQueryRecord` (mDNSResponder), so VPN split DNS, `/etc/resolver`, `.local` and the Mac's hosts file work. Loopback/link-local answers are dropped. `[wsl2] dnsTunneling=false` falls back to vmnet DNS. |
-| vsock flow control | **Required:** Virtualization.framework's vsock device blocks (freezing all vsock traffic and a vCPU) if the host stops reading a connection. Every guest↔host byte stream uses credit framing (`guest/src/framed.rs`, `Sources/MSLService/FramedBridge.swift`; 1 MB window), so receivers always drain their socket. Details, evidence and alternatives: [`docs/vsock-flow-control.md`](vsock-flow-control.md). |
-| `autoMemoryReclaim` | **No effect on macOS**: VZ's balloon doesn't release pages to the host (measured). Memory comes back when the VM exits after `vmIdleTimeout`. See [`docs/memory-reclaim.md`](memory-reclaim.md). |
+| vsock flow control | **Required:** Virtualization.framework's vsock device blocks (freezing all vsock traffic and a vCPU) if the host stops reading a connection. Every guest↔host byte stream uses credit framing (`guest/src/framed.rs`, `Sources/MSLService/FramedBridge.swift`; 1 MB window), so receivers always drain their socket. Details, evidence and alternatives: [`docs/vsock-flow-control.md`](design/vsock-flow-control.md). |
+| `autoMemoryReclaim` | **No effect on macOS**: VZ's balloon doesn't release pages to the host (measured). Memory comes back when the VM exits after `vmIdleTimeout`. See [`docs/memory-reclaim.md`](design/memory-reclaim.md). |
 | Error codes | The `Error code: Msl/…` line (wsl.exe prints `Wsl/…`) is only shown with `MSL_ERROR_CODES=1`; by default msl prints just the message. |
 | `--set-version 1`, `--enable-wsl1`, `--inbox`, `--legacy`, `--system`, WSLg, GPU | Accepted by the parser and return an "unsupported on macOS" error in WSL's error format. |
 | `--debug-shell` | Root shell (BusyBox) in the VM's root namespace. mini-init also serves the `Agent` service for it. |
@@ -173,71 +166,3 @@ msl has no distro builds of its own. A WSL image is a plain rootfs tarball with 
 - `Tests/`:
   - `MSLCoreTests` (swift-testing, `swift test`): parser, output formats, registry, IPC fd passing, `.mslconfig`, manifest.
   - `e2e/`: shell scripts that drive a real `msl`.
-
-## Milestones
-0. ✅ **Spike** (de-risk, about 1 week). Boot VZ with our kernel, initrd and `msl-mini-init`, and get a vsock ping working. Confirm:
-   - USB mass-storage hot-attach works;
-   - the vmnet attachment works with ad-hoc signing;
-   - Rosetta works;
-   - namespace plus pivot_root works for systemd as PID 1 inside the namespace;
-   - the Ubuntu 24.04 and Debian WSL tarballs, unmodified: boot them, run their OOBE (`wsl-setup`), check cloud-init falls back cleanly, and list every systemd unit that fails, to seed the `compat` mask list.
-   - **Status:** done. Only the host memory-reclaim measurement is still open. See `docs/spike-results.md`.
-1. ✅ **Core lifecycle** (done 2026-09-24; `Tests/e2e/m1.sh` 40/40): data disk, `--import`/`--install --from-file`, per-distro init, interactive PTY shell (`msl`, `-d`, `-u`, `-e`, `--`, `--cd`, `~`), `-l [-v|-q|--running]`, `--terminate`, `--shutdown [--force]`, `--unregister`, `--export [--format]`.
-2. ✅ **Distros and config** (done 2026-09-24; `Tests/e2e/m2.sh` 25/25; `--manage --resize/--compact` deferred to M5): online `--install` and `-l -o`, OOBE and default user (the distro's own OOBE, with msl's OOBE as fallback), the `compat` layer (unit masks, cloud-init fallback), `wsl.conf`/`msl.conf`, `.mslconfig`, `--set-default`, `--status`, `--manage`, idle timeouts.
-3. ✅ **Host integration** (done 2026-09-24; `Tests/e2e/m3.sh` 24/24): `/mnt/mac` with uid mapping, cwd translation, `MSLENV` (Mac → Linux), `mslpath`.
-4. ✅ **Networking and files** (done 2026-09-24; `Tests/e2e/m4.sh` 33/33): localhost forwarding, DNS proxy, hosts file, hostname, NFS export to `~/MSL/<distro>`.
-5. ✅ **Remainder** (done 2026-09-24; `Tests/e2e/m5.sh` 20/20, `Tests/e2e/release.sh`): `--debug-shell` (BusyBox in the initrd), `--mount`/`--unmount` (USB hot-attach, shared `/mnt/msl`), `--manage --compact` (FITRIM, plus trim on every shutdown), `--update`/`--uninstall`, packaging (`scripts/package.sh`: tarball, `.pkg`, update manifest; `scripts/notarize.sh`; `install.sh` interactive installer, Homebrew formula dropped. Not done: `--manage --resize`, memory reclaim, x86_64 distros, notarisation (see Open items).
-6. **x86_64 emulation with qemu-user** (planned 2026-09-24): run x86_64 distros and binaries without Rosetta.
-   - **Why:** general-purpose Rosetta 2 ends after macOS 27. Apple says Rosetta for Intel binaries in Linux VMs continues, but a Rosetta-free path removes the dependency (and the owner prefers not to install Rosetta).
-   - **What:** QEMU *user-mode* (`qemu-x86_64`, optionally `qemu-i386`) inside the guest, registered with `binfmt_misc` (`F` flag, like the Rosetta entry, so it works in every distro namespace). No full-system QEMU on the Mac, so the Apple-only host rule holds.
-   - **Shipping:** Debian `qemu-user` 1:10.0.13 static-pie binaries (14 MB each) in `share/msl/emu/`, exposed read-only to the guest over virtiofs rather than packed into the initrd, to avoid holding them in VM memory. GPL-2: add a source offer to the third-party notices.
-   - **Selection:** `.mslconfig [wsl2] x86Emulation = auto | rosetta | qemu | none`. `auto` means Rosetta if already installed, otherwise QEMU. Nothing is ever installed on the Mac. `-l -o` and `--install` offer x86_64-only distros whenever an emulator is available.
-   - **Feasibility (measured):** x86_64 BusyBox runs under qemu-user in the msl VM. SHA-256 of 64 MB: native 0.38 s, Rosetta 0.35 s, qemu-user 0.70 s. Expect 3–10× slower than Rosetta for heavy work (compilers, JITs, package installs).
-   - **Risks to test:**
-     - systemd as PID 1 under qemu-user (unsupported syscalls; may need `[boot] systemd=false` for emulated distros);
-     - setuid binaries such as `sudo` (binfmt `C`/`O` flags);
-     - `pacman` performance.
-   - **Verification (`Tests/e2e/m6.sh`):** with `x86Emulation=qemu` on this Mac, `msl --install archlinux`, then check:
-     - `uname -m`/`file` for the emulated userland;
-     - systemd state (or the documented fallback);
-     - `sudo`;
-     - a `pacman -Q` query;
-     - compiling and running a small C program;
-     - `x86Emulation=none` makes x86_64 installs refuse clearly.
-
-Later: GPU (once Apple ships 3D/compute virtio-gpu), mirrored networking, an FSKit-based `~/MSL` replacing NFS, GUI apps (Wayland → macOS windows), Terminal.app profiles, and a VM-per-distro runtime.
-
-7. **VS Code integration** (proposal, for discussion; recorded 2026-09-24): SSH entries per distro via ProxyCommand, then a thin Remote Explorer extension on top of Remote-SSH. See [vscode-integration.md](vscode-integration.md).
-
-## Verification
-- `cargo test` and `cargo clippy -- -D warnings` in `guest/` must pass. They cover the wsl.conf parser, mslpath translation, port-watch parsing of `/proc/net/tcp` fixtures, and namespace, pivot_root and reaper tests. Tests that need root run on this Mac inside a Linux VM: `container run --privileged` with a rust:musl image. The stripped `msl-guest` binary must be under 10 MB, and idle RSS per distro agent under 5 MB.
-- `swift test` must pass. It covers parser golden tests (every flag combination in WSL's usage text), the INI/config parser and the registry.
-- The `Tests/e2e/*.sh` scripts, run on this Mac:
-  - `msl --install Ubuntu`, then check that `msl -l -v` shows `* Ubuntu Running 2`;
-  - `msl -e uname -a` exits 0, and `msl -- exit 7` makes `$?` equal 7;
-  - `msl --cd ~ pwd` and running `msl pwd` from `~/Projects` gives `/mnt/mac/Users/<you>/Projects`;
-  - `python3 -m http.server 8000` in the guest, then `curl localhost:8000` on the Mac;
-  - export, unregister, import and the file is still there;
-  - two distros can reach each other on localhost;
-  - `--shutdown` leaves no VM process running;
-  - `ls ~/MSL/Ubuntu/etc` works.
-  - **Build hygiene:** `npm install better-sqlite3` (native addon via node-gyp) and `./configure && make` on a GNU autotools project (e.g. GNU hello), run both in `~` and in `/mnt/mac/...`. `file` must report ELF aarch64 for every output. `command -v cc make node` must resolve only to Linux paths. Running `/mnt/mac/bin/ls` must fail with `Exec format error`.
-- **Distro compatibility matrix** (`Tests/e2e/distros.sh`), run on each arm64 distro in the manifest:
-  - install;
-  - OOBE creates a UID-501 default user;
-  - `systemctl is-system-running` returns `running`, with no failed units after masking;
-  - `sudo` works;
-  - the package manager can install `build-essential` or its equivalent.
-  - The x86-only distros get the same checks under Rosetta in milestone 5.
-- Manual: a systemd distro boots, `/etc/wsl.conf` settings from an unchanged `.wsl` distro are applied, and memory drops after `--shutdown`.
-
-## Open items (after milestone 5)
-
-- **`~/MSL` NFS view is reachable by other local users** (security): the bridge listens on an unauthenticated `127.0.0.1` port. Fix options: only accept connections from the owning user (check the peer's UID through `LOCAL_PEERCRED`-style lookup of the socket owner), or serve NFS over a user-only Unix socket. See SECURITY.md.
-- **Notarisation:** run `scripts/package.sh` with `MSL_SIGN_IDENTITY` and `MSL_INSTALLER_IDENTITY`, then `scripts/notarize.sh`. Needs the owner's Developer ID and a notarytool profile.
-- ~~**Xcode**~~: done 2026-09-24. Xcode 27.0 (Swift 6.4) is the active toolchain, and the host tests are a swift-testing target again (`swift test`: 16 tests in 5 suites).
-- **`--manage --resize`:** needs an offline `resize2fs`, i.e. a static e2fsprogs in the initrd, run before mounting `/dev/vda`.
-- **x86_64 distros:** listing and installing through Rosetta is implemented but untested; milestone 6 adds a Rosetta-free path (qemu-user) and the tests.
-- **vsock:** file the Apple Feedback report (host-initiated connections freeze the VM); consider guest dial-back for data streams ([`docs/vsock-flow-control.md`](vsock-flow-control.md)).
-- **`~/MSL` view** only works while the VM runs (no auto-start on access); an FSKit implementation could fix that.
-- **Third-party notices:** generate full license texts for all Rust and Swift dependencies before a public release.

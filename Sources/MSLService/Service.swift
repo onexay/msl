@@ -343,7 +343,7 @@ public final class Service: @unchecked Sendable {
         case .resize:
             // All distros share one sparse data disk (256 GiB). Growing it needs an
             // offline resize2fs: the formatter uses sparse_super2, which rules out
-            // online ext4 resizing (see docs/PLAN.md, open items).
+            // online ext4 resizing (see docs/roadmap.md, open items).
             throw ServiceError("Failed to resize disk.\nAll distributions share one sparse 256 GiB disk, which can't be resized yet.", code: ErrorCode.unsupported)
         case .compact:
             try bootVM()

@@ -39,7 +39,7 @@ Uses only the stable API, can be published on the Marketplace, and depends on B:
 The only visible difference from WSL is that the window's remote label shows SSH.
 
 ### E. `code .` inside a distro (needs a decision)
-WSL does this by running Windows programs from Linux, which msl rules out ([PLAN](PLAN.md), "Running Windows `.exe` from Linux"). An alternative that never runs a Mac binary: a Linux `code` script asks msld over vsock to open the folder in VS Code on the Mac. It still relaxes the "no Mac from Linux" rule slightly, so it needs a decision.
+WSL does this by running Windows programs from Linux, which msl rules out ([architecture](../architecture.md), "Running Windows `.exe` from Linux"). An alternative that never runs a Mac binary: a Linux `code` script asks msld over vsock to open the folder in VS Code on the Mac. It still relaxes the "no Mac from Linux" rule slightly, so it needs a decision.
 
 ### F. `code tunnel` inside the distro
 Works today, but needs a GitHub or Microsoft login and goes through Microsoft's relay. Not a default.
