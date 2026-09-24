@@ -25,9 +25,12 @@ KSUM=$(awk '$2=="Image"{print $1}' kernel/release.sha256)
 [ "$(shasum -a 256 build/share/msl/Image | cut -d' ' -f1)" = "$KSUM" ] \
   || { echo "build/share/msl/Image is not $KTAG (run kernel/fetch.sh or kernel/publish.sh)" >&2; exit 1; }
 
+# GPL-2.0 BusyBox (in initrd.gz): ship its corresponding source with the release.
+BUSYBOX_SRC=$(scripts/gpl-sources.sh busybox | tr '\n' ' ')
+
 set -- --repo "$REPO" --target "$(git rev-parse HEAD)" --title "msl $VERSION"
 if [ "$PRE" = --prerelease ]; then set -- "$@" --prerelease; else set -- "$@" --latest; fi
-gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" "dist/msl-$VERSION.pkg" dist/update.json "$@" --notes "$(cat <<NOTES
+gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" "dist/msl-$VERSION.pkg" dist/update.json $BUSYBOX_SRC "$@" --notes "$(cat <<NOTES
 Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an existing install with \`msl --update\`.
 
 | | |
@@ -35,6 +38,7 @@ Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an 
 | Kernel | Linux $(cat build/share/msl/kernel.version), release [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG) |
 | Commit | $(git rev-parse --short HEAD) |
 | Requires | Apple silicon, macOS 26 or later |
+| GPL sources | BusyBox: the attached Debian source package \`busybox_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG). |
 | Signing | $( [ -n "${MSL_SIGN_IDENTITY:-}" ] && echo "Developer ID" || echo "ad-hoc (not notarised)") |
 
 \`$NAME\` SHA-256: \`$(cut -d' ' -f1 "dist/$NAME.sha256")\`
