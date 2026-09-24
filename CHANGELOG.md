@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-24
+
 ### Fixed
 - Stopping a distro (`--terminate`, idle timeout, `--shutdown`) now shuts it down cleanly instead of killing it. systemd distros power off (`SIGRTMIN+4`), and other distros' processes get `SIGTERM`. Anything still running after 10 seconds is killed. Previously journald reported "corrupted or uncleanly shut down" journals, and services could lose unflushed data ([#19](https://github.com/onexay/msl/issues/19)).
 - The network interface stays `eth0`, as in WSL. systemd 259 (Ubuntu 26.04) treats the distro as a container, so it ignores `net.ifnames=0` and renamed the shared NIC to `enp0s1`. msl now masks `99-default.link` at runtime ([#20](https://github.com/onexay/msl/issues/20)).
@@ -31,5 +33,6 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/onexay/msl/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/onexay/msl/releases/tag/v0.1.1
