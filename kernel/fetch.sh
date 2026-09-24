@@ -8,5 +8,11 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 TAG=${KERNEL_TAG:-$(cat "$HERE/release.tag")}
 REPO=${MSL_REPO:-onexay/msl}
 mkdir -p "$HERE/out"
-gh release download "$TAG" --repo "$REPO" --dir "$HERE/out" --pattern Image --pattern config --clobber
+if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+  gh release download "$TAG" --repo "$REPO" --dir "$HERE/out" --pattern Image --pattern config --clobber
+else
+  for f in Image config; do
+    curl -fL# -o "$HERE/out/$f" "https://github.com/$REPO/releases/download/$TAG/$f"
+  done
+fi
 (cd "$HERE/out" && shasum -a 256 -c "$HERE/release.sha256")

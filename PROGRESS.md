@@ -126,3 +126,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - msl releases are `v<version>`, made with `scripts/publish.sh` and marked Latest. It requires a clean, pushed tree, checks the bundled kernel against `kernel/release.sha256`, and names the kernel tag in the notes. Published **v0.1.0**: tarball + .sha256, .pkg, update.json.
 - install.sh download path tested: via gh (latest), via curl + GITHUB_TOKEN piped with no gh (same binary), no auth (clear error), unknown version (clear error).
 - Known: `msl --update` uses `releases/latest/download/update.json`, which needs the repo to be public (there's no auth for private downloads).
+
+## 2026-09-24 10:28: repo is public
+- The unauthenticated `curl -fsSL https://raw.githubusercontent.com/onexay/msl/main/install.sh | sh` installs v0.1.0 with its SHA-256 verified, and `msl --update` reads the public update.json ("already installed"). The README shows the one-liner.
+- `kernel/fetch.sh` falls back to curl when gh isn't logged in, so building from source no longer needs gh.

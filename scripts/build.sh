@@ -14,7 +14,7 @@ mkdir -p "$OUT/bin" "$OUT/share/msl"
 (cd "$ROOT/guest" && cargo build --release -q)
 python3 "$ROOT/scripts/mkinitrd.py" "$ROOT/guest/target/aarch64-unknown-linux-musl/release/msl-guest" "$OUT/share/msl/initrd.gz" "$ROOT/guest/vendor/busybox"
 
-if [ ! -f "$ROOT/kernel/out/Image" ] && command -v gh >/dev/null; then
+if [ ! -f "$ROOT/kernel/out/Image" ]; then
   "$ROOT/kernel/fetch.sh" || echo "warning: could not fetch the MSL kernel; falling back to Apple's"
 fi
 if [ -f "$ROOT/kernel/out/Image" ]; then
