@@ -111,3 +111,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-24 05:04: VS Code integration recorded for later
 - The WSL extension is Windows-only. Options (SSH ProxyCommand entries, a thin extension on top of Remote-SSH, why a full resolver extension is blocked, `code .`) are written up in docs/vscode-integration.md and listed as M7 (proposal) in PLAN.
+
+## 2026-09-24 05:08: published to GitHub (private)
+- Created the private repo github.com/onexay/msl and pushed `main` (1 commit, 100 files). LOG.md and build outputs are git-ignored.
+- Published the kernel as release `kernel-6.18.15-msl` (Image, config, release.sha256). `scripts/build.sh` fetches it through `kernel/fetch.sh` (gh + checksum) when `kernel/out/Image` is missing. Tested from a fresh clone: Image OK, config OK.
