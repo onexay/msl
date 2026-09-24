@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-25
+
 ### Added
 - `--json` for the query commands (`--list` and its variants, `--list --online`, `--status`, `--version`). Errors go to stderr as JSON, with wsl.exe's exit codes. See [docs/json.md](docs/json.md).
 
@@ -36,6 +38,7 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/onexay/msl/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/onexay/msl/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/onexay/msl/releases/tag/v0.1.1
