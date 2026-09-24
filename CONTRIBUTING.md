@@ -21,6 +21,21 @@ $ scripts/build.sh            # guest + initrd + msl/msld → build/ (downloads 
 $ build/bin/msl --help
 ```
 
+## Code layout
+
+| Path | What |
+|---|---|
+| `Sources/msl` | CLI (argument parsing and output mirror `wsl.exe`) |
+| `Sources/msld`, `Sources/MSLService` | service: VM, sessions, forwarding, DNS, file view, disks |
+| `Sources/MSLCore` | parser, messages, registry, `.mslconfig`, IPC |
+| `guest/` | `msl-guest`: VM init, per-distro init and agent, NFS server, DNS stub |
+| `proto/msl/v1/msl.proto` | host ↔ guest gRPC protocol |
+| `kernel/` | kernel config (Apple's + `msl.fragment`), build, fetch and publish scripts |
+| `scripts/` | build, initrd, packaging, publishing, licence and GPL-source tools; `install.sh` is at the root |
+| `Tests/` | `MSLCoreTests` (swift-testing) and `e2e/` suites driving a real `msl` |
+| `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
+| `docs/dev/` | development log (`progress.md`) and the milestone 0 spike |
+
 ## Test
 
 Run what your change touches, and say in the pull request what you ran:
@@ -51,6 +66,11 @@ CI runs the unit tests and lints. It can't run the e2e suites, because hosted ru
 - **Sign off every commit** ([Developer Certificate of Origin](https://developercertificate.org/)): `git commit -s` adds `Signed-off-by: Your Name <email>`. It certifies that you wrote the change, or otherwise have the right to submit it under the project's licence. Apache-2.0 section 5 covers the licensing of contributions, so there is no CLA.
 - Keep pull requests focused; fill in the template.
 
+## Kernel
+
+`scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`). `kernel/build.sh` rebuilds it from source with Apple's `container`.
+
 ## Releases
 
-Maintainers release with `scripts/publish.sh <version>` (and `kernel/publish.sh` when the kernel changes); see the README's "Build and test" section.
+- **msl** ships as `v<version>` releases. The Latest one is what `install.sh` and `msl --update` use. Move the *Unreleased* changelog entries under the new version, then run `scripts/publish.sh <version>`. It packages the release (tarball + `.sha256`, `.pkg`, `update.json`), signs the checksum when `MSL_GPG_KEY` is set, attaches the BusyBox source, and takes the notes from `CHANGELOG.md`. `scripts/package.sh <version>` builds the same files locally without publishing.
+- **The kernel** has its own releases, `kernel-<linux version>-msl.<n>`, published only when it changes, with `kernel/publish.sh`. Bump `n` for config-only changes. They are never marked Latest. Each msl release's notes name the kernel it bundles.

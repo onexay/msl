@@ -28,13 +28,14 @@ The installer is interactive: it checks the Mac, asks where to install (default 
 
 msl has no Homebrew formula: it's a self-contained environment and updates itself with `msl --update`; `msl --uninstall` removes it and keeps your distros.
 
-### Quick start (from source)
+### Quick start
 
 ```console
-$ scripts/build.sh                     # builds build/bin/msl and msld (see "Build and test")
-$ build/bin/msl --install Ubuntu       # downloads the arm64 .wsl image, runs Ubuntu's own first-run setup
-$ build/bin/msl                        # shell in Ubuntu, cwd = the Mac's cwd under /mnt/mac
+$ msl --install Ubuntu       # downloads the arm64 .wsl image, runs Ubuntu's own first-run setup
+$ msl                        # shell in Ubuntu, in the Mac's current directory (under /mnt/mac)
 ```
+
+To build from source instead, see [Development](#development).
 
 `msld` starts on first use and stops the VM when nothing has run for `vmIdleTimeout` (60 s by default).
 
@@ -109,30 +110,10 @@ Details: [`docs/architecture.md`](docs/architecture.md) (architecture and the WS
 
 ### Configuration
 
-**VM settings: `~/.mslconfig`**, the `.wslconfig` equivalent (same INI sections, keys, size suffixes and warnings; `MSL_CONFIG` overrides the path). Unknown `.wslconfig` keys are accepted and ignored.
+- **VM:** `~/.mslconfig`, with the same keys as `.wslconfig` (`memory`, `processors`, `kernel`, `localhostForwarding`, `dnsTunneling`, idle timeouts, …). `msl --status` shows the effective settings and any changes waiting for `msl --shutdown`.
+- **Each distro:** `/etc/wsl.conf` works unchanged; `/etc/msl.conf` takes precedence.
 
-```ini
-[wsl2]
-memory = 8GB                 # default: 50% of the Mac's RAM
-processors = 4               # default: all
-kernel = ~/kernels/Image     # custom kernel
-kernelCommandLine = quiet
-localhostForwarding = true   # default true
-dnsTunneling = true          # default true; false uses vmnet's DNS
-vmIdleTimeout = 60000        # ms; VM stops this long after the last distro stops
-
-[general]
-instanceIdleTimeout = 15000  # ms; an idle distro stops after this
-
-[experimental]
-autoMemoryReclaim = dropCache  # accepted for compatibility; no effect on macOS
-```
-
-Changes apply at the next VM start. `msl --status` shows the effective settings (memory, processors, kernel, kernel command line, localhost forwarding, DNS tunneling, idle timeouts, settings file, running/uptime) and lists any `.mslconfig` changes still pending until `msl --shutdown`.
-
-**Per distro: `/etc/msl.conf`**, falling back to `/etc/wsl.conf`, so existing distros work unchanged. Supported: `[boot] systemd`, `command`; `[user] default`; `[automount] enabled`, `root`, `mountFsTab`; `[network] hostname`, `generateHosts`, `generateResolvConf`. `[interop]` keys are parsed and ignored.
-
-**Environment:** `MSLENV` passes Mac variables into Linux (one way, with `/p` and `/l`, like `WSLENV`). `MSL_ERROR_CODES=1` adds `Error code:` lines. `MSL_DISTRIBUTION_LIST_URL` replaces the distribution list.
+Full reference: [docs/configuration.md](docs/configuration.md).
 
 ### How msl compares
 
@@ -150,35 +131,14 @@ Also tracked under "Open items" in the [roadmap](docs/roadmap.md).
 - **Not notarised yet**; releases need a Developer ID.
 - Distros are isolated by namespaces, not separate VMs (same as WSL2).
 
-### Build and test
+### Development
 
 ```console
-$ scripts/build.sh                 # guest (Rust, static musl) + initrd + msl/msld → build/
-$ build/bin/msl --help
-$ swift test                       # host unit tests (swift-testing)
-$ scripts/test-guest.sh            # guest unit tests (Linux, via Apple's `container`)
-$ Tests/e2e/m1.sh … m5.sh          # end-to-end suites (use a throwaway MSL_HOME)
-$ Tests/e2e/release.sh             # package → install → --update → --uninstall
-$ scripts/package.sh 0.1.0         # dist/: tarball + .sha256, .pkg, update.json
-$ scripts/publish.sh 0.1.0         # package and publish GitHub release v0.1.0 (Latest)
+$ scripts/build.sh      # guest + initrd + msl/msld → build/ (downloads the kernel release)
+$ swift test            # host unit tests; see CONTRIBUTING.md for the guest and e2e suites
 ```
 
-Requirements: Xcode 27 (Swift 6.4), Rust 1.98 with `aarch64-unknown-linux-musl`, `protoc`. `scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`); `kernel/build.sh` rebuilds it from source with Apple's `container`.
-
-Releases: msl ships as `v<version>` releases (the Latest one, used by `install.sh` and `msl --update`), each bundling a kernel. The kernel has its own releases, `kernel-<linux version>-msl.<n>`, published only when the kernel changes (`kernel/publish.sh`: bump `n` for config-only changes) and never marked Latest; each msl release's notes name the kernel it contains.
-
-### Layout
-
-| Path | What |
-|---|---|
-| `Sources/msl` | CLI (argument parsing and output mirror `wsl.exe`) |
-| `Sources/msld`, `Sources/MSLService` | service: VM, sessions, forwarding, DNS, file view, disks |
-| `Sources/MSLCore` | parser, messages, registry, `.mslconfig`, IPC |
-| `guest/` | `msl-guest`: VM init, per-distro init and agent, NFS server, DNS stub |
-| `proto/msl/v1/msl.proto` | host ↔ guest gRPC protocol |
-| `kernel/` | kernel config (Apple's + `msl.fragment`) and build script |
-| `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
-| `docs/dev/` | development log (`progress.md`) and the milestone 0 spike |
+Build requirements, tests, code layout and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md). The documentation index is [docs/README.md](docs/README.md).
 
 ### License
 
