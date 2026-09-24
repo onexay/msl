@@ -183,3 +183,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Conventions: one object on stdout with `schema: 1`, sorted camelCase keys, raw numbers, no nulls; pretty on a terminal, compact when piped. Errors go to stderr as JSON, with wsl.exe's exit codes (e.g. `-l --json` with nothing installed exits 255). In `--status`, `.mslconfig` warnings go into the JSON instead of stderr.
 - Docs: `docs/json.md` (examples from real output), `--help`, README, CHANGELOG.
 - Tests: 5 new unit tests (24 in total), a new `Tests/e2e/neon.sh` (19/19), and m1 40/40 and m2 25/25 still pass.
+
+## 2026-09-25 00:12: e2e suites named after milestones
+- `Tests/e2e/m1.sh`…`m5.sh` are now `helium`, `lithium`, `beryllium`, `boron` and `carbon`, next to `neon`. Their headers and temp-dir prefixes match, and `release.sh` keeps its name. Updated CONTRIBUTING, the vsock doc, and issue #4 (Nitrogen's suite will be `nitrogen.sh`).

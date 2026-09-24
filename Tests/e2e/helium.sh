@@ -1,12 +1,12 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Milestone 1 end-to-end test. Uses a throwaway MSL_HOME. The Debian and Ubuntu
+# Helium milestone end-to-end test. Uses a throwaway MSL_HOME. The Debian and Ubuntu
 # .wsl images come from Microsoft's distribution list (checksum-verified, cached).
-#   Tests/e2e/m1.sh [path/to/msl]
+#   Tests/e2e/helium.sh [path/to/msl]
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
-export MSL_HOME=$(mktemp -d /tmp/msl-e2e.XXXXXX)
+export MSL_HOME=$(mktemp -d /tmp/msl-helium.XXXXXX)
 export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/MSL
 CACHE=${MSL_E2E_CACHE:-$HOME/Library/Caches/msl/e2e}
 mkdir -p "$CACHE"

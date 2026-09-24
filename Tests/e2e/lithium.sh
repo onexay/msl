@@ -1,13 +1,13 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Milestone 2 end-to-end test: online install, compat layer, built-in OOBE,
+# Lithium milestone end-to-end test: online install, compat layer, built-in OOBE,
 # wsl.conf keys, .mslconfig, --manage, idle timeouts.
-#   Tests/e2e/m2.sh [path/to/msl]
+#   Tests/e2e/lithium.sh [path/to/msl]
 # Downloads come from Microsoft's distribution list (cached in ~/Library/Caches/msl).
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
-export MSL_HOME=$(mktemp -d /tmp/msl-e2e2.XXXXXX)
+export MSL_HOME=$(mktemp -d /tmp/msl-lithium.XXXXXX)
 export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/MSL
 WORK=$(mktemp -d)
 export MSL_CONFIG=$WORK/mslconfig

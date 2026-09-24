@@ -2,7 +2,7 @@
 
 Status: fixed in the Boron milestone (2026-09-24).
 Code: `guest/src/framed.rs` and `Sources/MSLService/FramedBridge.swift`.
-Regression checks: `Tests/e2e/m4.sh`, "Flow control" section.
+Regression checks: `Tests/e2e/boron.sh`, "Flow control" section.
 
 ## Summary
 
@@ -16,7 +16,7 @@ Guest-initiated connections, accepted through a `VZVirtioSocketListener`, do **n
 
 ## How it showed up
 
-The Boron end-to-end test (`Tests/e2e/m4.sh`) hung partway through, at `msl --export Ubuntu-24.04 - | msl --import Second <dir> -`.
+The Boron end-to-end test (`Tests/e2e/boron.sh`) hung partway through, at `msl --export Ubuntu-24.04 - | msl --import Second <dir> -`.
 
 What we saw:
 - **msld:** every request (`--status`, `-l`, run, import) blocked. A stack sample showed each thread waiting on a gRPC reply from the guest's mini-init.
@@ -107,7 +107,7 @@ Fixed as follows:
 - **Rust:** the socket `File` stays owned until the bridge finishes.
 - **Swift:** the fd is closed exactly once, after all three threads are done, and `shutdown()` only runs while it is still open.
 
-Result: 0 of 60 runs empty or short. "no lost output across 30 short sessions" is now a permanent check in `m4.sh`.
+Result: 0 of 60 runs empty or short. "no lost output across 30 short sessions" is now a permanent check in `boron.sh`.
 
 ### Results
 

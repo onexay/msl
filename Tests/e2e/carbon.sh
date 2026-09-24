@@ -1,12 +1,12 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Milestone 5 end-to-end test: --debug-shell, --mount/--unmount, --manage --compact/--resize,
+# Carbon milestone end-to-end test: --debug-shell, --mount/--unmount, --manage --compact/--resize,
 # --update/--uninstall on a development build, replaced-binary handling.
-#   Tests/e2e/m5.sh [path/to/msl]
+#   Tests/e2e/carbon.sh [path/to/msl]
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
-export MSL_HOME=$(mktemp -d /tmp/msl-e2e5.XXXXXX)
+export MSL_HOME=$(mktemp -d /tmp/msl-carbon.XXXXXX)
 export MSL_CONFIG=/dev/null MSL_VIEW_DIR=$MSL_HOME/view
 pass=0; fails=0
 check() {

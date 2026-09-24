@@ -1,11 +1,11 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Milestone 4 end-to-end test: hostname/hosts, localhost forwarding, DNS tunneling, ~/MSL file view.
-#   Tests/e2e/m4.sh [path/to/msl]
+# Boron milestone end-to-end test: hostname/hosts, localhost forwarding, DNS tunneling, ~/MSL file view.
+#   Tests/e2e/boron.sh [path/to/msl]
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
-export MSL_HOME=$(mktemp -d /tmp/msl-e2e4.XXXXXX)
+export MSL_HOME=$(mktemp -d /tmp/msl-boron.XXXXXX)
 export MSL_CONFIG=$MSL_HOME/cfg MSL_VIEW_DIR=$MSL_HOME/view
 : > "$MSL_CONFIG"
 MACNAME=$(scutil --get LocalHostName)
