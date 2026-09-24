@@ -1,0 +1,14 @@
+name: Feature request
+description: A wsl.exe feature msl lacks, or something new
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you need, and why
+      description: The workflow it enables. If it's a WSL feature, link its documentation.
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: Suggested behaviour

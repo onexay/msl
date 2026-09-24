@@ -25,7 +25,7 @@ FROM=
 YES=0
 EDIT_PATH=1
 
-if [ -t 1 ]; then B=$(printf '\033[1m'); D=$(printf '\033[2m'); R=$(printf '\033[31m'); G=$(printf '\033[32m'); N=$(printf '\033[0m'); else B= D= R= G= N=; fi
+if [ -t 1 ]; then B=$(printf '\033[1m'); D=$(printf '\033[2m'); R=$(printf '\033[31m'); G=$(printf '\033[32m'); N=$(printf '\033[0m'); else B='' D='' R='' G='' N=''; fi
 say()  { printf '%s\n' "$*"; }
 step() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
 ok()   { printf '%s✔%s %s\n' "$G" "$N" "$*"; }
@@ -94,6 +94,7 @@ if [ -z "$PREFIX" ]; then
   fi
   PREFIX=$(ask "Install to" "$DEFAULT")
 fi
+# shellcheck disable=SC2088 # expanding a literal ~ the user typed
 case $PREFIX in "~"|"~/"*) PREFIX=$HOME${PREFIX#\~} ;; esac
 case $PREFIX in /*) ;; *) PREFIX=$(pwd)/$PREFIX ;; esac
 
