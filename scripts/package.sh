@@ -13,7 +13,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 VFILE=Sources/MSLCore/Version.swift
-VERSION=${1:-$(sed -n 's/.*static let version = "\(.*\)"/\1/p' "$VFILE")}
+VERSION=${1:-$(cat VERSION)}
 BASE_URL=${MSL_RELEASE_BASE_URL:-file://$ROOT/dist}
 CHANNEL=${MSL_UPDATE_CHANNEL_URL:-}
 
