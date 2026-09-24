@@ -14,6 +14,10 @@ TAG=v$VERSION
 NAME=msl-$VERSION-macos-arm64.tar.gz
 KTAG=$(cat kernel/release.tag)
 
+# CHANGELOG.md must have a section for this version (moved out of Unreleased).
+CHANGES=$(awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {s=1; next} /^## \[/ {s=0} /^\[.*\]: / {s=0} s' CHANGELOG.md)
+[ -n "$(printf '%s' "$CHANGES" | tr -d '[:space:]')" ] || { echo "CHANGELOG.md has no section for $VERSION" >&2; exit 1; }
+
 [ -z "$(git status --porcelain)" ] || { echo "commit your changes first" >&2; exit 1; }
 git fetch -q origin && [ "$(git rev-parse HEAD)" = "$(git rev-parse "@{u}")" ] || { echo "push HEAD first" >&2; exit 1; }
 
@@ -41,6 +45,8 @@ BUSYBOX_SRC=$(scripts/gpl-sources.sh busybox | tr '\n' ' ')
 set -- --repo "$REPO" --target "$(git rev-parse HEAD)" --title "msl $VERSION"
 if [ "$PRE" = --prerelease ]; then set -- "$@" --prerelease; else set -- "$@" --latest; fi
 gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" $SIG "dist/msl-$VERSION.pkg" dist/update.json $BUSYBOX_SRC "$@" --notes "$(cat <<NOTES
+$CHANGES
+
 Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an existing install with \`msl --update\`.
 
 | | |
