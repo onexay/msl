@@ -174,3 +174,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - #19: stopping used `SIGKILL`. Now a systemd distro gets `SIGRTMIN+4` (poweroff), and other distros' processes get `SIGTERM`, with the namespace ending once only msl's processes are left. Anything left after 10 s is killed. `--shutdown` stops distros in parallel. Measured: Ubuntu 26.04 stops in 3.2 s with a clean journal; a distro without systemd stops in 0.07 s; a process ignoring TERM is killed at 10 s.
 - #20: systemd 259 treats the pid namespace as a container and ignores `net.ifnames=0`. The compat layer now runtime-masks `99-default.link`, and the NIC stays `eth0`.
 - e2e m1–m5 all pass (40/25/24/45/20).
+
+## 2026-09-24 12:35: v0.1.2
+- Published **v0.1.2** (Latest) with the fixes for #19 and #20. Checked the upgrade from the public one-liner: installed v0.1.1, `msl --update` moved it to 0.1.2, and a second `--update` reports it's current.
