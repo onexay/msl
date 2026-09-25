@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-/// Build identity. `scripts/package.sh` stamps the release version and update channel.
+/// Build identity. `scripts/package.sh` stamps the release version and update
+/// channel; `scripts/build.sh` stamps the commit.
 public enum MSLBuild {
     public static let version = "0.1.6"
+    /// Short git hash of the build (".dirty" with uncommitted changes); empty for a plain `swift build`.
+    public static let commit = ""
+    /// What `msl --version` shows: semver build metadata, e.g. "0.1.7+3af5916".
+    /// Update checks compare `version` only.
+    public static var displayVersion: String { commit.isEmpty ? version : "\(version)+\(commit)" }
     /// Release manifest URL for `msl --update` (empty for local builds; MSL_UPDATE_URL overrides).
     public static let updateURL = ""
 }

@@ -25,6 +25,7 @@ check "empty --list: JSON error on stderr" "Msl/Service/MSL_E_DEFAULT_DISTRO_NOT
 check "empty --status: JSON error" "1" "$($MSL --status --json 2>&1 >/dev/null | q 'd["schema"]')"
 
 check "--version --json" "$(cat "$ROOT/VERSION")" "$($MSL --version --json | q 'd["msl"]')"
+check "--version --json: commit" "$(git -C "$ROOT" rev-parse --short=7 HEAD)" "$($MSL --version --json | q 'd.get("commit", "").split(".")[0]')"
 check "--version --json: kernel" "True" "$($MSL -v --json | q 'd["kernel"].startswith("6.")')"
 
 CACHE=$HOME/Library/Caches/msl/downloads

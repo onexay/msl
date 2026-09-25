@@ -95,7 +95,7 @@ Other commands, such as install, terminate and shutdown, don't take `--json`: th
 ## `msl --version --json`
 
 ```json
-{"kernel": "6.18.15-msl", "macOS": "27.0.0", "msl": "0.1.2", "prefix": "/Users/you/.local", "schema": 1}
+{"commit": "3af5916", "kernel": "6.18.15-msl-76f230e", "macOS": "27.0.0", "msl": "0.1.7", "prefix": "/Users/you/.local", "schema": 1}
 ```
 
-`prefix` is where msl is installed. It's missing for a development build.
+`msl` is the plain version, for comparing; the text output of `msl --version` adds the commit (`0.1.7+3af5916`). `commit` is the short hash of the build, with `.dirty` for uncommitted changes. `prefix` is where msl is installed. It's missing for a development build.

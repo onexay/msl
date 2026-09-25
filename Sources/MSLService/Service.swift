@@ -55,7 +55,7 @@ public final class Service: @unchecked Sendable {
         try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
         let lfd = try listenUnix(paths.socket.path)
         _ = executableInode
-        log("msld listening on \(paths.socket.path)")
+        log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)")
         serveConnect()
         startIdleMonitor()
         while true {

@@ -4,7 +4,7 @@ import Darwin
 import Foundation
 import MSLCore
 
-let mslVersion = MSLBuild.version
+let mslVersion = MSLBuild.displayVersion
 let failureExit: Int32 = 255  // wsl.exe returns -1 on failure
 
 func out(_ s: String) { FileHandle.standardOutput.write((s + "\n").data(using: .utf8)!) }
@@ -215,7 +215,7 @@ case .version:
     let os = ProcessInfo.processInfo.operatingSystemVersion
     let macOS = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
     if jsonMode {
-        outJSON(JSONOutput.Version(msl: mslVersion, kernel: kernel, macOS: macOS, prefix: Installation.prefix?.path))
+        outJSON(JSONOutput.Version(msl: MSLBuild.version, commit: MSLBuild.commit.isEmpty ? nil : MSLBuild.commit, kernel: kernel, macOS: macOS, prefix: Installation.prefix?.path))
     } else {
         out(Messages.versions(msl: mslVersion, kernel: kernel, macOS: macOS))
     }
