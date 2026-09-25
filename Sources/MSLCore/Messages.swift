@@ -167,6 +167,21 @@ public enum Messages {
                     --verbose, -v
                         Show detailed information about all distributions.
 
+            --manage-ide [--ide <IDE>] [--install | --uninstall]
+                Set up the MSL extension in VS Code or a similar IDE, so it can
+                open folders inside distributions. Without options, lists the IDEs
+                found and asks what to do.
+
+                Options:
+                    --ide <vscode | vscode-insiders | vscode-oss | cursor | all>
+                        The IDE to change (vscodium is an alias for vscode-oss).
+
+                    --install
+                        Install the extension and enable its proposed API in argv.json.
+
+                    --uninstall
+                        Uninstall the extension and remove it from argv.json.
+
             --set-default, -s <Distro>
                 Sets the distribution as the default.
 

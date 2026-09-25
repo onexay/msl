@@ -355,6 +355,9 @@ case .update(let pre):
 case .uninstall:
     Installation.uninstall()
 
+case .manageIDE(let spec):
+    ManageIDE.run(spec)
+
 case .unsupported(let a):
     fail(Messages.unsupportedOnMacOS(a), ErrorCode.unsupported)
 

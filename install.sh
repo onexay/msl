@@ -11,6 +11,7 @@
 #   --from <tarball>   install a local msl-<version>-macos-arm64.tar.gz instead of downloading
 #   --yes, -y          accept the defaults; don't prompt
 #   --no-path          don't add the prefix to PATH
+#   --no-ide           don't set up the MSL extension in VS Code, VSCodium or Cursor
 #   --help
 #
 # Environment: MSL_REPO (default onexay/msl), GITHUB_TOKEN (for a private repo
@@ -25,6 +26,7 @@ VERSION=${MSL_VERSION:-}
 FROM=
 YES=0
 EDIT_PATH=1
+SETUP_IDE=1
 
 if [ -t 1 ]; then B=$(printf '\033[1m'); D=$(printf '\033[2m'); R=$(printf '\033[31m'); G=$(printf '\033[32m'); N=$(printf '\033[0m'); else B='' D='' R='' G='' N=''; fi
 say()  { printf '%s\n' "$*"; }
@@ -41,6 +43,7 @@ while [ $# -gt 0 ]; do
     --from)    [ $# -ge 2 ] || die "--from needs a file"; FROM=$2; shift ;;
     --yes|-y)  YES=1 ;;
     --no-path) EDIT_PATH=0 ;;
+    --no-ide)  SETUP_IDE=0 ;;
     --help|-h) usage ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
@@ -245,6 +248,22 @@ case ":$PATH:" in
     fi
     ;;
 esac
+
+# --- IDEs --------------------------------------------------------------------
+# The MSL extension opens folders in distros (like VS Code's WSL extension).
+# msl --manage-ide installs it and enables its proposed API in argv.json.
+if [ "$SETUP_IDE" = 1 ]; then
+  IDES=
+  for pair in "Visual Studio Code:.vscode" "Visual Studio Code - Insiders:.vscode-insiders" "VSCodium:.vscode-oss" "Cursor:.cursor"; do
+    name=${pair%%:*} dir=${pair#*:}
+    if [ -d "/Applications/$name.app" ] || [ -d "$HOME/Applications/$name.app" ] || [ -d "$HOME/$dir" ]; then
+      IDES="${IDES:+$IDES, }$name"
+    fi
+  done
+  if [ -n "$IDES" ] && confirm "Set up the MSL extension in $IDES?" y; then
+    "$BIN/msl" --manage-ide --ide all --install || say "You can try again later with: msl --manage-ide"
+  fi
+fi
 
 # --- First distro ------------------------------------------------------------
 MSL=$BIN/msl

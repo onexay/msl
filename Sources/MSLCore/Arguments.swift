@@ -79,6 +79,8 @@ public enum CLICommand: Equatable, Sendable {
     case unmount(String?)
     case update(preRelease: Bool)
     case uninstall
+    /// msl extension: set up the MSL extension in VS Code and similar IDEs.
+    case manageIDE(ManageIDESpec)
     /// A valid wsl.exe argument that has no macOS equivalent.
     case unsupported(String)
     /// A valid wsl.exe argument planned for a later MSL milestone.
@@ -299,6 +301,24 @@ public enum Arguments {
         case "--uninstall":
             try noMore()
             return .uninstall
+        case "--manage-ide":
+            var spec = ManageIDESpec()
+            while let a = rest.first {
+                rest.removeFirst()
+                switch a {
+                case "--ide":
+                    let v = try value(a).lowercased()
+                    guard v == "all" || IDE.named(v) != nil else { throw ArgumentError.invalid(v) }
+                    spec.ide = v == "all" ? "all" : IDE.named(v)!.id
+                case "--install", "--uninstall":
+                    guard spec.action == nil else { throw ArgumentError.invalid(a) }
+                    spec.action = a == "--install" ? .install : .uninstall
+                default: throw ArgumentError.invalid(a)
+                }
+            }
+            // Installing or uninstalling without a prompt needs to know where.
+            if spec.action != nil && spec.ide == nil { throw ArgumentError.missingValue("--ide") }
+            return .manageIDE(spec)
         case "--import-in-place":
             return .notImplemented(first)
         default:

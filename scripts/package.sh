@@ -30,7 +30,8 @@ STAGE=dist/stage/$NAME
 rm -rf "$STAGE" && mkdir -p "$STAGE/bin" "$STAGE/libexec/msl" "$STAGE/share/msl" "$STAGE/share/doc/msl"
 cp build/bin/msl "$STAGE/bin/msl"
 cp build/bin/msld "$STAGE/libexec/msl/msld"
-cp build/share/msl/Image build/share/msl/initrd.gz build/share/msl/kernel.version "$STAGE/share/msl/"
+[ -f build/share/msl/msl.vsix ] || { echo "error: build/share/msl/msl.vsix is missing (install Node.js and rebuild)" >&2; exit 1; }
+cp build/share/msl/Image build/share/msl/initrd.gz build/share/msl/kernel.version build/share/msl/msl.vsix "$STAGE/share/msl/"
 cp LICENSE NOTICE docs/THIRD_PARTY_NOTICES.md guest/vendor/busybox.COPYRIGHT "$STAGE/share/doc/msl/"
 cp -R docs/licenses "$STAGE/share/doc/msl/licenses"
 

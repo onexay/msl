@@ -38,4 +38,16 @@ install_bin() {  # install_bin <src> <name> [entitlements]
 }
 install_bin "$BIN/msl" msl
 install_bin "$BIN/msld" msld "$ROOT/Sources/msld/msld.entitlements"
-echo "built: build/bin/{msl,msld} build/share/msl/{Image,initrd.gz} (kernel $(cat "$OUT/share/msl/kernel.version"))"
+
+# The VS Code extension (msl --manage-ide installs it). Needs Node.js; a build
+# without it just can't set up IDEs, and scripts/package.sh refuses to package.
+EXT=$ROOT/extensions/vscode
+if command -v npm >/dev/null 2>&1; then
+  (cd "$EXT" && { [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error; } \
+    && npm run -s compile && npx vsce package --no-dependencies -o "$OUT/share/msl/msl.vsix" >/dev/null) \
+    || { echo "error: building the VS Code extension failed" >&2; exit 1; }
+else
+  rm -f "$OUT/share/msl/msl.vsix"
+  echo "warning: npm not found; skipped the VS Code extension (msl --manage-ide won't work)"
+fi
+echo "built: build/bin/{msl,msld} build/share/msl/{Image,initrd.gz,msl.vsix} (kernel $(cat "$OUT/share/msl/kernel.version"))"

@@ -24,7 +24,7 @@ $ ls ~/.msl/distros/Ubuntu/home            # the distro's files, from the Mac (a
 $ curl -fsSL https://raw.githubusercontent.com/onexay/msl/main/install.sh | sh
 ```
 
-The installer is interactive: it checks the Mac, asks where to install (default `~/.local`, no sudo), downloads the latest release and verifies its SHA-256, offers to add msl to `PATH`, and offers to install a first distro. For unattended installs: `… | sh -s -- --yes [--prefix /usr/local] [--version x.y.z] [--no-path]`; `--from <tarball>` installs a local package.
+The installer is interactive: it checks the Mac, asks where to install (default `~/.local`, no sudo), downloads the latest release and verifies its SHA-256, offers to add msl to `PATH`, offers to set up the MSL extension in VS Code, VSCodium or Cursor if it finds one, and offers to install a first distro. For unattended installs: `… | sh -s -- --yes [--prefix /usr/local] [--version x.y.z] [--no-path] [--no-ide]`; `--from <tarball>` installs a local package.
 
 msl has no Homebrew formula: it's a self-contained environment and updates itself with `msl --update`; `msl --uninstall` removes it and keeps your distros.
 
@@ -83,7 +83,7 @@ $ echo $MSL_DISTRO_NAME
 - **Files from the Mac:** each distro's filesystem at `~/.msl/distros/<distro>` (NFS over vsock), listed in Finder › Locations under its own name and logo, while the VM runs.
 - **Disks and debugging:** `--mount`/`--unmount` (images at `/mnt/msl/<name>` in every distro), `--debug-shell`, `--manage --compact`.
 - **Service:** `--update`, `--uninstall`, `.mslconfig` (the `.wslconfig` equivalent), `--status`. Errors print just the message; set `MSL_ERROR_CODES=1` to add wsl.exe-style `Error code:` lines.
-- **VS Code (preview):** a VS Code extension ([extensions/vscode](extensions/vscode)) opens folders inside a distro like the WSL extension does. It connects through msl, with no SSH and no port opened on the Mac. It relies on VS Code's proposed API, so it's installed from a `.vsix`, not the Marketplace.
+- **VS Code (preview):** a VS Code extension ([extensions/vscode](extensions/vscode)) opens folders inside a distro like the WSL extension does. It connects through msl, with no SSH and no port opened on the Mac. It relies on VS Code's proposed API, so it isn't on the Marketplace: the installer or `msl --manage-ide` installs it and enables that API.
 - **Scripting:** `--json` on `--list`, `--list --online`, `--status` and `--version` prints JSON ([docs/json.md](docs/json.md)).
 
 msl never runs macOS binaries inside distros: Linux sees only Linux binaries. `npm`, `node-gyp`, `configure` and friends can only find Linux toolchains, so build output is always Linux ELF, even under `/mnt/mac`.

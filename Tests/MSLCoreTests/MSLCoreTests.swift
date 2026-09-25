@@ -302,3 +302,106 @@ import Testing
         }
     }
 }
+
+@Suite struct ArgvJSONTests {
+    let id = "onexay.msl"
+    // VS Code's generated argv.json (with its comments).
+    let stock = """
+        // This configuration file allows you to pass permanent command line arguments to VS Code.
+        {
+        \t// Use software rendering instead of hardware accelerated rendering.
+        \t// "disable-hardware-acceleration": true,
+
+        \t// Allows to disable crash reporting.
+        \t"enable-crash-reporter": true,
+
+        \t// Unique id used for correlating crash reports sent from this instance.
+        \t// Do not edit this value.
+        \t"crash-reporter-id": "93407bc0-be8a-4446-bbfc-da98a524e011"
+        }
+
+        """
+
+    func parses(_ s: String) -> Bool {
+        // Strip comments the simple way (none of the fixtures have // in strings) and parse.
+        let json = s.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("//") { return "" }
+            if let r = line.range(of: " // ") { return String(line[..<r.lowerBound]) }  // trailing comment
+            return String(line)
+        }.joined(separator: "\n")
+        return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) != nil
+    }
+
+    @Test func enablesInStockFileAndKeepsEverythingElse() throws {
+        let out = try ArgvJSON.enabling(id, in: stock)
+        #expect(ArgvJSON.isEnabled(id, in: out))
+        #expect(parses(out))
+        #expect(out.contains("\"crash-reporter-id\": \"93407bc0-be8a-4446-bbfc-da98a524e011\","))
+        #expect(out.contains("// \"disable-hardware-acceleration\": true,"))
+        #expect(out.hasPrefix("// This configuration file"))
+        #expect(try ArgvJSON.enabling(id, in: out) == out, "idempotent")
+    }
+
+    @Test func roundTripRestoresTheFile() throws {
+        for text in [stock, stock.replacingOccurrences(of: "e011\"\n}", with: "e011\"\n\n}"),
+                     "{\n\t\"a\": 1 // last\n\t// \"b\": 2\n}\n"] {
+            let on = try ArgvJSON.enabling(id, in: text)
+            #expect(parses(on), "\(on)")
+            #expect(try ArgvJSON.disabling(id, in: on) == text, "\(text)")
+        }
+    }
+
+    @Test func appendsToAnExistingList() throws {
+        let text = "{\n\t\"enable-proposed-api\": [\"other.ext\"], // mine\n\t\"x\": 1\n}\n"
+        let on = try ArgvJSON.enabling(id, in: text)
+        #expect(on.contains("[\"other.ext\", \"onexay.msl\"], // mine"))
+        #expect(parses(on))
+        let off = try ArgvJSON.disabling(id, in: on)
+        #expect(off == "{\n\t\"enable-proposed-api\": [\"other.ext\"], // mine\n\t\"x\": 1\n}\n")
+        let empty = try ArgvJSON.enabling(id, in: "{ \"enable-proposed-api\": [] }")
+        #expect(empty == "{ \"enable-proposed-api\": [\"onexay.msl\"] }")
+    }
+
+    @Test func missingEmptyAndTrailingComma() throws {
+        for text in [nil, "", "  \n", "{}", "{\n}\n", "{\n\t\"a\": true,\n}\n"] as [String?] {
+            let on = try ArgvJSON.enabling(id, in: text)
+            #expect(ArgvJSON.isEnabled(id, in: on), "\(String(describing: text))")
+        }
+        #expect(parses(try ArgvJSON.enabling(id, in: "{\n\t\"a\": true\n}")))
+    }
+
+    @Test func removesTheMemberWhenItIsFirstOrMiddle() throws {
+        let text = "{\n\t\"enable-proposed-api\": [\"onexay.msl\"],\n\t\"a\": true\n}\n"
+        #expect(try ArgvJSON.disabling(id, in: text) == "{\n\t\"a\": true\n}\n")
+        #expect(try ArgvJSON.disabling(id, in: "{\n\t\"a\": 1\n}\n") == "{\n\t\"a\": 1\n}\n", "absent: unchanged")
+    }
+
+    @Test func ignoresLookalikesInCommentsAndStrings() throws {
+        let text = "{\n\t// \"enable-proposed-api\": [\"onexay.msl\"]\n\t\"note\": \"enable-proposed-api\"\n}\n"
+        #expect(!ArgvJSON.isEnabled(id, in: text))
+        let on = try ArgvJSON.enabling(id, in: text)
+        #expect(ArgvJSON.isEnabled(id, in: on) && parses(on))
+    }
+
+    @Test func refusesWhatItCannotEdit() {
+        #expect(throws: ArgvJSON.EditError.notAnObject) { try ArgvJSON.enabling(id, in: "[1, 2]") }
+        #expect(throws: ArgvJSON.EditError.notAnArray) { try ArgvJSON.enabling(id, in: "{ \"enable-proposed-api\": \"x\" }") }
+    }
+}
+
+
+@Suite struct ManageIDEArgumentTests {
+    @Test func parses() throws {
+        #expect(try Arguments.parse(["--manage-ide"]) == .manageIDE(ManageIDESpec()))
+        #expect(try Arguments.parse(["--manage-ide", "--ide", "all", "--install"]) == .manageIDE(ManageIDESpec(ide: "all", action: .install)))
+        #expect(try Arguments.parse(["--manage-ide", "--uninstall", "--ide", "VSCodium"]) == .manageIDE(ManageIDESpec(ide: "vscode-oss", action: .uninstall)))
+        #expect(try Arguments.parse(["--manage-ide", "--ide", "cursor"]) == .manageIDE(ManageIDESpec(ide: "cursor")))
+    }
+
+    @Test func rejects() {
+        for bad in [["--manage-ide", "--install"], ["--manage-ide", "--ide", "emacs", "--install"], ["--manage-ide", "--ide"],
+                    ["--manage-ide", "--ide", "all", "--install", "--uninstall"], ["--manage-ide", "--bogus"]] {
+            #expect(throws: ArgumentError.self, "\(bad)") { try Arguments.parse(bad) }
+        }
+    }
+}

@@ -226,3 +226,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Found a second dead-server case: a server that was auto-shutting down still matched pid+cmdline but refused connections. `running()` now also connects through `msl-bridge`.
 - Two windows, Ubuntu-26.04 and Debian, from the installed `.vsix` in an isolated profile: each distro had its own server and remote extension host, and a Debian forwarded port passed 3 of 3 slow 50 MB downloads. Windows started with `--extensionDevelopmentPath` share one development host, so a second launch reloads it.
 - My mistake: a zsh launch passed all options as one argument (zsh does not split variables into words), so the user saw a "No remote extension installed to resolve msl" window. It was a separate instance with a junk profile, and it had exited by the time I checked. Launches now go through a bash script.
+
+## 2026-09-25 11:50: #35 msl --manage-ide
+- `ArgvJSON` (MSLCore): a comment-preserving text edit of `enable-proposed-api`, with 8 unit tests (a byte-exact round trip of the stock file and variants, idempotence, other ids, lookalikes, refusals). The user chose to keep the text edit over a lossy parse-and-rewrite; it is brittle, to be revisited.
+- `IDE` catalog, `--manage-ide` parsing (2 tests), and `Sources/msl/ManageIDE.swift`: detection by app bundle, PATH and config dir; status read from extensions.json (the IDE deletes the folder of an uninstalled extension later); install/uninstall through the IDE's CLI; a one-time argv.json backup; atomic writes; refuses to run as root; under sudo, `--uninstall` re-runs itself as SUDO_USER.
+- `build.sh` builds `share/msl/msl.vsix` (needs npm); `package.sh` requires it. `install.sh` prompts to set up the IDEs it finds (`--no-ide` skips).
+- release.sh: install.sh with a throwaway HOME set up VS Code; `--update` kept it; `--uninstall` removed it and restored argv.json byte for byte.

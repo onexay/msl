@@ -2,21 +2,24 @@
 
 Opens folders inside msl distros, like the WSL extension on Windows. VS Code talks to the VS Code Server in the distro over managed pipes (msl → vsock → the server's Unix socket). It uses no SSH and opens no TCP port on the Mac. Design: [docs/design/vscode-integration.md](../../docs/design/vscode-integration.md) (option C′), milestone Sodium.
 
-The extension uses VS Code's proposed `resolvers` API, so it isn't on the Marketplace. To try it:
+The extension uses VS Code's proposed `resolvers` API, so it isn't on the Marketplace. msl ships it (`share/msl/msl.vsix`) and sets it up:
 
 ```console
-$ cd extensions/vscode && npm install && npm run compile && npm run package
-$ code --install-extension msl-0.1.0.vsix
+$ msl --manage-ide                              # shows the IDEs found and asks
+$ msl --manage-ide --ide vscode --install       # or vscode-insiders, vscode-oss (vscodium), cursor, all
+$ msl --manage-ide --ide all --uninstall
 ```
 
-Then add `"enable-proposed-api": ["onexay.msl"]` to `~/.vscode/argv.json`, restart VS Code, and run **MSL: Connect to Distro**. You can also open `vscode-remote://msl+<distro>/home/<user>` directly.
+It installs the extension with the IDE's own CLI and adds `"enable-proposed-api": ["onexay.msl"]` to its `argv.json`, keeping comments and other keys. The first change saves a backup, `argv.json.msl-backup`. The installer runs it for the IDEs it finds, unless you pass `--no-ide`, and `msl --uninstall` undoes it. Quit and reopen the IDE (⌘Q), then run **MSL: Connect to Distro**. You can also open `vscode-remote://msl+<distro>/home/<user>` directly.
+
+To build the `.vsix` on its own: `cd extensions/vscode && npm install && npm run package`. `scripts/build.sh` puts it in `build/share/msl/msl.vsix`.
 
 Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect to a distro, the extension installs the VS Code Server that matches your VS Code into `~/.vscode-server/bin/<commit>`. It downloads the server on the Mac, caches it in `~/Library/Caches/msl/vscode-server/` for every distro to reuse, and pipes it in, so the distro needs no `curl` or `wget` (stock Debian has neither). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on the Mac's `127.0.0.1`.
 
 **Settings:** `msl.path` sets the `msl` binary. By default the extension uses `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`. The binary must be msl 0.1.3 or newer, because the extension relies on `--list --json`. Point `msl.path` at `build/bin/msl` to use a development build.
 
 **Troubleshooting:**
-- *"No remote extension installed to resolve msl":* the extension didn't activate. Output › Log (Extension Host) shows `CANNOT use API proposal: resolvers`. Add `enable-proposed-api` to `~/.vscode/argv.json` (**Preferences: Configure Runtime Arguments**), then quit VS Code with ⌘Q; closing the window isn't enough.
+- *"No remote extension installed to resolve msl":* the extension didn't activate. Output › Log (Extension Host) shows `CANNOT use API proposal: resolvers`. Run `msl --manage-ide`, or add `enable-proposed-api` to `~/.vscode/argv.json` by hand (**Preferences: Configure Runtime Arguments**). Then quit VS Code with ⌘Q; closing the window isn't enough.
 - *"msl --list --verbose --json exited with 255":* `msl.path` points to an `msl` older than 0.1.3.
 
 **Licence note:** the VS Code Server is Microsoft's build, which is licensed for use with VS Code.

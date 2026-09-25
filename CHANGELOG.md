@@ -14,6 +14,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - msld now removes its `run/vsock-*.sock` bridge sockets when the VM stops, so stale sockets no longer pile up.
 
 ### Added
+- `msl --manage-ide [--ide <vscode|vscode-insiders|vscode-oss|cursor|all>] [--install|--uninstall]` sets up the VS Code extension. It installs the bundled `.vsix` and adds it to `enable-proposed-api` in the IDE's `argv.json`, keeping comments and other keys. Without options, it lists the IDEs found and asks what to do. The installer runs it for the IDEs it finds (`--no-ide` skips this), and `msl --uninstall` undoes it ([#35](https://github.com/onexay/msl/issues/35)).
 - Preview VS Code extension (`extensions/vscode`) that opens folders in a distro through managed pipes: no SSH, and no port on the Mac. It needs VS Code's proposed `resolvers` API (Sodium).
 - msld's connect socket (`connect.sock`): `CONNECT distro=<name> unix=<path>|tcp=<port>` opens a byte stream into a distro, over vsock 1026 or the localhost forwarder. Unix sockets are limited to `~/.vscode-server/msl/*.sock`, and the connection is made as the distro's default user. The VS Code extension uses it for every pipe and falls back to `msl-bridge` with an older msld ([#32](https://github.com/onexay/msl/issues/32)).
 - `/run/msl/init msl-bridge unix:<path>|tcp:<port>`: relays stdio to a Unix socket or localhost port inside a distro ([#29](https://github.com/onexay/msl/issues/29)).

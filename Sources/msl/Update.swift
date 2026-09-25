@@ -98,6 +98,7 @@ enum Installation {
         guard FileManager.default.isWritableFile(atPath: prefix.appendingPathComponent("bin").path) else {
             fail("Uninstalling requires write access to \(prefix.path); run 'sudo \(Messages.exe) --uninstall'.", ErrorCode.unsupported)
         }
+        ManageIDE.uninstallEverywhere()
         stopService()
         for p in managedPaths { try? FileManager.default.removeItem(at: prefix.appendingPathComponent(p)) }
         stopService()
