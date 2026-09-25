@@ -11,7 +11,7 @@ msl runs the images from Microsoft's WSL distribution list, unmodified. That lis
 | `wslpath`, `WSLENV`, `WSL_DISTRO_NAME` | `mslpath`, `MSLENV`, `MSL_DISTRO_NAME`. WSL detection stays off, so tools don't assume Windows interop. |
 | Windows interop (running `.exe` from Linux) | No, by design: nothing from macOS runs inside a distro. |
 | WSLg, GPU, WSL 1, mirrored networking | No (see [Known limitations](../README.md#known-limitations)). |
-| x86_64-only distributions | Not yet. `--list --online` marks them, and the untested Rosetta path works only if Rosetta is already installed. qemu-user support is planned ([Nitrogen](https://github.com/onexay/msl/milestone/7)). |
+| x86_64-only distributions | Not supported; deferred ([Nitrogen](https://github.com/onexay/msl/milestone/7), findings in [#40](https://github.com/onexay/msl/issues/40)). When Rosetta is available, `--list --online` still offers and marks them, but systemd distros don't boot cleanly yet. |
 
 The only file msl adds to an image is the `/usr/bin/mslpath` symlink. `msl --export` writes a plain tar file, the format `wsl --import` takes.
 
