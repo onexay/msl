@@ -5,6 +5,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ## [Unreleased]
 
 ### Changed
+- Releases no longer include a `.pkg`. `install.sh` is the way to install msl, and the only one that sets up IDEs.
+- The VS Code extension has its own releases, `vscode-<version>`, like the kernel. Each msl release bundles the published one. The first is [`vscode-0.1.0`](https://github.com/onexay/msl/releases/tag/vscode-0.1.0).
 - Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
 
 ### Fixed

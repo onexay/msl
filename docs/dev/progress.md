@@ -232,3 +232,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - `IDE` catalog, `--manage-ide` parsing (2 tests), and `Sources/msl/ManageIDE.swift`: detection by app bundle, PATH and config dir; status read from extensions.json (the IDE deletes the folder of an uninstalled extension later); install/uninstall through the IDE's CLI; a one-time argv.json backup; atomic writes; refuses to run as root; under sudo, `--uninstall` re-runs itself as SUDO_USER.
 - `build.sh` builds `share/msl/msl.vsix` (needs npm); `package.sh` requires it. `install.sh` prompts to set up the IDEs it finds (`--no-ide` skips).
 - release.sh: install.sh with a throwaway HOME set up VS Code; `--update` kept it; `--uninstall` removed it and restored argv.json byte for byte.
+
+## 2026-09-25 11:59: .pkg dropped; extension released separately
+- Removed the `.pkg` from package.sh, publish.sh and CONTRIBUTING (the README documents only install.sh).
+- The extension version is package.json's, released as `vscode-<version>` (never Latest) by `extensions/vscode/publish.sh`, which records `release.tag` and `release.sha256`. `extensions/vscode/fetch.sh` downloads and verifies it. `scripts/build.sh` uses a local `dist/msl-<version>.vsix` if present, else fetches, so building msl needs no Node. The msl `publish.sh` refuses to publish unless the bundled .vsix is the published one.
+- Published **vscode-0.1.0** (msl-0.1.0.vsix, sha256 32e1054d…). A build with no local dist fetched it, and the hash matched. Added LICENSE to the extension; vsce warned it was missing from 0.1.0.
