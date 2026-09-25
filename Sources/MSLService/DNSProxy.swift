@@ -63,28 +63,38 @@ enum DNSProxy {
     }
 
     final class Collector {
+        let type: UInt16
         var records: [Record] = []
         var done = false
         var error: DNSServiceErrorType = DNSServiceErrorType(kDNSServiceErr_NoError)
+        init(type: UInt16) { self.type = type }
     }
 
     /// Resolve with mDNSResponder. nil = timeout / failure (SERVFAIL).
     static func resolve(_ q: Question, timeout: TimeInterval = 5) -> (records: [Record], nodata: Bool)? {
-        let collector = Collector()
+        let collector = Collector(type: q.type)
         let ctx = Unmanaged.passRetained(collector)
         defer { ctx.release() }
         var ref: DNSServiceRef?
         let callback: DNSServiceQueryRecordReply = { _, flags, _, err, _, rrtype, rrclass, rdlen, rdata, ttl, context in
             let c = Unmanaged<Collector>.fromOpaque(context!).takeUnretainedValue()
             if err == DNSServiceErrorType(kDNSServiceErr_NoError) {
-                if flags & DNSServiceFlags(kDNSServiceFlagsAdd) != 0, let rdata {
+                // ReturnIntermediates also delivers the CNAME chain, sometimes in a
+                // batch of its own. The answer is built with every record owned by
+                // the question name, so keep only the requested type (a flattened
+                // answer, as without the flag) and wait for it.
+                let wanted = rrtype == c.type || c.type == 5 || c.type == 255  // CNAME, ANY
+                if flags & DNSServiceFlags(kDNSServiceFlagsAdd) != 0, wanted, let rdata {
                     let bytes = Array(UnsafeBufferPointer(start: rdata.assumingMemoryBound(to: UInt8.self), count: Int(rdlen)))
                     c.records.append(Record(type: rrtype, cls: rrclass, ttl: ttl, rdata: bytes))
                 }
             } else {
                 c.error = err
             }
-            if flags & DNSServiceFlags(kDNSServiceFlagsMoreComing) == 0 { c.done = true }
+            if flags & DNSServiceFlags(kDNSServiceFlagsMoreComing) == 0,
+               !c.records.isEmpty || c.error != DNSServiceErrorType(kDNSServiceErr_NoError) {
+                c.done = true
+            }
         }
         // Without ReturnIntermediates, mDNSResponder never reports a negative
         // answer (e.g. AAAA for an IPv4-only name) and the query runs into the

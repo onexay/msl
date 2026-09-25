@@ -7,6 +7,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ### Changed
 - The VM section of `~/.mslconfig` is now `[msl2]`. `[wsl2]` still works, so existing files and a copied `.wslconfig` need no change.
 
+### Fixed
+- Names that are CNAME aliases (deb.debian.org, cdn.kernel.org, www.apple.com) resolve in distros again. 0.1.5's DNS fix made macOS report the CNAME record as well, and msld then answered with the alias alone or with records glibc rejects, so lookups failed and `apt` and `curl` couldn't reach those hosts.
+
 ## [0.1.5] - 2026-09-25
 
 ### Fixed

@@ -58,6 +58,11 @@ check "Mac-only .local name resolves" "$MACNAME.local" "$($MSL getent hosts $MAC
 check_not ".local: no loopback answers" "::1 " "$($MSL getent hosts $MACNAME.local)"
 check "public name resolves" "example.com" "$($MSL getent hosts example.com)"
 check "NXDOMAIN" "not found" "$($MSL getent hosts no-such-host.invalid || echo 'not found')"
+# #41: no AAAA record must answer at once, not after the 5 s resolver timeout.
+check "IPv4-only name, A+AAAA under 2 s" "fast" "$($MSL -e sh -c 's=$(date +%s); getent ahosts github.com >/dev/null && [ $(( $(date +%s) - s )) -lt 2 ] && echo fast')"
+# A CNAME chain must be flattened into address records for the question name.
+check "CNAME name resolves (A)" "STREAM deb.debian.org" "$($MSL getent ahostsv4 deb.debian.org)"
+check "CNAME name resolves (AAAA)" "STREAM deb.debian.org" "$($MSL getent ahostsv6 deb.debian.org)"
 check "TCP DNS path (python getaddrinfo)" "ok" "$($MSL -e python3 -c 'import socket; socket.getaddrinfo("apple.com", 443); print("ok")')"
 
 # ~/.msl/distros file view
