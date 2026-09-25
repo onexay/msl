@@ -3,7 +3,7 @@
 # Download the prebuilt MSL kernel (Image + config) from the GitHub release
 # instead of building it (kernel/build.sh). The tag is kernel/release.tag;
 # files are verified against kernel/release.sha256.
-# Output: kernel/out/{Image,config}
+# Output: kernel/out/{Image,config,tag}
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 TAG=${KERNEL_TAG:-$(cat "$HERE/release.tag")}
@@ -17,3 +17,4 @@ else
   done
 fi
 (cd "$HERE/out" && shasum -a 256 -c "$HERE/release.sha256")
+echo "$TAG" > "$HERE/out/tag"

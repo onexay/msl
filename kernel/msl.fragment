@@ -18,3 +18,9 @@ CONFIG_NETWORK_FILESYSTEMS=y
 CONFIG_NFSD=y
 CONFIG_NFSD_V4=y
 CONFIG_EXPORTFS=y
+# device-mapper (dm-linear is built in; per-distro volumes, dmsetup)
+CONFIG_MD=y
+CONFIG_BLK_DEV_DM=y
+# NBD client (/dev/nbdN via nbd-client). VZ's NBD disk attachment needs nothing
+# here: the guest sees it as virtio-blk.
+CONFIG_BLK_DEV_NBD=y
