@@ -637,6 +637,13 @@ impl MiniInit for MiniInitService {
             nix::unistd::sync();
             // Keep data.img compact: hand freed blocks back to the Mac.
             let _ = sys::fstrim(DATA);
+            // Read-only remount: ext4 commits the journal and marks the filesystem
+            // clean, so the next boot doesn't replay it. (A sync alone leaves
+            // needs_recovery set.) The per-distro binds share the superblock.
+            match nix::mount::mount(None::<&str>, DATA, None::<&str>, MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY, None::<&str>) {
+                Ok(()) => sys::log("data disk: clean (read-only) for power-off"),
+                Err(e) => sys::log(&format!("data disk: read-only remount failed: {e}; synced only")),
+            }
             Ok(())
         })
         .await?;
