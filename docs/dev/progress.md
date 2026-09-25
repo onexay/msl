@@ -313,3 +313,11 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-25 17:15: [msl2] section in .mslconfig
 - The VM section is now `[msl2]`, with `[wsl2]` accepted as an alias (as `/etc/msl.conf` falls back to `/etc/wsl.conf`). Warnings name the section as written. Updated configuration.md, architecture.md, the proto comment and the lithium, boron and neon e2e configs.
 - 37 unit tests pass (the config test now also parses a `[wsl2]` file); lithium.sh 25 of 25.
+
+## 2026-09-25 17:45: per-distro disks: USB mass storage benchmark
+- Question: can per-distro images be hot-added as USB mass storage (the only hot-pluggable block device in Virtualization.framework; virtio-blk, NVMe and NBD attachments are fixed at boot, and virtio-fs shares can change at runtime but can't hold a Linux root)?
+- Driver: the guest binds `usb-storage` (Bulk-Only Transport, protocol 0x50), not `uas`. SuperSpeed (5000), `max_sectors_kb=1024`, queue depth 1 (`nr_requests=1`); virtio-blk has 256. Both attachments use `.automatic` caching and `.full` sync.
+- fio (Debian, 4 vCPU, 2 GiB file, direct I/O, 15 s), virtio-blk (data.img) vs USB: seq read 1M qd8 1099 vs 1880 MiB/s; seq write 902 vs 766 MiB/s; rand read 4k qd1 10.1k vs 5.3k IOPS, qd32 66.0k vs 5.5k; rand write 4k qd1 28.8k vs 10.8k, qd32 145k vs 11.2k; rand write 4k + fsync 205 vs 10.6k. Untar of 277 MB / 10,197 entries + sync: 554 vs 464 ms; cold read of all files: 664 vs 1475 ms.
+- USB doesn't queue: qd32 equals qd1, so random I/O is 2–26× slower.
+- USB reports `write through` (`/sys/block/sda/queue/write_cache`), so Linux never sends a cache flush. Its fsync at ~95 µs can't include a full flush to the Mac's storage (virtio-blk's fsync costs ~5 ms with `.full`). Guest fsyncs on USB disks probably aren't durable against a Mac crash or power loss. That applies to `--mount` today.
+- Conclusion: USB isn't suitable for distro root filesystems. Next candidates: NBD + device-mapper ranges, and loop devices over virtio-fs.
