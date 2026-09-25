@@ -40,6 +40,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Version numbers agree
         run: scripts/check-version.sh
+      - name: Links in Markdown files point to existing files and headings
+        run: scripts/check-links.py
       - name: shellcheck
         run: |
           shellcheck -S warning install.sh scripts/*.sh kernel/*.sh

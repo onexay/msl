@@ -1,5 +1,5 @@
 # cargo-about configuration: licence texts of msl-guest's dependencies
-# (scripts/gen-licenses.sh writes docs/licenses/rust-dependencies.txt).
+# (scripts/gen-licenses.sh writes docs/licenses/rust_dependencies.txt).
 accepted = ["Apache-2.0", "MIT", "BSD-3-Clause", "Zlib", "Unicode-3.0", "Apache-2.0 WITH LLVM-exception", "0BSD", "Unlicense"]
 targets = ["aarch64-unknown-linux-musl"]
 ignore-build-dependencies = true

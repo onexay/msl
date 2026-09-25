@@ -2,7 +2,7 @@
 import Foundation
 
 // User-facing text. Wording follows wsl.exe (localization/strings/en-US/Resources.resw,
-// Copyright (c) Microsoft Corporation, MIT License: docs/licenses/WSL-MIT.txt)
+// Copyright (c) Microsoft Corporation, MIT License: docs/licenses/wsl_mit.txt)
 // with product names adapted: "Windows Subsystem for Linux" -> "Modern Subsystem for Linux",
 // "wsl.exe" -> "msl".
 

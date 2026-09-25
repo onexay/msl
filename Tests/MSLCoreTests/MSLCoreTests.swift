@@ -405,3 +405,18 @@ import Testing
         }
     }
 }
+
+@Suite struct DocsTests {
+    /// docs/cli.md embeds `msl --help` verbatim; this fails when Messages.usage changes and the doc doesn't.
+    @Test func cliDocMatchesHelp() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let doc = try String(contentsOf: root.appendingPathComponent("docs/cli.md"), encoding: .utf8)
+        guard let start = doc.range(of: "## `msl --help`\n\n```text\n"),
+              let end = doc.range(of: "\n```\n", range: start.upperBound..<doc.endIndex) else {
+            Issue.record("docs/cli.md has no ```text block under \"## `msl --help`\"")
+            return
+        }
+        #expect(String(doc[start.upperBound..<end.lowerBound]) == Messages.usage,
+                "docs/cli.md is out of date: replace its help block with the output of msl --help")
+    }
+}

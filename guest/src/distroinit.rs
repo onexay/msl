@@ -182,7 +182,7 @@ fn run_agent(cfg: &Cfg, systemd: bool) -> ! {
     crate::reaper::spawn_thread();
     let fd = cfg.ready_fd;
     agent::serve(cfg.port, cfg.name.clone(), move || {
-        // Readiness: systemd must have created its bus socket (spike finding).
+        // Readiness: systemd must have created its bus socket.
         if systemd {
             let t0 = Instant::now();
             while !std::path::Path::new("/run/systemd/private").exists() && t0.elapsed() < Duration::from_secs(30) {

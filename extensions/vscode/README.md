@@ -1,6 +1,6 @@
 # MSL for VS Code (preview)
 
-Opens folders inside msl distros, like the WSL extension on Windows. VS Code talks to the VS Code Server in the distro over managed pipes (msl → vsock → the server's Unix socket). It uses no SSH and opens no TCP port on the Mac. Design: [docs/design/vscode-integration.md](../../docs/design/vscode-integration.md) (option C′), milestone Sodium.
+Opens folders inside msl distros, like the WSL extension on Windows. VS Code talks to the VS Code Server in the distro over managed pipes (msl → vsock → the server's Unix socket). It uses no SSH and opens no TCP port on the Mac. Design: [#38](https://github.com/onexay/msl/issues/38) (option C′), milestone Sodium.
 
 The extension uses VS Code's proposed `resolvers` API, so it isn't on the Marketplace. msl ships it (`share/msl/msl.vsix`) and sets it up:
 

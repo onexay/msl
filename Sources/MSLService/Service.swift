@@ -482,7 +482,7 @@ public final class Service: @unchecked Sendable {
             oobe.shellType = .none
             oobe.user = "root"
             oobe.cwd = "/"
-            // WSL_DISTRO_NAME only here: Ubuntu's wsl-setup uses `set -u` (spike finding).
+            // WSL_DISTRO_NAME only here: Ubuntu's wsl-setup uses `set -u`.
             oobe.env = r.env.merging(["WSL_DISTRO_NAME": d.name, "MSL_MAC_USER": NSUserName()]) { $1 }
             apply(r, to: &oobe)
             let code = try session(agent: agent, request: oobe, stdio: stdio, events: events)

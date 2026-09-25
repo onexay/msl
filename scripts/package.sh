@@ -31,7 +31,7 @@ cp build/bin/msl "$STAGE/bin/msl"
 cp build/bin/msld "$STAGE/libexec/msl/msld"
 [ -f build/share/msl/msl.vsix ] || { echo "error: build/share/msl/msl.vsix is missing (see the VS Code extension step in scripts/build.sh)" >&2; exit 1; }
 cp build/share/msl/Image build/share/msl/initrd.gz build/share/msl/kernel.version build/share/msl/msl.vsix "$STAGE/share/msl/"
-cp LICENSE NOTICE docs/THIRD_PARTY_NOTICES.md guest/vendor/busybox.COPYRIGHT "$STAGE/share/doc/msl/"
+cp LICENSE NOTICE docs/third_party_notices.md guest/vendor/busybox.COPYRIGHT "$STAGE/share/doc/msl/"
 cp -R docs/licenses "$STAGE/share/doc/msl/licenses"
 
 if [ -n "${MSL_SIGN_IDENTITY:-}" ]; then

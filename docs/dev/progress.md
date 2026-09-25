@@ -246,3 +246,27 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - `--help` now lists every accepted command (it had omitted --manage, --mount/--unmount, --update, --uninstall, --debug-shell, --set-version, --set-default-version, --list --online); --manage-ide moved to the MSL group. The README embeds the output verbatim, checked with diff.
 - Corrected README and ARCHITECTURE: msld is not a LaunchAgent and msl does not talk to it over XPC. msl starts msld on demand and passes stdio over a Unix socket (SCM_RIGHTS).
 - Removed unverified claims from the draft (a `code .` example; Ubuntu 22.04 as tested; exports round-tripping into WSL).
+
+## 2026-09-25 13:03: documentation restructure
+- README.md cut from 445 to 122 lines. It keeps the pitch, install, VS Code, how it works, limitations, comparison and development, and links to the reference pages.
+- Moved to docs/, unchanged apart from headings and links: cli.md (the full `msl --help` and the command tables; the help text is byte-identical to the old README block), install.md (installer options, what it sets up), wsl-compatibility.md.
+- New: getting-started.md (install through VS Code, following install.sh's prompts), troubleshooting.md (logs, --status, --debug-shell, common problems). Idle-timeout defaults checked against MSLConfig.swift.
+- docs/README.md regrouped as Getting started, Guides, Reference, How it works (the Diátaxis split).
+
+## 2026-09-25 13:07: design notes moved to GitHub issues
+- New `design` label. The three notes in docs/design/ became issues, each linking to its last version in the repo: vsock flow control (#36, closed as fixed in Boron; its open items are #5), memory reclaim (#37, open for the re-test when Apple ships free-page reporting), VS Code integration (#38, open; C′ shipped in Sodium, and B, D and E are #10 to #12).
+- Removed docs/design/. Links in the README, ARCHITECTURE, comparison, troubleshooting, the docs index, the extension README and a comment in MSLConfig.swift now point to the issues, as do the bodies of #5 and #10. CONTRIBUTING says design write-ups go in issues.
+
+## 2026-09-25 13:15: spike code removed
+- Deleted docs/dev/spike/. It no longer ran: its JSON control protocol on vsock 1024 was replaced by gRPC before the first commit, and nothing built or tested it. spike-results.md stays, since ARCHITECTURE cites its findings, and links to the folder at d0430e1.
+- Dropped "(spike finding)" from comments in guest/src/distroinit.rs and Sources/MSLService/Service.swift; the comments keep their reasons.
+
+## 2026-09-25 13:19: spike results removed; docs file names
+- Deleted docs/dev/spike-results.md and the "(spike finding)" and "(spike)" tags in ARCHITECTURE.
+- Naming rule, now in CONTRIBUTING: UPPERCASE at the root, lowercase snake_case under docs/. Renamed ARCHITECTURE.md, README.md (to readme.md), THIRD_PARTY_NOTICES.md, getting-started.md, wsl-compatibility.md and the three licence texts. Updated links, gen-licenses.sh, package.sh (the installed notices file is now share/doc/msl/third_party_notices.md), NOTICE and two source comments.
+- Issue links: #38 now points to ARCHITECTURE at d0430e1; #27 and #35 pointed to the deleted design note and now point to #38.
+
+## 2026-09-25 13:23: crate list; docs checks in CI
+- architecture.md's guest crate list now matches guest/Cargo.toml. Removed rtnetlink, rust-ini, youki and rustix, which were never dependencies. Added nfsserve and serde_json. Noted that the kernel does DHCP (`ip=dhcp`) and wsl.conf uses msl's own INI reader.
+- scripts/check-links.py checks relative links and GitHub-style anchors in every Markdown file, with no dependencies. It passes on 20 files, and a test file with a missing file and a missing heading fails as expected. CI's lint job runs it.
+- DocsTests in MSLCoreTests compares the help block in docs/cli.md with Messages.usage. It passes, and fails when one line of the doc is changed.

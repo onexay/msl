@@ -5,6 +5,7 @@ Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the
 ## Before you start
 
 - For anything bigger than a small fix, open an issue first. It's a chance to agree on the approach, especially for CLI behaviour: the WSL behaviour is the spec.
+- Design proposals and investigation write-ups are issues with the [`design`](https://github.com/onexay/msl/issues?q=label%3Adesign) label, not files in the repo.
 - Security problems go through [SECURITY.md](SECURITY.md), not public issues.
 - Be kind: see the [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -33,8 +34,8 @@ $ build/bin/msl --help
 | `kernel/` | kernel config (Apple's + `msl.fragment`), build, fetch and publish scripts |
 | `scripts/` | build, initrd, packaging, publishing, licence and GPL-source tools; `install.sh` is at the root |
 | `Tests/` | `MSLCoreTests` (swift-testing) and `e2e/` suites driving a real `msl` |
-| `docs/` | documentation; start at the [index](docs/README.md): [architecture](docs/ARCHITECTURE.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/THIRD_PARTY_NOTICES.md) |
-| `docs/dev/` | development log (`progress.md`) and the Hydrogen (milestone 0) spike |
+| `docs/` | documentation; start at the [index](docs/readme.md): [architecture](docs/architecture.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/third_party_notices.md) |
+| `docs/dev/` | development log (`progress.md`) |
 
 ## Test
 
@@ -59,7 +60,7 @@ CI runs the unit tests and lints. It can't run the e2e suites, because hosted ru
 - **Guest code** (`guest/`) is a static musl binary running as PID 1 and as each distro's init. Avoid dependencies that need libc features musl lacks, and never block the reaper.
 - **Host ↔ guest protocol:** change `proto/msl/v1/msl.proto`, then run `scripts/gen-proto.sh` and commit the generated Swift.
 - **Dependencies:** after changing `guest/Cargo.lock` or `Package.resolved`, run `scripts/gen-licenses.sh` and commit `docs/licenses/`. New dependencies must be under a licence compatible with Apache-2.0.
-- **Docs:** update `README.md` and `docs/` in the same pull request as the behaviour change, and add a line to `CHANGELOG.md` under *Unreleased*.
+- **Docs:** update `README.md` and `docs/` in the same pull request as the behaviour change, and add a line to `CHANGELOG.md` under *Unreleased*. Documentation files at the root are UPPERCASE (`SECURITY.md`); files under `docs/` are lowercase snake_case (`getting_started.md`). `scripts/check-links.py` checks relative links and headings, and `swift test` checks that `docs/cli.md` matches `msl --help`; CI runs both.
 
 ## Commits and pull requests
 

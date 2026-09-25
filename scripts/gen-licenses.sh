@@ -1,8 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # Regenerate the third-party licence texts in docs/licenses/:
-#   rust-dependencies.txt   crates linked into msl-guest (cargo-about; guest/about.toml)
-#   swift-dependencies.txt  SwiftPM packages msl/msld are built from (Package.resolved)
+#   rust_dependencies.txt   crates linked into msl-guest (cargo-about; guest/about.toml)
+#   swift_dependencies.txt  SwiftPM packages msl/msld are built from (Package.resolved)
 # Run after changing guest/Cargo.lock or Package.resolved, and commit the result.
 # Needs: cargo install --locked --features cli cargo-about
 set -eu
@@ -10,7 +10,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH
 OUT=$ROOT/docs/licenses
 
-(cd "$ROOT/guest" && cargo about generate --workspace about.hbs -o "$OUT/rust-dependencies.txt")
+(cd "$ROOT/guest" && cargo about generate --workspace about.hbs -o "$OUT/rust_dependencies.txt")
 
 cd "$ROOT"
 swift package resolve >/dev/null
@@ -37,5 +37,5 @@ for ident in sorted(seen):
       cat "$f"
     done
   done
-} > "$OUT/swift-dependencies.txt"
-echo "wrote $OUT/rust-dependencies.txt and $OUT/swift-dependencies.txt"
+} > "$OUT/swift_dependencies.txt"
+echo "wrote $OUT/rust_dependencies.txt and $OUT/swift_dependencies.txt"

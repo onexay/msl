@@ -53,7 +53,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
   - Global config: `~/.mslconfig`, the `.wslconfig` equivalent with the same INI keys and the same size-suffix and bad-file rules.
 - VM setup:
   - virtio-blk data disk, a sparse ASIF image.
-  - `VZVmnetNetworkDeviceAttachment` in shared (NAT) mode (macOS 26). It works with ad-hoc signing and only the virtualization entitlement (spike). The **subnet is pinned** with `vmnet_network_configuration_set_ipv4_subnet`, because it otherwise changes per launch.
+  - `VZVmnetNetworkDeviceAttachment` in shared (NAT) mode (macOS 26). It works with ad-hoc signing and only the virtualization entitlement. The **subnet is pinned** with `vmnet_network_configuration_set_ipv4_subnet`, because it otherwise changes per launch.
   - `VZVirtioSocketDevice`.
   - virtiofs share of `/`.
   - `VZLinuxRosettaDirectoryShare`.
@@ -69,15 +69,17 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
   - **One multi-call binary**, `msl-guest`, which acts as `msl-mini-init`, `msl-init` or `mslpath` based on `argv[0]`, like WSL's `/init`. Target size is about 4–7 MB.
   - The initrd holds only this binary.
   - It is bind-mounted read-only as `/init` into each distro, so installing a distro changes nothing inside it.
-- **Crates:**
-  - `nix`/`rustix` for syscalls, mounts (including `open_tree`, `mount_setattr` and `move_mount` for idmapped mounts), `pivot_root` and namespaces;
+- **Crates** (`guest/Cargo.toml`):
+  - `nix` and `libc` for syscalls, mounts, `pivot_root` and namespaces;
   - `tokio` on a **current-thread runtime**, which keeps memory low and keeps the process single-threaded, so `setns`/`unshare` stay safe;
   - `tokio-vsock`;
-  - `rtnetlink` for network setup;
   - `tonic` + `prost` for gRPC;
-  - `rust-ini` for wsl.conf;
+  - `nfsserve` for the NFS server behind `~/.msl/distros` (`intaglio`, `async-trait` and `tracing` are used by msl's NFS code);
   - `tar`, `flate2` (`miniz_oxide` backend), `lzma-rs` and `ruzstd` for import/export streams (all pure Rust);
-  - youki's `libcontainer`/`libcgroups` for cgroup v2 and namespace helpers where they fit (evaluate in the spike, and vendor narrowly if they're too heavy).
+  - `serde_json` for the settings mini-init passes to each distro's init.
+- **No crate needed:**
+  - Network setup: the kernel configures `eth0` by DHCP (`ip=dhcp` on its command line), and the guest brings `lo` up with an `ioctl`.
+  - `wsl.conf`: a small INI reader in `guest/src/config.rs`.
 - **Process-model rules:**
   - A distro is created by `fork` (or `clone3`) with `CLONE_NEWNS|NEWPID|NEWUTS|NEWCGROUP`. The child sets mount propagation (private, except the shared `/mnt/msl`), does `pivot_root` and then continues as `msl-init`. User processes are spawned with `Command::pre_exec` for setsid, controlling tty, credentials and supplementary groups (read from the distro's own `/etc/group`).
   - **Only async-signal-safe calls** are allowed between `fork` and `exec`. Fork before starting the tokio runtime, or from a dedicated spawn path that doesn't allocate.
@@ -114,12 +116,12 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
 | `\\wsl.localhost\<distro>` | A userspace NFSv3 server in mini-init (adapted from `nfsserve`, BSD-3) exports `/run/msl-view`, one bind mount per distro **name**. msld mounts each distro separately as the user (`127.0.0.1:/<name>` at `~/.msl/distros/<name>`, browsable, `nfc`) through a private vsock bridge, so Finder lists every distro under its own name in Locations, with the distro's logo (`[shortcut] icon` from `wsl-distribution.conf`, converted to `.VolumeIcon.icns`). macOS metadata (`.DS_Store`, AppleDouble `._*`, volume and folder icons) is kept in guest memory (`nfsview.rs`), so copies with extended attributes work and Linux never sees the files. Mounts follow the registry and are removed on shutdown; available while the VM runs. New files inherit the parent directory's owner. |
 | Running Windows `.exe` from Linux | **Not supported (decided).** There is no Mach-O binfmt, no `mac` command, and Mac paths are never added to `PATH`. Every binary name therefore resolves only to Linux, so npm/node-gyp, autotools and similar builds can only find Linux toolchains. `[interop] enabled` and `appendWindowsPath` are parsed and ignored, and a Mach-O file fails with `Exec format error`. |
 | `WSLENV` | `MSLENV`, **one-way (Mac → Linux) only**, with the `/p` and `/l` flags. `/u` is implied; `/w` is ignored. |
-| `/mnt/mac` ownership | **Nothing to do (spike finding).** Apple's virtiofs reports files as owned by the calling UID, and the Mac enforces permissions as the Mac user. So any Linux UID, including the distro's usual 1000, can use `/mnt/mac`, and git's ownership checks pass. Idmapped mounts aren't supported on virtiofs (`EINVAL`) and aren't needed. `automount` `uid/gid/umask` are parsed and ignored. Docs recommend building in the distro's ext4 home for speed and case sensitivity. |
+| `/mnt/mac` ownership | **Nothing to do.** Apple's virtiofs reports files as owned by the calling UID, and the Mac enforces permissions as the Mac user. So any Linux UID, including the distro's usual 1000, can use `/mnt/mac`, and git's ownership checks pass. Idmapped mounts aren't supported on virtiofs (`EINVAL`) and aren't needed. `automount` `uid/gid/umask` are parsed and ignored. Docs recommend building in the distro's ext4 home for speed and case sensitivity. |
 | cwd inheritance | The macOS cwd is translated to `/mnt/mac/...`. `--cd` accepts Linux paths, `~` or Mac paths. |
 | Localhost forwarding (NAT) | The guest streams its listening TCP ports (`MiniInit.WatchPorts`); `msld` binds `127.0.0.1`/`::1` for each (skipping ports in use on the Mac) and relays connections over vsock to a guest forwarder. `host.internal` in the generated `/etc/hosts` points at the vmnet gateway. |
 | `dnsTunneling` | Guest stub at `10.255.255.254:53` (UDP+TCP) relays queries over vsock; `msld` answers with `DNSServiceQueryRecord` (mDNSResponder), so VPN split DNS, `/etc/resolver`, `.local` and the Mac's hosts file work. Loopback/link-local answers are dropped. `[wsl2] dnsTunneling=false` falls back to vmnet DNS. |
-| vsock flow control | **Required:** Virtualization.framework's vsock device blocks (freezing all vsock traffic and a vCPU) if the host stops reading a connection. Every guest↔host byte stream uses credit framing (`guest/src/framed.rs`, `Sources/MSLService/FramedBridge.swift`; 1 MB window), so receivers always drain their socket. Details, evidence and alternatives: [`docs/vsock-flow-control.md`](design/vsock-flow-control.md). |
-| `autoMemoryReclaim` | **No effect on macOS**: VZ's balloon doesn't release pages to the host (measured). Memory comes back when the VM exits after `vmIdleTimeout`. See [`docs/memory-reclaim.md`](design/memory-reclaim.md). |
+| vsock flow control | **Required:** Virtualization.framework's vsock device blocks (freezing all vsock traffic and a vCPU) if the host stops reading a connection. Every guest↔host byte stream uses credit framing (`guest/src/framed.rs`, `Sources/MSLService/FramedBridge.swift`; 1 MB window), so receivers always drain their socket. Details, evidence and alternatives: [#36](https://github.com/onexay/msl/issues/36). |
+| `autoMemoryReclaim` | **No effect on macOS**: VZ's balloon doesn't release pages to the host (measured). Memory comes back when the VM exits after `vmIdleTimeout`. See [#37](https://github.com/onexay/msl/issues/37). |
 | Error codes | The `Error code: Msl/…` line (wsl.exe prints `Wsl/…`) is only shown with `MSL_ERROR_CODES=1`; by default msl prints just the message. |
 | `--set-version 1`, `--enable-wsl1`, `--inbox`, `--legacy`, `--system`, WSLg, GPU | Accepted by the parser and return an "unsupported on macOS" error in WSL's error format. |
 | `--debug-shell` | Root shell (BusyBox) in the VM's root namespace. mini-init also serves the `Agent` service for it. |
@@ -144,11 +146,11 @@ msl has no distro builds of its own. A WSL image is a plain rootfs tarball with 
   - `/usr/bin/wslpath` is not overridden. `mslpath` is provided as `/usr/bin/mslpath` → `/run/msl/init` (the multi-call binary), the same way WSL provides `/usr/bin/wslpath`. It is the only file msl adds to an image.
 - **First run (OOBE) and user creation:**
   - If `wsl-distribution.conf` defines `oobe.command` (for example Ubuntu's `wsl-setup`), msl runs it on the first interactive start, as WSL does.
-  - The OOBE runs with `WSL_DISTRO_NAME=<name>` set **in its environment only**. Ubuntu's `wsl-setup` uses `set -u` and aborts without it (spike finding); its `powershell.exe` calls fail harmlessly.
+  - The OOBE runs with `WSL_DISTRO_NAME=<name>` set **in its environment only**. Ubuntu's `wsl-setup` uses `set -u` and aborts without it; its `powershell.exe` calls fail harmlessly.
   - If it's missing or exits non-zero, msl uses its **own OOBE**: prompt for a username (defaulting to the macOS short name), create it as UID 1000, add it to the sudo/wheel group, and set it as the default user.
   - OOBE commands that only add Windows wording are replaced by msl's built-in OOBE (`guest/src/compat.rs` `OOBE_OVERRIDES`; currently Debian's `oobe.sh`).
-- **cloud-init:** Ubuntu's is `disabled-by-generator` on msl (spike finding), so no override is needed.
-- **Interface name:** the NIC stays `eth0`. The kernel command line has `net.ifnames=0` (spike finding), but systemd 259+ detects the distro's pid namespace as a container and then reads boot options from PID 1's arguments instead. So `99-default.link` is also runtime-masked (`/run/systemd/network/99-default.link` → `/dev/null`; `MASKED_LINKS` in `guest/src/compat.rs`), unless the image has its own in `/etc/systemd/network`.
+- **cloud-init:** Ubuntu's is `disabled-by-generator` on msl, so no override is needed.
+- **Interface name:** the NIC stays `eth0`. The kernel command line has `net.ifnames=0`, but systemd 259+ detects the distro's pid namespace as a container and then reads boot options from PID 1's arguments instead. So `99-default.link` is also runtime-masked (`/run/systemd/network/99-default.link` → `/dev/null`; `MASKED_LINKS` in `guest/src/compat.rs`), unless the image has its own in `/etc/systemd/network`.
 - **Readiness:** a systemd distro is reported `Running` only after `/run/systemd/private` exists and `systemctl is-system-running --wait` has returned.
 - **Stopping** (`--terminate`, idle timeout, `--shutdown`) is clean. A systemd distro gets `SIGRTMIN+4` and powers off, so services and journald close their files. Otherwise every process in the distro's cgroup gets `SIGTERM`, and the namespace ends once only msl's own processes are left. Anything still running after 10 s is killed with the pid namespace. `--shutdown --force` stops the VM immediately. Stopping also removes the distro's cgroup tree (`msl/<name>`); otherwise a restart fails with `EBUSY`.
 

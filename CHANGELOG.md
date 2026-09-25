@@ -8,9 +8,10 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - Releases no longer include a `.pkg`. `install.sh` is the way to install msl, and the only one that sets up IDEs.
 - The VS Code extension has its own releases, `vscode-<version>`, like the kernel. Each msl release bundles the published one. The first is [`vscode-0.1.0`](https://github.com/onexay/msl/releases/tag/vscode-0.1.0).
 - Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
+- The README covers installing and the basics. The command reference, installer details and WSL compatibility table moved to [`docs/`](docs/readme.md), which adds a [Getting started](docs/getting_started.md) walkthrough and a [Troubleshooting](docs/troubleshooting.md) page.
 
 ### Fixed
-- `msl --help` now lists every command msl accepts, adding `--debug-shell`, `--mount`/`--unmount`, `--update`, `--uninstall`, `--manage`, `--set-version`, `--set-default-version` and `--list --online`. The README includes the full help text.
+- `msl --help` now lists every command msl accepts, adding `--debug-shell`, `--mount`/`--unmount`, `--update`, `--uninstall`, `--manage`, `--set-version`, `--set-default-version` and `--list --online`. [docs/cli.md](docs/cli.md) includes the full help text.
 - The VS Code extension no longer hands back a dead server. After a VM restart it used to trust a pidfile that a new, unrelated process could now match, because pids start over. It also didn't notice a server that was still running but auto-shutting down and refusing connections. It now requires the server's own command line and a successful connection, and starts only one server when a window's connections resolve at the same time.
 - The VS Code extension works with distros that have no `curl` or `wget`, such as stock Debian. It downloads the VS Code Server on the Mac, caches it for every distro, and pipes it in.
 - VS Code tunnels (forwarded ports) no longer cut off a download when the local client reads slowly: the tunnel now applies backpressure and ends cleanly instead of dropping queued data.
