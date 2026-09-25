@@ -337,3 +337,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Filed #42 (CNAME names don't resolve, a 0.1.5 regression from #41) with the root cause, and closed it with a link to the release.
 - CHANGELOG: cut 0.1.6 (the `[msl2]` section, `--move` refused, the CNAME fix). `scripts/set-version.sh 0.1.6`. Build, 37 unit tests, the link check, `Tests/e2e/release.sh` and boron.sh (48 of 48) passed.
 - `scripts/publish.sh 0.1.6` published v0.1.6 as Latest (ad-hoc signed, checksum not PGP-signed). The `update.json` channel serves 0.1.6, and the downloaded tarball matches its SHA-256 (319e9350…). Kernel and VS Code extension releases are unchanged.
+
+## 2026-09-25 19:55: Magnesium milestone; NFS over a Unix socket
+- macOS's `mount_nfs` supports Unix-domain sockets, undocumented but in Apple's NFS source: a host written as `<path>` is AF_LOCAL (netid `ticotsord`), and `port=`/`mountport=` take a path. Mounted `"</tmp/msl-nfs/nfs.sock>:/Debian"` as a normal user through a relay in front of msld's NFS bridge and listed the root. (The write round trip used the distro's `/tmp`, a separate tmpfs, so it proved nothing; boron's `/home` checks will cover it.)
+- New milestone Magnesium (security and data safety): #1 (file view over a Unix socket by default, TCP as a `.mslconfig` option; plan in a comment on #1), #3, #21, #34, and new #43 (`--mount` USB disks are write-through, so fsync isn't durable) and #44 (release gate: publish.sh runs the full e2e suite). #2 (notarisation) waits for a Developer ID.
