@@ -210,7 +210,10 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
     private func stopped() {
         queue.sync { vm = nil; booted = nil }
         lock.withLock {
-            for (_, fd) in bridges { close(fd) }
+            for (port, fd) in bridges {
+                close(fd)
+                unlink(paths.runDir.appendingPathComponent("vsock-\(port).sock").path)
+            }
             bridges.removeAll()
         }
         onStop?()
