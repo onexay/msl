@@ -15,6 +15,8 @@ kernelCommandLine = quiet
 localhostForwarding = true   # default true
 dnsTunneling = true          # default true; false uses vmnet's DNS
 vmIdleTimeout = 60000        # ms; VM stops this long after the last distro stops
+defaultVhdSize = 256GB       # size of the shared disk when it's created (default 256GB,
+                             # at most the Mac's disk); grow it later with --manage --resize
 
 [general]
 instanceIdleTimeout = 15000  # ms; an idle distro stops after this

@@ -45,7 +45,6 @@ public struct ServiceError: Error {
 /// Owns the utility VM. All Virtualization.framework calls happen on `queue`.
 public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendable {
     public static let controlPort: UInt32 = 1024
-    static let dataDiskBytes: UInt64 = 256 << 30
 
     let paths: Paths
     let queue = DispatchQueue(label: "msl.vm")
@@ -99,7 +98,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
             res = Resources(kernel: URL(fileURLWithPath: k), initrd: res.initrd, kernelVersion: "custom")
         }
         let settings = Self.resolve(config)
-        try ensureDataDisk()
+        try ensureDataDisk(config)
         let vmConfig = try makeConfig(res, settings)
         let sem = DispatchSemaphore(value: 0)
         var startError: Error?
@@ -120,13 +119,25 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         log("vm started (\(settings.processors) CPUs, \(settings.memoryBytes >> 20) MiB)")
     }
 
-    func ensureDataDisk() throws {
+    func ensureDataDisk(_ config: MSLConfig) throws {
         let url = paths.dataDisk
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
-        let fmt = try EXT4.Formatter(FilePath(url.path), minDiskSize: Self.dataDiskBytes, journal: .init(defaultMode: .ordered))
+        let size = DataDisk.initialSize(configured: config.defaultVhdSize, volumeCapacity: Self.volumeCapacity(paths.root))
+        let fmt = try EXT4.Formatter(FilePath(url.path), minDiskSize: size, journal: .init(defaultMode: .ordered))
         try fmt.close()
-        log("created data disk \(url.path)")
+        log("created data disk \(url.path) (\(StatusFormat.bytes(size)))")
+    }
+
+    /// Total capacity of the Mac volume holding `url`.
+    static func volumeCapacity(_ url: URL) -> UInt64? {
+        (try? url.resourceValues(forKeys: [.volumeTotalCapacityKey]).volumeTotalCapacity).flatMap { $0.map(UInt64.init) }
+    }
+
+    /// Free space for important data on that volume (what Finder shows as available).
+    static func volumeAvailable(_ url: URL) -> UInt64? {
+        (try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage)
+            .flatMap { $0.map { UInt64(max(0, $0)) } }
     }
 
     func makeNetwork() -> VZNetworkDeviceAttachment {

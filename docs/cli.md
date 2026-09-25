@@ -187,7 +187,11 @@ Arguments for managing distributions in Modern Subsystem for Linux:
                 Return the space freed inside the distribution to macOS.
 
             --move <Location>
-                Accepted for compatibility; all distributions share one disk.
+                Not supported; all distributions share one disk.
+
+            --resize <MemoryString>
+                Grow the disk all distributions share to the specified size, e.g. 512GB.
+                All distributions must be stopped; the disk can't shrink.
 
             --set-sparse, -s <true|false>
                 Accepted for compatibility; the disk is always sparse.
@@ -237,7 +241,7 @@ Terminals work as in WSL: a PTY when you're interactive, pipes otherwise; window
 | `msl --manage <Distro> --set-default-user <user>` | Sets the user that shells run as. |
 | `msl --manage <Distro> --compact` | Frees space in `data.img` after deleting files. |
 | `msl --manage <Distro> --move <location>` | Not supported: every distro lives on the shared disk, so there's no per-distro file to move. |
-| `msl --manage <Distro> --resize <size>` | Not supported yet ([#3](https://github.com/onexay/msl/issues/3)): the shared disk is fixed at 256 GiB. |
+| `msl --manage <Distro> --resize <size>` | Grows `data.img`, the disk every distro shares, so it applies to all of them. All distros must be stopped (`msl --shutdown`). msl restarts the VM, which grows the filesystem before mounting it (a few seconds). The disk can't shrink, and can't be larger than the Mac's disk. |
 | `msl --manage <Distro> --set-sparse <bool>` | Accepted; the disk is always sparse. |
 | `msl --set-version <Distro> 2`, `msl --set-default-version 2` | Accepted. Version 1 isn't available on macOS. |
 

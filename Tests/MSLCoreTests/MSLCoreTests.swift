@@ -174,6 +174,28 @@ import Testing
         #expect(MSLConfig.parseSize("512MB") == 512 << 20 && MSLConfig.parseSize("1024") == 1024 && MSLConfig.parseSize("x") == nil)
     }
 
+    @Test func dataDiskSizing() {
+        let gib: UInt64 = 1 << 30
+        // New disk: 256 GiB, capped at the Mac volume; an explicit size wins.
+        #expect(DataDisk.initialSize(configured: nil, volumeCapacity: 1000 * gib) == 256 * gib)
+        #expect(DataDisk.initialSize(configured: nil, volumeCapacity: 228 * gib + 12345) == 228 * gib)
+        #expect(DataDisk.initialSize(configured: 64 * gib, volumeCapacity: 228 * gib) == 64 * gib)
+        #expect(DataDisk.initialSize(configured: nil, volumeCapacity: nil) == 256 * gib)
+        // Grow only, up to the volume's capacity.
+        #expect(DataDisk.checkGrow(current: 256 * gib, requested: "300GB", volumeCapacity: 1000 * gib) == .grow(300 * gib))
+        #expect(DataDisk.checkGrow(current: 256 * gib, requested: "256GB", volumeCapacity: 1000 * gib) == .unchanged)
+        guard case .refused(let shrink) = DataDisk.checkGrow(current: 256 * gib, requested: "128GB", volumeCapacity: 1000 * gib),
+              case .refused(let big) = DataDisk.checkGrow(current: 256 * gib, requested: "2TB", volumeCapacity: 1000 * gib),
+              case .refused(let bad) = DataDisk.checkGrow(current: 256 * gib, requested: "lots", volumeCapacity: nil) else {
+            Issue.record("expected refusals"); return
+        }
+        #expect(shrink.contains("can only grow") && big.contains("more than the Mac's disk holds") && bad.contains("Invalid size"))
+        // [msl2] defaultVhdSize, as in .wslconfig; below 4 GB is a warning.
+        #expect(MSLConfig.parse("[msl2]\ndefaultVhdSize = 64GB\n").defaultVhdSize == 64 * gib)
+        let small = MSLConfig.parse("[wsl2]\ndefaultVhdSize = 1GB\n", path: "t")
+        #expect(small.defaultVhdSize == nil && small.warnings == ["Invalid size '1GB' for .mslconfig entry 'wsl2.defaultvhdsize' in t:2 (minimum 4GB)"])
+    }
+
     @Test func manifest() throws {
         let json = """
             {"ModernDistributions": {
@@ -234,6 +256,21 @@ import Testing
         #expect(row("Distribution idle timeout") == "never")
         #expect(text.contains("Pending changes in ~/.mslconfig (applied after 'msl --shutdown'):"))
         #expect(text.contains("Memory: 8 GB → 4 GB") && text.contains("DNS tunneling: on → off"))
+    }
+
+    @Test func diskRowsAndLowMacSpace() {
+        let gib: UInt64 = 1 << 30
+        var s = VMStatus(running: true, uptimeSeconds: 5, effective: base, configured: base, configPath: "/Users/u/.mslconfig", configExists: true,
+                         disk: DiskStatus(maxBytes: 256 * gib, macUsedBytes: 4 * gib + gib / 2, macFreeBytes: 10 * gib, distroFreeBytes: 250 * gib))
+        var text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(text.contains("  Disk:") && text.contains("256 GB max, 4.5 GB used on the Mac (data.img)"))
+        #expect(text.contains("Mac free space:") && text.contains("Disk free:"))
+        #expect(text.contains("Warning: distributions see 250 GB free, but the Mac has only 10 GB free."))
+        s.disk?.macFreeBytes = 40 * gib  // less than the distros see, but not low: normal for a sparse disk
+        text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(!text.contains("Warning:"))
+        s.disk = nil  // before the first VM start
+        #expect(!StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("Disk"))
     }
 
     @Test func stoppedShowsNextStart() {

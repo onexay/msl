@@ -108,7 +108,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
 ### Feature mapping (WSL → MSL)
 | WSL | MSL |
 |---|---|
-| Distro storage | One shared ext4 data disk (a sparse raw file, 256 GiB). Each distro is a directory on it. `--manage --move` and `--resize` aren't supported: there's no per-distro disk to move, and the shared disk can't grow yet ([#3](https://github.com/onexay/msl/issues/3)). |
+| Distro storage | One shared ext4 data disk (a sparse raw file; 256 GiB or `defaultVhdSize`, never more than the Mac volume). Each distro is a directory on it. `--manage --resize` grows the shared disk; `--move` isn't supported, since there's no per-distro disk to move. |
 | `.vhdx` import and `--mount` | Raw or ext4 images are hot-attached as USB mass storage, since virtio-blk can't be hot-plugged. `--import --vhd` copies the image into the store. |
 | `--install` | Uses **Microsoft's `DistributionInfo.json` `Arm64Url` entries** directly, so `.wsl` tarballs work as they are. `--from-file`, `--name`, `--location` and `--no-launch` are supported. `wsl-distribution.conf` OOBE is honoured; shortcut and terminal sections are ignored. Override with `MSL_DISTRIBUTION_LIST_URL`. |
 | amd64 distros | Rosetta, through binfmt. |
@@ -126,7 +126,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
 | `--set-version 1`, `--enable-wsl1`, `--inbox`, `--legacy`, `--system`, WSLg, GPU | Accepted by the parser and return an "unsupported on macOS" error in WSL's error format. |
 | `--debug-shell` | Root shell (BusyBox) in the VM's root namespace. mini-init also serves the `Agent` service for it. |
 | `--mount`/`--unmount` | Image files (or `/dev/diskN`, which needs root) are hot-attached as USB mass storage and mounted at `/mnt/msl/<name>` in every distro (a shared mount, propagated as a slave into running distros). `--bare`, `--name`, `--type`, `--options` and `--partition` are supported. |
-| `--manage --compact` / `--resize` | `--compact` runs FITRIM on the shared store (and every shutdown trims), so `data.img` shrinks on the Mac. `--resize` isn't supported yet: the store is one sparse 256 GiB disk, and its `sparse_super2` format rules out online resize. |
+| `--manage --compact` / `--resize` | `--compact` runs FITRIM on the shared store (and every shutdown trims), so `data.img` shrinks on the Mac. `--resize` grows the store offline, because its `sparse_super2` format rules out online resize: msld stops the VM and makes `data.img` larger, and at the next boot mini-init runs the initramfs's static `e2fsck -f -p` and `resize2fs` on `/dev/vda` before mounting it. It never shrinks. |
 | `--update [--pre-release]`, `--uninstall` | `--update` reads a release manifest (a channel URL baked in by `scripts/package.sh`, or `MSL_UPDATE_URL`), verifies the SHA-256, stops the service, and replaces files atomically. The old `msld` exits once replaced. `--uninstall` removes the program files and keeps distributions and settings. Both refuse on development builds. |
 
 ### Distro compatibility (WSL images, unmodified)

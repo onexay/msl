@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Write a gzipped newc cpio initramfs: /dev, /dev/console (c 5:1), /init, and
-optionally /bin/busybox (for `msl --debug-shell`).
+optional static tools in /bin: busybox (for `msl --debug-shell`), e2fsck and
+resize2fs (mini-init grows data.img at boot).
 Done in Python so no root/mknod is needed on macOS.
-usage: mkinitrd.py <init> <out.gz> [busybox]"""
+usage: mkinitrd.py <init> <out.gz> [tool ...]"""
 import gzip, os, sys, time
 
 def entry(name, mode, data=b"", rdev=(0, 0), ino=[0]):
@@ -20,7 +21,9 @@ init_path, out_path = sys.argv[1], sys.argv[2]
 init = open(init_path, "rb").read()
 blob = entry("dev", 0o040755) + entry("dev/console", 0o020600, rdev=(5, 1)) + entry("init", 0o100755, init)
 if len(sys.argv) > 3:
-    blob += entry("bin", 0o040755) + entry("bin/busybox", 0o100755, open(sys.argv[3], "rb").read())
+    blob += entry("bin", 0o040755)
+    for tool in sys.argv[3:]:
+        blob += entry("bin/" + os.path.basename(tool), 0o100755, open(tool, "rb").read())
 blob += entry("TRAILER!!!", 0)
 with gzip.open(out_path, "wb", compresslevel=9) as f:
     f.write(blob)

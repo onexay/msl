@@ -50,12 +50,13 @@ else
   echo "note: MSL_GPG_KEY not set; publishing without a signature" >&2
 fi
 
-# GPL-2.0 BusyBox (in initrd.gz): ship its corresponding source with the release.
+# GPL-2.0 BusyBox and e2fsprogs (in initrd.gz): ship their corresponding source with the release.
 BUSYBOX_SRC=$(scripts/gpl-sources.sh busybox | tr '\n' ' ')
+E2FS_SRC=$(scripts/gpl-sources.sh e2fsprogs | tr '\n' ' ')
 
 set -- --repo "$REPO" --target "$(git rev-parse HEAD)" --title "msl $VERSION"
 if [ "$PRE" = --prerelease ]; then set -- "$@" --prerelease; else set -- "$@" --latest; fi
-gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" $SIG dist/update.json $BUSYBOX_SRC "$@" --notes "$(cat <<NOTES
+gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" $SIG dist/update.json $BUSYBOX_SRC $E2FS_SRC "$@" --notes "$(cat <<NOTES
 $CHANGES
 
 Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an existing install with \`msl --update\`.
@@ -66,7 +67,7 @@ Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an 
 | VS Code extension | release [\`$XTAG\`](https://github.com/$REPO/releases/tag/$XTAG), installed by \`msl --manage-ide\` |
 | Commit | $(git rev-parse --short HEAD) |
 | Requires | Apple silicon, macOS 26 or later |
-| GPL sources | BusyBox: the attached Debian source package \`busybox_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG). |
+| GPL sources | BusyBox and e2fsprogs: the attached Debian source packages \`busybox_*\` and \`e2fsprogs_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG). |
 | Signing | $( [ -n "${MSL_SIGN_IDENTITY:-}" ] && echo "Developer ID" || echo "ad-hoc (not notarised)"); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |
 
 \`$NAME\` SHA-256: \`$(cut -d' ' -f1 "dist/$NAME.sha256")\`

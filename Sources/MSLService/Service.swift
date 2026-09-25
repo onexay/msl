@@ -143,7 +143,8 @@ public final class Service: @unchecked Sendable {
                                   effective: booted?.settings,
                                   configured: VMHost.resolve(now),
                                   configPath: url.path,
-                                  configExists: FileManager.default.fileExists(atPath: url.path))
+                                  configExists: FileManager.default.fileExists(atPath: url.path),
+                                  disk: diskStatus(running: booted != nil))
             return .status(distros: summaries(), vm: status)
         case .versionInfo:
             return .versionInfo(kernel: (try? Resources.locate().kernelVersion) ?? "unknown")
@@ -330,6 +331,50 @@ public final class Service: @unchecked Sendable {
 
     // MARK: manage
 
+    func diskStatus(running: Bool) -> DiskStatus? {
+        let url = paths.dataDisk
+        guard let v = try? url.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey]), let size = v.fileSize else { return nil }
+        var inVM: UInt64?
+        if running, let mini = try? guest.miniInit, let ping = try? blocking({ try await mini.ping(Msl_V1_Empty()) }), ping.dataTotalBytes > 0 {
+            inVM = ping.dataFreeBytes
+        }
+        return DiskStatus(maxBytes: UInt64(size), macUsedBytes: UInt64(v.totalFileAllocatedSize ?? 0),
+                          macFreeBytes: VMHost.volumeAvailable(paths.root), distroFreeBytes: inVM)
+    }
+
+    /// Grow data.img, which every distro shares. The formatter's sparse_super2
+    /// rules out online ext4 resizing, so: stop the VM, make the file larger,
+    /// and boot; mini-init runs e2fsck and resize2fs before mounting it.
+    func resizeDataDisk(_ requested: String) throws {
+        let url = paths.dataDisk
+        let current = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.uint64Value ?? 0
+        switch DataDisk.checkGrow(current: current, requested: requested, volumeCapacity: VMHost.volumeCapacity(paths.root)) {
+        case .unchanged:
+            return
+        case .refused(let why):
+            throw ServiceError("Failed to resize disk.\n\(why)", code: ErrorCode.invalidArgument)
+        case .grow(let size):
+            if summaries().contains(where: \.running) {
+                throw ServiceError("Failed to resize disk.\nAll distributions share the disk, so they must all be stopped first: run 'msl --shutdown'.", code: ErrorCode.invalidArgument)
+            }
+            shutdown(force: false)
+            guard !vm.isRunning else {
+                throw ServiceError("Failed to resize disk.\nThe virtual machine didn't stop.", code: ErrorCode.vm)
+            }
+            let fh = try FileHandle(forWritingTo: url)
+            defer { try? fh.close() }
+            try fh.truncate(atOffset: size)  // sparse: nothing is written
+            log("data disk: \(StatusFormat.bytes(current)) → \(StatusFormat.bytes(size)); growing at boot")
+            try bootVM()
+            let mini = try guest.miniInit
+            let ping = try blocking { try await mini.ping(Msl_V1_Empty()) }
+            guard ping.dataGrow.hasPrefix("grew") else {
+                throw ServiceError("Failed to resize disk.\nThe file is now \(StatusFormat.bytes(size)), but the filesystem wasn't grown: \(ping.dataGrow.isEmpty ? "no result from the VM" : ping.dataGrow)", code: ErrorCode.service)
+            }
+            log("data disk: \(ping.dataGrow)")
+        }
+    }
+
     func manage(_ d: DistroRecord, _ op: ManageOp) throws {
         switch op {
         case .setDefaultUser(let user):
@@ -343,11 +388,8 @@ public final class Service: @unchecked Sendable {
             throw ServiceError("Failed to move distribution.\nAll distributions share one disk, so a single distribution can't be moved.", code: ErrorCode.unsupported)
         case .setSparse:
             break  // the data disk is always sparse
-        case .resize:
-            // All distros share one sparse data disk (256 GiB). Growing it needs an
-            // offline resize2fs: the formatter uses sparse_super2, which rules out
-            // online ext4 resizing (see issue #3).
-            throw ServiceError("Failed to resize disk.\nAll distributions share one sparse 256 GiB disk, which can't be resized yet.", code: ErrorCode.unsupported)
+        case .resize(let requested):
+            try resizeDataDisk(requested)
         case .compact:
             try bootVM()
             let mini = try guest.miniInit

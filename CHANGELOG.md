@@ -4,6 +4,20 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+- `msl --shutdown` leaves the shared disk clean. It used to power off with the filesystem still marked for journal recovery, which then ran at every boot ([#45](https://github.com/onexay/msl/issues/45)).
+
+### Added
+- `msl --manage <distro> --resize <size>` grows the disk all distributions share ([#3](https://github.com/onexay/msl/issues/3)). Stop every distribution first (`msl --shutdown`). msl restarts the VM, which checks and grows the filesystem before mounting it (about 3 s for 256 GB). The disk can't shrink, and can't be larger than the Mac's disk.
+- `defaultVhdSize` in `[msl2]` (as in `.wslconfig`) sets the disk's size when it's created. Without it, a new disk is 256 GB, but never more than the Mac's disk.
+- `msl --status` shows the disk: its maximum size, what it uses on the Mac, what's free in the distributions and on the Mac. It warns when the Mac is nearly full, which the distributions can't see.
+
+### Changed
+- `msl --version` and msld's log show the commit a build came from, as semver build metadata: `0.1.7+3af5916` (`.dirty` for uncommitted changes). Update checks still compare `0.1.7`.
+- Kernel releases are tagged with a hash of their config instead of a counter: `kernel-6.18.15-msl-76f230e`. The same config always gives the same tag, and `msl --version` shows it.
+- The kernel enables device-mapper (`CONFIG_BLK_DEV_DM`) and the NBD client (`CONFIG_BLK_DEV_NBD`).
+- The initramfs carries static `e2fsck` and `resize2fs` from Debian's e2fsprogs 1.47.2 (GPL-2.0); their source is attached to each release.
+
 ## [0.1.6] - 2026-09-25
 
 ### Changed

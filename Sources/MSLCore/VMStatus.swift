@@ -20,6 +20,19 @@ public struct VMSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// data.img: the disk every distro shares.
+public struct DiskStatus: Codable, Equatable, Sendable {
+    public var maxBytes: UInt64          // apparent size of data.img
+    public var macUsedBytes: UInt64      // what it occupies on the Mac (sparse)
+    public var macFreeBytes: UInt64?     // free space on the Mac volume
+    public var distroFreeBytes: UInt64?  // free space inside the VM (running only)
+
+    public init(maxBytes: UInt64, macUsedBytes: UInt64, macFreeBytes: UInt64?, distroFreeBytes: UInt64?) {
+        self.maxBytes = maxBytes; self.macUsedBytes = macUsedBytes
+        self.macFreeBytes = macFreeBytes; self.distroFreeBytes = distroFreeBytes
+    }
+}
+
 public struct VMStatus: Codable, Sendable {
     public var running: Bool
     public var uptimeSeconds: Double?
@@ -29,10 +42,13 @@ public struct VMStatus: Codable, Sendable {
     public var configured: VMSettings
     public var configPath: String
     public var configExists: Bool
+    /// nil until data.img exists (it's created at the first VM start).
+    public var disk: DiskStatus?
 
-    public init(running: Bool, uptimeSeconds: Double?, effective: VMSettings?, configured: VMSettings, configPath: String, configExists: Bool) {
+    public init(running: Bool, uptimeSeconds: Double?, effective: VMSettings?, configured: VMSettings, configPath: String, configExists: Bool, disk: DiskStatus? = nil) {
         self.running = running; self.uptimeSeconds = uptimeSeconds; self.effective = effective
         self.configured = configured; self.configPath = configPath; self.configExists = configExists
+        self.disk = disk
     }
 }
 
@@ -57,10 +73,17 @@ public enum StatusFormat {
             ("VM idle timeout", timeout(shown.vmIdleTimeoutMs)),
             ("Distribution idle timeout", timeout(shown.instanceIdleTimeoutMs)),
             ("Settings file", s.configExists ? path : "\(path) (not present; defaults)"),
-        ]
+        ] + diskRows(s.disk)
         let width = rows.map(\.0.count).max()! + 1
         for (k, v) in rows { lines.append("  " + (k + ":").padding(toLength: width + 1, withPad: " ", startingAt: 0) + v) }
 
+        // A sparse disk bigger than the Mac's free space is normal; warn only when
+        // the Mac is close to full and the distros can't tell.
+        if let d = s.disk, let inVM = d.distroFreeBytes, let mac = d.macFreeBytes, inVM > mac, mac < lowMacSpace {
+            lines.append("")
+            lines.append("Warning: distributions see \(bytes(inVM)) free, but the Mac has only \(bytes(mac)) free.")
+            lines.append("Writes fail in the distributions once the Mac is full; free up space on the Mac.")
+        }
         if let e = s.effective {
             let changes = diff(e, s.configured)
             if !changes.isEmpty {
@@ -70,6 +93,16 @@ public enum StatusFormat {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    public static let lowMacSpace: UInt64 = 16 << 30
+
+    static func diskRows(_ d: DiskStatus?) -> [(String, String)] {
+        guard let d else { return [] }
+        var rows = [("Disk", "\(bytes(d.maxBytes)) max, \(bytes(d.macUsedBytes)) used on the Mac (data.img)")]
+        if let f = d.distroFreeBytes { rows.append(("Disk free", bytes(f))) }
+        if let f = d.macFreeBytes { rows.append(("Mac free space", bytes(f))) }
+        return rows
     }
 
     public static func diff(_ a: VMSettings, _ b: VMSettings) -> [String] {

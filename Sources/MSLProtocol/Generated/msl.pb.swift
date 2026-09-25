@@ -235,6 +235,14 @@ public nonisolated struct Msl_V1_PingReply: Sendable {
 
   public var uptimeSeconds: Double = 0
 
+  /// The shared data filesystem (/var/lib/msl on data.img).
+  public var dataTotalBytes: UInt64 = 0
+
+  public var dataFreeBytes: UInt64 = 0
+
+  /// What mini-init did to grow it at this boot; empty when there was nothing to do.
+  public var dataGrow: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -936,7 +944,7 @@ nonisolated extension Msl_V1_ListeningPorts: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Msl_V1_PingReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".PingReply"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}kernel_release\0\u{3}uptime_seconds\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}kernel_release\0\u{3}uptime_seconds\0\u{3}data_total_bytes\0\u{3}data_free_bytes\0\u{3}data_grow\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -946,6 +954,9 @@ nonisolated extension Msl_V1_PingReply: SwiftProtobuf.Message, SwiftProtobuf._Me
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.kernelRelease) }()
       case 2: try { try decoder.decodeSingularDoubleField(value: &self.uptimeSeconds) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.dataTotalBytes) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.dataFreeBytes) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.dataGrow) }()
       default: break
       }
     }
@@ -958,12 +969,24 @@ nonisolated extension Msl_V1_PingReply: SwiftProtobuf.Message, SwiftProtobuf._Me
     if self.uptimeSeconds.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.uptimeSeconds, fieldNumber: 2)
     }
+    if self.dataTotalBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.dataTotalBytes, fieldNumber: 3)
+    }
+    if self.dataFreeBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.dataFreeBytes, fieldNumber: 4)
+    }
+    if !self.dataGrow.isEmpty {
+      try visitor.visitSingularStringField(value: self.dataGrow, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Msl_V1_PingReply, rhs: Msl_V1_PingReply) -> Bool {
     if lhs.kernelRelease != rhs.kernelRelease {return false}
     if lhs.uptimeSeconds != rhs.uptimeSeconds {return false}
+    if lhs.dataTotalBytes != rhs.dataTotalBytes {return false}
+    if lhs.dataFreeBytes != rhs.dataFreeBytes {return false}
+    if lhs.dataGrow != rhs.dataGrow {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

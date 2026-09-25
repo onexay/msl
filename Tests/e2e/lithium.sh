@@ -50,7 +50,7 @@ check "default user is now root" "root" "$($MSL whoami)"
 $MSL --manage Debian --set-default-user "$(id -un)" >/dev/null
 check "--manage unknown user" "User not found." "$($MSL --manage Debian --set-default-user nobody-here)"
 check "--manage --move refused honestly" "can't be moved" "$($MSL --manage Debian --move $WORK/elsewhere)"
-check "--manage --resize refused honestly" "can't be resized yet" "$($MSL --manage Debian --resize 10GB)"
+check "--manage --resize can't shrink" "can only grow" "$($MSL --manage Debian --resize 10GB)"
 
 # wsl.conf: boot.command, automount.root, generateResolvConf
 $MSL -u root -e sh -c "printf '[boot]\nsystemd=true\ncommand=touch /run/msl-bootcmd\n[automount]\nroot=/\n[network]\ngenerateResolvConf=false\n' > /etc/wsl.conf; rm -f /etc/resolv.conf; echo 'nameserver 9.9.9.9' > /etc/resolv.conf"

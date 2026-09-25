@@ -18,6 +18,8 @@
 
 **`data.img` stays large after deleting files.** Run `msl --manage <Distro> --compact` to return the freed space to macOS.
 
+**A distro runs out of space.** All distros share one disk. `msl --status` shows its size and what's free. Grow it with `msl --shutdown`, then `msl --manage <Distro> --resize <size>` (for example `512GB`). If `--status` warns that the Mac is nearly full, free up space on the Mac first: the disk is sparse, so the distros can't see that the Mac has run out.
+
 **msl uses more memory than the distributions need.** Virtualization.framework doesn't give memory back to macOS while the VM runs, so it returns only when the VM stops, either after `vmIdleTimeout` or with `msl --shutdown`. [#37](https://github.com/onexay/msl/issues/37) explains why.
 
 **A distribution is x86_64-only.** Not supported yet: `msl --list --online` leaves these distributions out, and `msl --install` refuses them. See [Compatibility with WSL distributions](wsl_compatibility.md).

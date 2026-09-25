@@ -101,6 +101,11 @@ message ListeningPorts {
 message PingReply {
   string kernel_release = 1;
   double uptime_seconds = 2;
+  // The shared data filesystem (/var/lib/msl on data.img).
+  uint64 data_total_bytes = 3;
+  uint64 data_free_bytes = 4;
+  // What mini-init did to grow it at this boot; empty when there was nothing to do.
+  string data_grow = 5;
 }
 
 message DistroRef {

@@ -243,7 +243,11 @@ public enum Messages {
                         Return the space freed inside the distribution to macOS.
 
                     --move <Location>
-                        Accepted for compatibility; all distributions share one disk.
+                        Not supported; all distributions share one disk.
+
+                    --resize <MemoryString>
+                        Grow the disk all distributions share to the specified size, e.g. 512GB.
+                        All distributions must be stopped; the disk can't shrink.
 
                     --set-sparse, -s <true|false>
                         Accepted for compatibility; the disk is always sparse.

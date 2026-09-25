@@ -57,6 +57,61 @@ fn distro_dir(id: &str) -> Result<PathBuf, Status> {
     Ok(Path::new(DATA).join("distros").join(id))
 }
 
+/// What `grow_data_disk` did at this boot, for PingReply (empty: nothing to do).
+static GROW: OnceLock<String> = OnceLock::new();
+
+/// Size of the ext4 filesystem on `dev` in bytes, from its superblock.
+fn ext4_size(dev: &str) -> std::io::Result<u64> {
+    use std::os::unix::fs::FileExt;
+    let mut sb = [0u8; 1024];
+    std::fs::File::open(dev)?.read_exact_at(&mut sb, 1024)?;
+    let u32at = |o: usize| u32::from_le_bytes(sb[o..o + 4].try_into().unwrap()) as u64;
+    if u16::from_le_bytes([sb[0x38], sb[0x39]]) != 0xEF53 {
+        return Err(std::io::Error::other("no ext4 superblock"));
+    }
+    let hi = if u32at(0x60) & 0x80 != 0 { u32at(0x150) } else { 0 }; // INCOMPAT_64BIT
+    Ok(((hi << 32) | u32at(0x04)) << (10 + u32at(0x18)))
+}
+
+/// Grow the data filesystem to fill /dev/vda. `msl --manage --resize` only
+/// makes data.img larger; the formatter's sparse_super2 rules out online
+/// resize, so it happens here, before the mount: e2fsck -f (resize2fs requires
+/// a checked filesystem; it also replays the journal), then resize2fs.
+fn grow_data_disk() {
+    let dev = std::fs::read_to_string("/sys/block/vda/size")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|sectors| sectors * 512);
+    let (Some(dev), Ok(fs)) = (dev, ext4_size("/dev/vda")) else { return };
+    if dev < fs + (64 << 20) {
+        return; // same size (or a sliver resize2fs can't use)
+    }
+    let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
+    let t0 = Instant::now();
+    let run = |tool: &str, args: &[&str]| -> Result<i32, String> {
+        let out = Command::new(tool).args(args).output().map_err(|e| format!("{tool}: {e}"))?;
+        let code = out.status.code().unwrap_or(-1);
+        let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+        sys::log(&format!("{tool} {}: exit {code}\n{}", args.join(" "), text.trim()));
+        Ok(code)
+    };
+    // e2fsck: 0 clean, 1 errors fixed; anything else leaves the size alone.
+    let result = match run("/bin/e2fsck", &["-f", "-p", "/dev/vda"]) {
+        Ok(0 | 1) => match run("/bin/resize2fs", &["/dev/vda"]) {
+            Ok(0) => match ext4_size("/dev/vda") {
+                Ok(new) => format!("grew {:.1} GiB → {:.1} GiB in {:.1} s", gib(fs), gib(new), t0.elapsed().as_secs_f64()),
+                Err(e) => format!("resize2fs finished but the superblock can't be read: {e}"),
+            },
+            Ok(c) => format!("resize2fs failed (exit {c}); size unchanged at {:.1} GiB", gib(fs)),
+            Err(e) => format!("{e}; size unchanged"),
+        },
+        Ok(c) => format!("e2fsck found problems it didn't fix (exit {c}); not resizing"),
+        Err(e) => format!("{e}; size unchanged"),
+    };
+    sys::log(&format!("data disk: {result}"));
+    let _ = GROW.set(result);
+}
+
 pub fn main() -> sys::Result<()> {
     if std::env::var_os("MSL_STAGE").is_none() {
         return stage1();
@@ -72,6 +127,7 @@ pub fn main() -> sys::Result<()> {
             sys::log(&format!("virtiofs {tag}: {e}"));
         }
     }
+    grow_data_disk();
     sys::mount_fs("/dev/vda", DATA, "ext4", MsFlags::MS_NOATIME, None)?;
     sys::mkdir_p(format!("{DATA}/distros"))?;
     if Path::new("/run/rosetta/rosetta").exists() {
@@ -131,9 +187,12 @@ fn stage1() -> sys::Result<()> {
     let nr = "/newroot";
     sys::mount_fs("tmpfs", nr, "tmpfs", MsFlags::empty(), Some("mode=0755"))?;
     std::fs::copy("/init", format!("{nr}/init"))?;
-    if Path::new("/bin/busybox").exists() {
+    // Static tools from the initramfs: busybox, e2fsck, resize2fs.
+    if let Ok(tools) = std::fs::read_dir("/bin") {
         sys::mkdir_p(format!("{nr}/bin"))?;
-        std::fs::copy("/bin/busybox", format!("{nr}/bin/busybox"))?;
+        for t in tools.flatten() {
+            std::fs::copy(t.path(), Path::new(nr).join("bin").join(t.file_name()))?;
+        }
     }
     for d in ["dev", "proc", "sys", "run", "tmp", "mnt", "var/lib/msl", "etc", "sbin", "usr/bin", "usr/sbin", "root"] {
         sys::mkdir_p(format!("{nr}/{d}"))?;
@@ -419,9 +478,15 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, Status> + Sen
 impl MiniInit for MiniInitService {
     async fn ping(&self, _: Request<pb::Empty>) -> Result<Response<pb::PingReply>, Status> {
         let up = std::fs::read_to_string("/proc/uptime").unwrap_or_default();
+        let (total, free) = nix::sys::statvfs::statvfs(DATA)
+            .map(|s| (s.blocks() as u64 * s.fragment_size() as u64, s.blocks_available() as u64 * s.fragment_size() as u64))
+            .unwrap_or((0, 0));
         Ok(Response::new(pb::PingReply {
             kernel_release: std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim().to_string(),
             uptime_seconds: up.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            data_total_bytes: total,
+            data_free_bytes: free,
+            data_grow: GROW.get().cloned().unwrap_or_default(),
         }))
     }
 

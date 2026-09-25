@@ -45,7 +45,7 @@ Run what your change touches, and say in the pull request what you ran:
 $ swift test                       # host unit tests
 $ scripts/test-guest.sh            # guest unit tests (in Linux, via Apple's container)
 $ Tests/e2e/<milestone>.sh         # end-to-end, against a real VM: helium, lithium,
-                                   # beryllium, boron, carbon, neon, sodium
+                                   # beryllium, boron, carbon, neon, sodium, magnesium
 $ Tests/e2e/release.sh             # packaging, install, --update, --uninstall
 ```
 
@@ -71,6 +71,12 @@ CI runs the unit tests and lints. It can't run the e2e suites, because hosted ru
 ## Kernel
 
 `scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`). `kernel/build.sh` rebuilds it from source with Apple's `container`.
+
+Kernel tags come from their inputs: `kernel/tag.sh` prints `kernel-<linux>-msl-<hash>`, where the hash covers the Linux version, `kernel/base.config` and `kernel/msl.fragment`. After a config change, run `kernel/build.sh`, then `kernel/publish.sh`, which publishes under the new tag and updates `kernel/release.tag` and `kernel/release.sha256`. `kernel/out/tag` records which kernel is in `kernel/out`; `scripts/build.sh` fetches again when it's neither the published one nor a build of the current config.
+
+`scripts/build.sh` stamps the commit into `MSLBuild.commit`, so `msl --version` shows `x.y.z+<hash>`.
+
+The initramfs also carries static `e2fsck` and `resize2fs` (`guest/vendor/`), which mini-init uses to grow the data disk. `scripts/build-e2fsprogs.sh` rebuilds them from Debian's e2fsprogs source package, also in a container.
 
 ## VS Code extension
 

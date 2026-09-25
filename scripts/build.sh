@@ -13,7 +13,8 @@ OUT="$ROOT/build"
 mkdir -p "$OUT/bin" "$OUT/share/msl"
 
 (cd "$ROOT/guest" && cargo build --release -q)
-python3 "$ROOT/scripts/mkinitrd.py" "$ROOT/guest/target/aarch64-unknown-linux-musl/release/msl-guest" "$OUT/share/msl/initrd.gz" "$ROOT/guest/vendor/busybox"
+python3 "$ROOT/scripts/mkinitrd.py" "$ROOT/guest/target/aarch64-unknown-linux-musl/release/msl-guest" "$OUT/share/msl/initrd.gz" \
+  "$ROOT/guest/vendor/busybox" "$ROOT/guest/vendor/e2fsck" "$ROOT/guest/vendor/resize2fs"
 
 # kernel/out/tag says which kernel is there: the published one (kernel/release.tag)
 # or a local build of the current config (kernel/tag.sh). Anything else is stale.

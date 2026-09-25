@@ -51,7 +51,8 @@ before=$(used)
 check "--manage --compact" "The operation completed successfully." "$($MSL --manage Debian --compact)"
 after=$(used)
 check "--compact returned >= 400 MB to the Mac" "yes" "$([ $((before - after)) -ge 400 ] && echo yes || echo "no ($before -> $after MB)")"
-check "--manage --resize refused honestly" "can't be resized yet" "$($MSL --manage Debian --resize 300GB)"
+# Growing is covered by magnesium.sh.
+check "--manage --resize can't shrink" "can only grow" "$($MSL --manage Debian --resize 10GB)"
 
 # update / uninstall on a development build
 check "--update without a channel" "not configured" "$($MSL --update)"
