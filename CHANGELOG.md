@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-25
+
 ### Fixed
 - `msl --shutdown` leaves the shared disk clean. It used to power off with the filesystem still marked for journal recovery, which then ran at every boot ([#45](https://github.com/onexay/msl/issues/45)).
 
@@ -90,7 +92,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/onexay/msl/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/onexay/msl/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/onexay/msl/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/onexay/msl/compare/v0.1.3...v0.1.4
