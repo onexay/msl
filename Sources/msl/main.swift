@@ -70,10 +70,20 @@ func connect() -> IPCConnection {
     fail("Could not connect to msld (see \(paths.log.path)).", ErrorCode.service)
 }
 
+/// This binary's absolute path, symlinks resolved. Not argv[0]: run from PATH,
+/// that's just "msl", which would resolve against the current directory.
+let selfExecutable: URL = {
+    var size: UInt32 = 0
+    _NSGetExecutablePath(nil, &size)
+    var buf = [CChar](repeating: 0, count: Int(size) + 1)
+    let path = _NSGetExecutablePath(&buf, &size) == 0 ? String(cString: buf) : CommandLine.arguments[0]
+    return URL(fileURLWithPath: path).resolvingSymlinksInPath()
+}()
+
 /// Start msld (next to this binary) detached, logging to msld.log.
 func startDaemon(_ paths: Paths) {
     try? FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
-    let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+    let exe = selfExecutable
     let dir = exe.deletingLastPathComponent()
     // build/bin/{msl,msld}, or an installed <prefix>/bin/msl + <prefix>/libexec/msl/msld
     let msld = [dir.appendingPathComponent("msld"), dir.appendingPathComponent("../libexec/msl/msld").standardizedFileURL]

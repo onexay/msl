@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+- `msl` failed with "could not start <current directory>/msld" when msld wasn't already running, for example right after `msl --update`. It looked for msld next to `argv[0]`, which is just `msl` when run from `PATH`. The same lookup set the install prefix for `--update`, `--uninstall` and `--version --json`, and the msl path recorded for the VS Code extension. msl now uses its real executable path.
+
 ### Security
 - Other local user accounts can no longer read or change your distributions through `~/.msl/distros` ([#1](https://github.com/onexay/msl/issues/1)). The view is served through a 0600 Unix socket instead of a `127.0.0.1` port, and msld checks every NFS call: only your user ID and the kernel's get through, and only msld can mount the view. `[msl2] fileViewTransport = tcp` brings back the port, with the same checks but weaker protection.
 

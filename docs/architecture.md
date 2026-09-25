@@ -47,7 +47,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
 - stdin, stdout and stderr are passed to `msld` as file descriptors over its Unix socket (SCM_RIGHTS), and `msld` splices them to vsock. SIGWINCH and signals are sent as control messages.
 
 **`msld`**
-- A LaunchAgent with a Mach XPC service. It is started when `msl` first connects and stops the VM after `vmIdleTimeout`.
+- A per-user background process, not a launchd service. The first `msl` command that finds none running starts it (detached, logging to `msld.log`) and talks to it over `msld.sock`. It stops the VM after `vmIdleTimeout` and keeps running until logout, or until `msl --update` replaces it.
 - Stores:
   - Registry (the Lxss equivalent): `~/Library/Application Support/msl/registry.json`, one entry per distro: GUID, name, state, default user, flags.
   - Global config: `~/.mslconfig`, the `.wslconfig` equivalent with the same INI keys and the same size-suffix and bad-file rules.

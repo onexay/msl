@@ -29,6 +29,10 @@ pass=0; fails=0
 check() {  # check "description" <expected-substring> <actual>
   if [[ "$3" == *"$2"* ]]; then echo "✔ $1"; pass=$((pass+1)); else echo "✘ $1"; echo "    expected: $2"; echo "    got:      $3"; fails=$((fails+1)); fi
 }
+
+# msl run from PATH (argv[0] is just "msl") in another directory must still find
+# and start msld: the first command here starts it, since this MSL_HOME is new.
+check "msl from PATH starts msld" "MSL version" "$(cd / && PATH="$(dirname "$MSL"):$PATH" msl --version 2>&1)"
 code() { "$@" >/dev/null 2>&1; echo $?; }
 
 check "no distros: list fails with message" "has no installed distributions" "$($MSL -l)"

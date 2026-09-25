@@ -39,8 +39,7 @@ enum ManageIDE {
     /// The .vsix shipped next to the VM images: <prefix>/share/msl (or build/share/msl).
     static var vsix: URL {
         if let p = ProcessInfo.processInfo.environment["MSL_VSIX"], !p.isEmpty { return URL(fileURLWithPath: p) }
-        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-        return exe.deletingLastPathComponent().appendingPathComponent("../share/msl/msl.vsix").standardizedFileURL
+        return selfExecutable.deletingLastPathComponent().appendingPathComponent("../share/msl/msl.vsix").standardizedFileURL
     }
 
     /// IDEs with a command-line tool or a per-user data folder.
@@ -128,7 +127,7 @@ enum ManageIDE {
         exit(failed ? 1 : 0)
     }
 
-    static var exe: String { URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path }
+    static var exe: String { selfExecutable.path }
 
     /// Tell the extension which msl to run (it reads Paths.cliPointer before
     /// its defaults), so an install anywhere works without editing settings.

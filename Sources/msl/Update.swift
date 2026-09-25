@@ -7,8 +7,7 @@ import MSLCore
 enum Installation {
     /// The install prefix, or nil for a development build (build/bin/{msl,msld}).
     static var prefix: URL? {
-        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-        let prefix = exe.deletingLastPathComponent().deletingLastPathComponent()
+        let prefix = selfExecutable.deletingLastPathComponent().deletingLastPathComponent()
         return FileManager.default.fileExists(atPath: prefix.appendingPathComponent("libexec/msl/msld").path) ? prefix : nil
     }
 
