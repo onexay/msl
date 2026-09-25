@@ -332,3 +332,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Per-distro disk spike ended. NBD attachments are accepted over `nbd+unix://` (no TCP port), but the VZ NBD disk reports write-through, like USB, so guest flushes probably never reach the server (not confirmed). Loop images inside data.img would work but aren't needed now. Decision: keep one shared disk and several distros; do #3 (offline grow) next. The spike code was removed.
 - `--manage --move` used to record the location and report success without moving anything. It now fails with "All distributions share one disk, so a single distribution can't be moved." (unsupported). Mac storage is internal; external drives can be unplugged under a running VM, so moving storage there isn't offered. lithium.sh 25 of 25.
 - Docs: cli.md lists --move and --resize as unsupported; architecture.md no longer calls data.img an ASIF image or says --resize sets a project quota.
+
+## 2026-09-25 19:30: msl 0.1.6 released
+- Filed #42 (CNAME names don't resolve, a 0.1.5 regression from #41) with the root cause, and closed it with a link to the release.
+- CHANGELOG: cut 0.1.6 (the `[msl2]` section, `--move` refused, the CNAME fix). `scripts/set-version.sh 0.1.6`. Build, 37 unit tests, the link check, `Tests/e2e/release.sh` and boron.sh (48 of 48) passed.
+- `scripts/publish.sh 0.1.6` published v0.1.6 as Latest (ad-hoc signed, checksum not PGP-signed). The `update.json` channel serves 0.1.6, and the downloaded tarball matches its SHA-256 (319e9350…). Kernel and VS Code extension releases are unchanged.
