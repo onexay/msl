@@ -4,6 +4,10 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+- Preview VS Code extension (`extensions/vscode`) that opens folders in a distro through managed pipes: no SSH, and no port on the Mac. It needs VS Code's proposed `resolvers` API (Sodium).
+- `/run/msl/init msl-bridge unix:<path>|tcp:<port>`: relays stdio to a Unix socket or localhost port inside a distro ([#29](https://github.com/onexay/msl/issues/29)).
+
 ## [0.1.3] - 2026-09-25
 
 ### Added

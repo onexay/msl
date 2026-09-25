@@ -1,0 +1,43 @@
+{
+  "name": "msl",
+  "displayName": "MSL",
+  "description": "Open folders in msl Linux distros on macOS, like the WSL extension on Windows.",
+  "version": "0.1.0",
+  "publisher": "onexay",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/onexay/msl" },
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Other"],
+  "extensionKind": ["ui"],
+  "enabledApiProposals": ["resolvers"],
+  "main": "./out/extension.js",
+  "activationEvents": ["onResolveRemoteAuthority:msl", "onCommand:msl.connect", "onCommand:msl.connectInNewWindow"],
+  "capabilities": { "untrustedWorkspaces": { "supported": true } },
+  "contributes": {
+    "commands": [
+      { "command": "msl.connect", "title": "Connect to Distro", "category": "MSL" },
+      { "command": "msl.connectInNewWindow", "title": "Connect to Distro in New Window", "category": "MSL" }
+    ],
+    "configuration": {
+      "title": "MSL",
+      "properties": {
+        "msl.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `msl` command. Empty: `~/.local/bin/msl`, `/usr/local/bin/msl`, then `PATH`."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.6.0"
+  }
+}

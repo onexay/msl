@@ -197,3 +197,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - New milestone **Sodium** with #27–#33: resolver skeleton, server install, `msl-bridge`, `makeConnection`, `tunnelFactory`, msld connect socket, tests/docs.
 - #29 `msl-bridge` (`/run/msl/init msl-bridge unix:<path>|tcp:<port>`): stdio relay with half-close both ways. Unit test plus a real distro check: 100 MB echoed through `msl -e` with matching SHA-256 in 0.41 s; the TCP target and the error exits (1, and 2 for usage) work.
 - Found: `/run/user/<uid>` does not exist for `msl -e` sessions (no PAM/logind), so the server socket moves to `~/.vscode-server/msl/<commit>.sock`. Updated the design doc, #28 and #32.
+
+## 2026-09-25 09:43: Sodium extension works end to end
+- `extensions/vscode`: resolver for `msl+<distro>` (#27), server install/start in the distro (#28), `makeConnection` over `msl-bridge` (#30), and `tunnelFactory` (#31). VS Code 1.138.0 was tested in an isolated instance (`--enable-proposed-api`).
+- First resolve took 1.65 s (7.7 s when the server was downloaded on an earlier run), and both pipes finished the handshake in about 60 ms. After killing the bridges in the distro, VS Code resolved again (24 ms, reusing the server) and reconnected both channels. A distro port was auto-forwarded through `tunnelFactory`, and 50 MB downloaded through it with a matching SHA-256 in 0.16 s.
+- Gotcha: VS Code refuses a `--user-data-dir` whose IPC socket path is longer than 103 characters.
