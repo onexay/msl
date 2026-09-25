@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /// Build identity. `scripts/package.sh` stamps the release version and update channel.
 public enum MSLBuild {
-    public static let version = "0.1.3"
+    public static let version = "0.1.4"
     /// Release manifest URL for `msl --update` (empty for local builds; MSL_UPDATE_URL overrides).
     public static let updateURL = ""
 }

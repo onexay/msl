@@ -4,7 +4,10 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-25
+
 ### Changed
+- x86_64-only distributions (Arch Linux, SUSE Linux Enterprise, eLxr) are no longer offered by `msl --list --online`, and `msl --install` refuses them. Under Rosetta, which is built into macOS 27, they don't boot cleanly yet, and x86_64 support is deferred ([#40](https://github.com/onexay/msl/issues/40)). `--install --from-file` still accepts x86_64 images.
 - Releases no longer include a `.pkg`. `install.sh` is the way to install msl, and the only one that sets up IDEs.
 - The VS Code extension has its own releases, `vscode-<version>`, like the kernel. Each msl release bundles the published one. The first is [`vscode-0.1.0`](https://github.com/onexay/msl/releases/tag/vscode-0.1.0).
 - Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
@@ -57,7 +60,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/onexay/msl/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/onexay/msl/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/onexay/msl/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/onexay/msl/releases/tag/v0.1.1
