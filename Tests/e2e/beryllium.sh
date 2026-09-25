@@ -32,6 +32,11 @@ check "mslpath round trip" "$HOMEDIR" "$($MSL -- mslpath -w '$(mslpath' $HOMEDIR
 check "mslpath bad flag" "mslpath: Invalid argument" "$($MSL mslpath -z x 2>&1 | head -1)"
 
 check "MSLENV plain" "hello" "$(FOO=hello MSLENV=FOO $MSL -e printenv FOO)"
+# The distro's locale reaches every session (VS Code's terminal would otherwise set
+# LANG from its UI language, which the distro may not have).
+$MSL -u root -e sh -c 'printf "LANG=C.UTF-8\nLC_TIME=\"C.UTF-8\"\n" > /etc/default/locale'
+check "LANG from /etc/default/locale" "C.UTF-8 C.UTF-8" "$($MSL -e sh -c 'echo $LANG $LC_TIME')"
+check "no locale warnings from bash" "clean" "$($MSL -e bash -c 'true' 2>&1 | grep -q setlocale && echo warned || echo clean)"
 check "MSLENV /p path" "/mnt/macos/Users/x" "$(P=/Users/x MSLENV=P/p $MSL -e printenv P)"
 check "MSLENV /l path list" "/mnt/macos/a:/mnt/macos/b" "$(L=/a:/b MSLENV=L/l $MSL -e printenv L)"
 check "MSLENV /w not passed" "" "$(W=x MSLENV=W/w $MSL -e sh -c 'echo ${W:-}')"

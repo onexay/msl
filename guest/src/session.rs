@@ -116,6 +116,10 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
     if !req.mac_home.is_empty() {
         env.insert("MSL_MACOS_HOME".into(), req.mac_home.clone());
     }
+    // The distro's own locale, as a login shell (pam_env) and WSL set it. Without
+    // LANG, VS Code's terminal picks one from its UI language (e.g. en_US.UTF-8)
+    // that the distro may not have, and bash warns on every start.
+    env.extend(distro_locale());
     env.extend(req.env.clone());
     if !req.mslenv.is_empty() {
         crate::paths::apply_mslenv(&req.mslenv, &req.mslenv_values, &mount, &mut env);
@@ -226,4 +230,35 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
     sessions().lock().unwrap().remove(&id);
     let _ = tx.send(Ok(RunEvent { event: Some(run_event::Event::Exited(pb::Exited { code })) })).await;
     Ok(())
+}
+
+/// LANG, LANGUAGE and LC_* from /etc/default/locale (Debian, Ubuntu) or
+/// /etc/locale.conf (Arch, Fedora, SUSE), read inside the distro's mount namespace.
+fn distro_locale() -> Vec<(String, String)> {
+    ["/etc/default/locale", "/etc/locale.conf"]
+        .iter()
+        .find_map(|p| std::fs::read_to_string(p).ok())
+        .map(|text| parse_locale(&text))
+        .unwrap_or_default()
+}
+
+fn parse_locale(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let (k, v) = l.strip_prefix("export ").unwrap_or(l).split_once('=')?;
+            let v = v.trim().trim_matches(|c| c == '"' || c == '\'');
+            let wanted = k == "LANG" || k == "LANGUAGE" || k.starts_with("LC_");
+            (wanted && !v.is_empty() && !l.starts_with('#')).then(|| (k.to_string(), v.to_string()))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod locale_tests {
+    #[test]
+    fn parses_locale_files() {
+        let got = super::parse_locale("# comment\nLANG=C.UTF-8\nexport LC_TIME=\"en_GB.UTF-8\"\nPATH=/x\nLC_ALL=\n");
+        assert_eq!(got, vec![("LANG".into(), "C.UTF-8".into()), ("LC_TIME".into(), "en_GB.UTF-8".into())]);
+    }
 }

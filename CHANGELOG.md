@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+- Sessions get the distribution's locale (`LANG`, `LANGUAGE`, `LC_*` from `/etc/default/locale` or `/etc/locale.conf`), as in WSL and login shells. Without it, VS Code's terminal set `LANG` from its own UI language, and bash printed `setlocale: cannot change locale (en_US.UTF-8)` on distros that don't have that locale, such as Ubuntu with only `C.UTF-8`.
+
 ## [0.1.8] - 2026-09-25
 
 ### Fixed
