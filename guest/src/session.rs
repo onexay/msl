@@ -114,7 +114,7 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
         ("TERM".into(), "xterm-256color".into()),
     ]);
     if !req.mac_home.is_empty() {
-        env.insert("MSL_MAC_HOME".into(), req.mac_home.clone());
+        env.insert("MSL_MACOS_HOME".into(), req.mac_home.clone());
     }
     env.extend(req.env.clone());
     if !req.mslenv.is_empty() {

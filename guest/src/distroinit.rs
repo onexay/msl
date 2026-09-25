@@ -127,11 +127,11 @@ fn setup_root(cfg: &Cfg, hostname: &str) -> sys::Result<()> {
 
     let conf = config::distro_conf(r);
 
-    // Host filesystem at <automount.root>/mac (default /mnt/mac). virtiofs reports
+    // Host filesystem at <automount.root>/macos (default /mnt/macos). virtiofs reports
     // files as owned by the caller, so no uid mapping is needed.
     if conf.bool("automount.enabled", true) && std::path::Path::new("/mnt/mac").exists() {
         let root = conf.get("automount.root").unwrap_or("/mnt/").trim_end_matches('/').to_string();
-        let target = format!("{r}{root}/mac");
+        let target = format!("{r}{root}/macos");
         sys::mkdir_p(&target)?;
         sys::bind("/mnt/mac", &target, false)?;
     }

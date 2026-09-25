@@ -1,6 +1,6 @@
 # Contributing to msl
 
-Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. Planned work is in the [milestones](https://github.com/onexay/msl/milestones) and [issues](https://github.com/onexay/msl/issues).
+Thanks for helping. msl aims to behave exactly like `wsl.exe` on macOS, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. Planned work is in the [milestones](https://github.com/onexay/msl/milestones) and [issues](https://github.com/onexay/msl/issues).
 
 ## Before you start
 
@@ -11,7 +11,7 @@ Thanks for helping. msl aims to behave exactly like `wsl.exe` on the Mac, so the
 
 ## Set up
 
-You need an Apple silicon Mac with macOS 26 or later, plus:
+You need macOS 26 or later on Apple silicon, plus:
 - Xcode 27 (Swift 6.4);
 - Rust 1.98 (`rustup`) with the `aarch64-unknown-linux-musl` target (`guest/rust-toolchain.toml` pins it);
 - `protoc`;

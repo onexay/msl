@@ -526,7 +526,7 @@ public final class Service: @unchecked Sendable {
             oobe.user = "root"
             oobe.cwd = "/"
             // WSL_DISTRO_NAME only here: Ubuntu's wsl-setup uses `set -u`.
-            oobe.env = r.env.merging(["WSL_DISTRO_NAME": d.name, "MSL_MAC_USER": NSUserName()]) { $1 }
+            oobe.env = r.env.merging(["WSL_DISTRO_NAME": d.name, "MSL_MACOS_USER": NSUserName()]) { $1 }
             apply(r, to: &oobe)
             let code = try session(agent: agent, request: oobe, stdio: stdio, events: events)
             guard code == 0 else { return code }
@@ -550,7 +550,7 @@ public final class Service: @unchecked Sendable {
         // With no --cd, the guest maps the Mac cwd under the distro's [automount] root.
         req.cwd = r.spec.cd ?? ""
         req.macCwd = r.macCwd
-        req.env = r.env.merging(["MSL_MAC_VIEW": FileView.viewDir.path]) { $1 }
+        req.env = r.env.merging(["MSL_MACOS_VIEW": FileView.viewDir.path]) { $1 }
         req.mslenv = r.mslenv
         req.mslenvValues = r.mslenvValues
         req.macHome = r.macHome

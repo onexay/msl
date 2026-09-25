@@ -234,7 +234,7 @@ message RunRequest {
   uint32 cols = 12;
 
   // Caller's macOS working directory; used when `cwd` is empty. The guest maps
-  // it under the distro's [automount] root (default /mnt/mac).
+  // it under the distro's [automount] root (default /mnt/macos).
   string mac_cwd = 13;
   // MSLENV (the WSLENV equivalent) and the macOS values of the variables it
   // lists; the guest applies the /p and /l path translations.

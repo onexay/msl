@@ -80,7 +80,7 @@ public enum Messages {
             --cd <Directory>
                 Sets the specified directory as the current working directory.
                 If ~ is used the Linux user's home path will be used. The path is
-                interpreted as an absolute Linux path; macOS paths are under /mnt/mac.
+                interpreted as an absolute Linux path; macOS paths are under /mnt/macos.
 
             --distribution, -d <DistroName>
                 Run the specified distribution.
@@ -174,7 +174,7 @@ public enum Messages {
                 Show the status of \(product).
 
             --uninstall
-                Remove \(product) from this Mac and undo --manage-ide.
+                Remove \(product) from macOS and undo --manage-ide.
                 Distributions and settings are kept.
 
             --unmount [Disk]

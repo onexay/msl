@@ -352,3 +352,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Kernel: CONFIG_MD, CONFIG_BLK_DEV_DM, CONFIG_BLK_DEV_NBD; built with kernel/build.sh (container). Tags are now `kernel-<linux>-msl-<config hash>` (kernel/tag.sh): current `kernel-6.18.15-msl-76f230e`, not published yet.
 - Versions: build.sh stamps the commit; `msl --version` shows `0.1.6+<hash>` (`.dirty` for uncommitted changes); JSON keeps `msl` plain and adds `commit`.
 - Tests: 39 unit tests; guest 17; magnesium.sh 16 of 16; helium 40, lithium 25, beryllium 24, boron 48, carbon 20, neon 20, sodium 22, all passing.
+
+## 2026-09-25 21:30: "macOS" in prose, `macos` in user-visible names
+- Naming rule: "macOS" in prose, `macos` in code. Renamed the user-visible names: the distro mount `/mnt/mac` → `/mnt/macos` (`/macos` under `[automount] root=/`), `MSL_MAC_{USER,HOME,VIEW}` → `MSL_MACOS_*`, and the `--version --json` key `macOS` → `macos` (nothing read it). Internal names (virtio-fs tag `mac`, the VM-root `/mnt/mac`, `macCwd`), code comments, the trademark notice and OrbStack's `/mnt/mac` in comparison.md stay.
+- About 90 prose uses of "Mac" in docs, CLI and error messages, `--status`, install.sh and the extension README now say macOS, reworded where "Mac" meant the hardware.
+- All e2e suites pass: helium 40, lithium 25, beryllium 24, boron 48, carbon 20, neon 20, sodium 22, magnesium 16; unit 39; guest 17.

@@ -81,8 +81,8 @@ public enum StatusFormat {
         // the Mac is close to full and the distros can't tell.
         if let d = s.disk, let inVM = d.distroFreeBytes, let mac = d.macFreeBytes, inVM > mac, mac < lowMacSpace {
             lines.append("")
-            lines.append("Warning: distributions see \(bytes(inVM)) free, but the Mac has only \(bytes(mac)) free.")
-            lines.append("Writes fail in the distributions once the Mac is full; free up space on the Mac.")
+            lines.append("Warning: distributions see \(bytes(inVM)) free, but macOS has only \(bytes(mac)) free.")
+            lines.append("Writes fail in the distributions once the macOS disk is full; free up space on macOS.")
         }
         if let e = s.effective {
             let changes = diff(e, s.configured)
@@ -99,9 +99,9 @@ public enum StatusFormat {
 
     static func diskRows(_ d: DiskStatus?) -> [(String, String)] {
         guard let d else { return [] }
-        var rows = [("Disk", "\(bytes(d.maxBytes)) max, \(bytes(d.macUsedBytes)) used on the Mac (data.img)")]
+        var rows = [("Disk", "\(bytes(d.maxBytes)) max, \(bytes(d.macUsedBytes)) used on macOS (data.img)")]
         if let f = d.distroFreeBytes { rows.append(("Disk free", bytes(f))) }
-        if let f = d.macFreeBytes { rows.append(("Mac free space", bytes(f))) }
+        if let f = d.macFreeBytes { rows.append(("macOS free space", bytes(f))) }
         return rows
     }
 

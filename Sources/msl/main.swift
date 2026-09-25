@@ -215,7 +215,7 @@ case .version:
     let os = ProcessInfo.processInfo.operatingSystemVersion
     let macOS = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
     if jsonMode {
-        outJSON(JSONOutput.Version(msl: MSLBuild.version, commit: MSLBuild.commit.isEmpty ? nil : MSLBuild.commit, kernel: kernel, macOS: macOS, prefix: Installation.prefix?.path))
+        outJSON(JSONOutput.Version(msl: MSLBuild.version, commit: MSLBuild.commit.isEmpty ? nil : MSLBuild.commit, kernel: kernel, macos: macOS, prefix: Installation.prefix?.path))
     } else {
         out(Messages.versions(msl: mslVersion, kernel: kernel, macOS: macOS))
     }

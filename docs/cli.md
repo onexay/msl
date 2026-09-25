@@ -24,7 +24,7 @@ Options:
     --cd <Directory>
         Sets the specified directory as the current working directory.
         If ~ is used the Linux user's home path will be used. The path is
-        interpreted as an absolute Linux path; macOS paths are under /mnt/mac.
+        interpreted as an absolute Linux path; macOS paths are under /mnt/macos.
 
     --distribution, -d <DistroName>
         Run the specified distribution.
@@ -118,7 +118,7 @@ Arguments for managing Modern Subsystem for Linux:
         Show the status of Modern Subsystem for Linux.
 
     --uninstall
-        Remove Modern Subsystem for Linux from this Mac and undo --manage-ide.
+        Remove Modern Subsystem for Linux from macOS and undo --manage-ide.
         Distributions and settings are kept.
 
     --unmount [Disk]
@@ -212,7 +212,7 @@ Arguments for managing distributions in Modern Subsystem for Linux:
 
 ## Running Linux
 
-With no arguments, `msl` opens the default distro's shell in the Mac's current directory, under `/mnt/mac`. Anything after the options is a command line for that shell. `-e` runs a program directly, without a shell.
+With no arguments, `msl` opens the default distro's shell in the current macOS directory, under `/mnt/macos`. Anything after the options is a command line for that shell. `-e` runs a program directly, without a shell.
 
 ```console
 $ msl                                  # interactive shell
@@ -241,7 +241,7 @@ Terminals work as in WSL: a PTY when you're interactive, pipes otherwise; window
 | `msl --manage <Distro> --set-default-user <user>` | Sets the user that shells run as. |
 | `msl --manage <Distro> --compact` | Frees space in `data.img` after deleting files. |
 | `msl --manage <Distro> --move <location>` | Not supported: every distro lives on the shared disk, so there's no per-distro file to move. |
-| `msl --manage <Distro> --resize <size>` | Grows `data.img`, the disk every distro shares, so it applies to all of them. All distros must be stopped (`msl --shutdown`). msl restarts the VM, which grows the filesystem before mounting it (a few seconds). The disk can't shrink, and can't be larger than the Mac's disk. |
+| `msl --manage <Distro> --resize <size>` | Grows `data.img`, the disk every distro shares, so it applies to all of them. All distros must be stopped (`msl --shutdown`). msl restarts the VM, which grows the filesystem before mounting it (a few seconds). The disk can't shrink, and can't be larger than the macOS disk. |
 | `msl --manage <Distro> --set-sparse <bool>` | Accepted; the disk is always sparse. |
 | `msl --set-version <Distro> 2`, `msl --set-default-version 2` | Accepted. Version 1 isn't available on macOS. |
 
@@ -263,14 +263,14 @@ Not available on macOS, as in WSL without the matching Windows feature: `--syste
 ## Inside a distribution
 
 ```console
-$ cd /mnt/mac/Users/me/src         # the Mac's filesystem (like /mnt/c)
+$ cd /mnt/macos/Users/me/src         # the macOS filesystem (like /mnt/c)
 $ mslpath -w ~/project             # a Linux path as a macOS path (like wslpath)
 $ mslpath -u /Users/me/src         # and back
 $ echo $MSL_DISTRO_NAME            # set instead of WSL_DISTRO_NAME
 ```
 
-- **localhost:** a server listening on `localhost` in any distro is reachable at `localhost` on the Mac, over IPv4 and IPv6. Distros share one localhost, as in WSL 2.
+- **localhost:** a server listening on `localhost` in any distro is reachable at `localhost` on macOS, over IPv4 and IPv6. Distros share one localhost, as in WSL 2.
 - **DNS:** goes through macOS's own resolver, so VPNs, split DNS and `.local` names work.
-- **Hostname:** the Mac's name, with a generated `/etc/hosts`.
-- **Mac environment variables:** reach Linux through `MSLENV`, which works like `WSLENV`.
-- **No macOS binaries:** msl never runs them from Linux. `npm`, `node-gyp` or `configure` can only find Linux toolchains, so build output is always Linux, even under `/mnt/mac`.
+- **Hostname:** the macOS computer name, with a generated `/etc/hosts`.
+- **macOS environment variables:** reach Linux through `MSLENV`, which works like `WSLENV`.
+- **No macOS binaries:** msl never runs them from Linux. `npm`, `node-gyp` or `configure` can only find Linux toolchains, so build output is always Linux, even under `/mnt/macos`.

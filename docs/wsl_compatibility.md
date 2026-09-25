@@ -7,7 +7,7 @@ msl runs the images from Microsoft's WSL distribution list, unmodified. That lis
 | `.wsl` images and `wsl-distribution.conf` | Supported. The distro's own first-run setup runs as it does on Windows, and its icon is used in Finder. Debian's setup script is replaced by msl's own, because it differs only in Windows wording. |
 | `/etc/wsl.conf` | Honoured. `/etc/msl.conf` takes precedence if present. Supported keys: `[boot] systemd`, `command`; `[user] default`; `[automount] enabled`, `root`, `mountFsTab`; `[network] hostname`, `generateHosts`, `generateResolvConf`. `[interop]` is ignored. |
 | systemd | Yes, with `[boot] systemd=true`. Windows-only units are masked at run time. |
-| `/mnt/c` | `/mnt/mac` (virtiofs). `[automount] root` changes the mount point. |
+| `/mnt/c` | `/mnt/macos` (virtiofs). `[automount] root` changes the mount point. |
 | `wslpath`, `WSLENV`, `WSL_DISTRO_NAME` | `mslpath`, `MSLENV`, `MSL_DISTRO_NAME`. WSL detection stays off, so tools don't assume Windows interop. |
 | Windows interop (running `.exe` from Linux) | No, by design: nothing from macOS runs inside a distro. |
 | WSLg, GPU, WSL 1, mirrored networking | No (see [Known limitations](../README.md#known-limitations)). |

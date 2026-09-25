@@ -25,7 +25,7 @@ Update with `msl --update`. `msl --uninstall` removes msl and undoes the IDE set
 
 ## What the installer sets up
 
-Everything msl touches on your Mac, and what undoes it:
+Everything msl changes on macOS, and what undoes it:
 
 | What | Where | Why | Undone by |
 |---|---|---|---|

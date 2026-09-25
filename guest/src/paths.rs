@@ -6,12 +6,12 @@ use crate::config;
 use std::collections::HashMap;
 use std::path::{Component, PathBuf};
 
-/// Where the Mac's `/` is mounted in the distro: `<automount.root>mac`
-/// (default `/mnt/mac`). `root` is the distro root ("" from inside it).
+/// Where macOS's `/` is mounted in the distro: `<automount.root>macos`
+/// (default `/mnt/macos`). `root` is the distro root ("" from inside it).
 pub fn mac_mount(root: &str) -> String {
     let conf = config::distro_conf(root);
     let base = conf.get("automount.root").unwrap_or("/mnt/").trim_end_matches('/').to_string();
-    format!("{base}/mac")
+    format!("{base}/macos")
 }
 
 /// macOS path -> Linux path. Relative paths are left as they are.
@@ -101,8 +101,8 @@ pub fn mslpath_main(args: &[String]) -> ! {
     let mount = mac_mount("");
     let out = if to_mac_dir {
         let linux = if abs { absolute(p) } else { p.to_string() };
-        let view = std::env::var("MSL_MAC_VIEW")
-            .unwrap_or_else(|_| format!("{}/MSL", std::env::var("MSL_MAC_HOME").unwrap_or_else(|_| "~".into())));
+        let view = std::env::var("MSL_MACOS_VIEW")
+            .unwrap_or_else(|_| format!("{}/MSL", std::env::var("MSL_MACOS_HOME").unwrap_or_else(|_| "~".into())));
         let distro = std::env::var("MSL_DISTRO_NAME").unwrap_or_default();
         to_mac(&linux, &mount, &view, &distro)
     } else {
@@ -141,14 +141,14 @@ mod tests {
 
     #[test]
     fn translate_both_ways() {
-        let m = "/mnt/mac";
-        assert_eq!(to_linux("/Users/a/x y", m), "/mnt/mac/Users/a/x y");
-        assert_eq!(to_linux("/", m), "/mnt/mac");
+        let m = "/mnt/macos";
+        assert_eq!(to_linux("/Users/a/x y", m), "/mnt/macos/Users/a/x y");
+        assert_eq!(to_linux("/", m), "/mnt/macos");
         assert_eq!(to_linux("rel/p", m), "rel/p");
         let v = "/Users/a/MSL";
-        assert_eq!(to_mac("/mnt/mac/Users/a", m, v, "D"), "/Users/a");
-        assert_eq!(to_mac("/mnt/mac", m, v, "D"), "/");
-        assert_eq!(to_mac("/mnt/macfoo", m, v, "D"), "/Users/a/MSL/D/mnt/macfoo");
+        assert_eq!(to_mac("/mnt/macos/Users/a", m, v, "D"), "/Users/a");
+        assert_eq!(to_mac("/mnt/macos", m, v, "D"), "/");
+        assert_eq!(to_mac("/mnt/macosfoo", m, v, "D"), "/Users/a/MSL/D/mnt/macosfoo");
         assert_eq!(to_mac("/home/u", m, v, "Debian"), "/Users/a/MSL/Debian/home/u");
     }
 
@@ -161,10 +161,10 @@ mod tests {
             ("W".to_string(), "/z".to_string()),
         ]);
         let mut env = HashMap::new();
-        apply_mslenv("A:P/p:L/l:W/w:MISSING", &values, "/mnt/mac", &mut env);
+        apply_mslenv("A:P/p:L/l:W/w:MISSING", &values, "/mnt/macos", &mut env);
         assert_eq!(env["A"], "plain");
-        assert_eq!(env["P"], "/mnt/mac/Users/a");
-        assert_eq!(env["L"], "/mnt/mac/x:/mnt/mac/y");
+        assert_eq!(env["P"], "/mnt/macos/Users/a");
+        assert_eq!(env["L"], "/mnt/macos/x:/mnt/macos/y");
         assert!(!env.contains_key("W") && !env.contains_key("MISSING"));
         assert_eq!(env["MSLENV"], "A:P/p:L/l:W/w:MISSING");
     }

@@ -72,11 +72,11 @@ public enum JSONOutput {
         /// Short git hash of the build (".dirty" with uncommitted changes); absent for a plain `swift build`.
         public var commit: String?
         public var kernel: String
-        public var macOS: String
+        public var macos: String
         /// Install prefix, when msl runs from an installed copy (not a development build).
         public var prefix: String?
-        public init(msl: String, commit: String? = nil, kernel: String, macOS: String, prefix: String?) {
-            self.msl = msl; self.commit = commit; self.kernel = kernel; self.macOS = macOS; self.prefix = prefix
+        public init(msl: String, commit: String? = nil, kernel: String, macos: String, prefix: String?) {
+            self.msl = msl; self.commit = commit; self.kernel = kernel; self.macos = macos; self.prefix = prefix
         }
     }
 

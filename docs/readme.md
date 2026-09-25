@@ -2,7 +2,7 @@
 
 **Getting started**
 - [Getting started](getting_started.md): install msl, a first distribution, files, ports and VS Code
-- [Installing msl](install.md): installer options, and everything msl puts on your Mac with what undoes it
+- [Installing msl](install.md): installer options, and everything msl adds to macOS with what undoes it
 
 **Guides**
 - [VS Code and other IDEs](../README.md#vs-code-and-other-ides): what the extension does and how to set it up; [extension README](../extensions/vscode/README.md) for details and troubleshooting

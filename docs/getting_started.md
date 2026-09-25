@@ -1,6 +1,6 @@
 # Getting started
 
-This page takes you from installing msl to a shell in Ubuntu and a VS Code window open inside it. You need a Mac with Apple silicon and macOS 26 or later.
+This page takes you from installing msl to a shell in Ubuntu and a VS Code window open inside it. You need macOS 26 or later on Apple silicon.
 
 ## 1. Install msl
 
@@ -32,7 +32,7 @@ msl downloads the image and runs the distribution's own first-run setup, which a
 $ msl
 ```
 
-This opens a shell in your default distribution. It starts in the Mac directory you ran `msl` from, which Linux sees under `/mnt/mac`. To run one command instead:
+This opens a shell in your default distribution. It starts in the macOS directory you ran `msl` from, which Linux sees under `/mnt/macos`. To run one command instead:
 
 ```console
 $ msl uname -a                 # through the shell
@@ -42,26 +42,26 @@ $ msl --cd ~ -- make test      # starting in your Linux home directory
 
 `msl -l -v` lists your distributions and whether they're running. If you install more than one, `-d <Distro>` picks one and `msl -s <Distro>` changes the default.
 
-## 4. Share files and ports with the Mac
+## 4. Share files and ports with macOS
 
-From Linux, the Mac's files are under `/mnt/mac`, as `C:` is under `/mnt/c` in WSL. `mslpath` converts between the two kinds of path:
+From Linux, macOS files are under `/mnt/macos`, as `C:` is under `/mnt/c` in WSL. `mslpath` converts between the two kinds of path:
 
 ```console
 $ mslpath -w ~/project        # a Linux path as a macOS path
 $ mslpath -u /Users/me/src    # and back
 ```
 
-From the Mac, each distribution's files are in `~/.msl/distros/<distro>` and in Finder under Locations, while the VM runs.
+From macOS, each distribution's files are in `~/.msl/distros/<distro>` and in Finder under Locations, while the VM runs.
 
-A server listening on `localhost` in a distribution is reachable at `localhost` on the Mac:
+A server listening on `localhost` in a distribution is reachable at `localhost` on macOS:
 
 ```console
-$ python3 -m http.server 8000      # inside the distro; open http://localhost:8000 on the Mac
+$ python3 -m http.server 8000      # inside the distro; open http://localhost:8000 on macOS
 ```
 
 ## 5. Open the distribution in VS Code
 
-If the installer set up the extension, quit and reopen VS Code (⌘Q), then run **MSL: Connect to Distro** from the command palette. If it didn't, run `msl --manage-ide` first. The first connection installs the VS Code Server in the distribution. After that, the terminal, language servers, debuggers and extensions run in Linux, while the window stays on the Mac.
+If the installer set up the extension, quit and reopen VS Code (⌘Q), then run **MSL: Connect to Distro** from the command palette. If it didn't, run `msl --manage-ide` first. The first connection installs the VS Code Server in the distribution. After that, the terminal, language servers, debuggers and extensions run in Linux, while the window stays on macOS.
 
 See [VS Code and other IDEs](../README.md#vs-code-and-other-ides) for how the extension works and why it changes `argv.json`.
 

@@ -34,7 +34,7 @@ public enum DataDisk {
             return .refused("The disk can only grow. It's \(StatusFormat.bytes(current)) now, and shrinking an ext4 filesystem in place isn't safe.")
         }
         if let cap = volumeCapacity, size > cap {
-            return .refused("\(StatusFormat.bytes(size)) is more than the Mac's disk holds (\(StatusFormat.bytes(cap))).")
+            return .refused("\(StatusFormat.bytes(size)) is more than the macOS disk holds (\(StatusFormat.bytes(cap))).")
         }
         return .grow(size)
     }

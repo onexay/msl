@@ -17,7 +17,7 @@ fn valid(name: &str) -> bool {
 }
 
 fn suggestion() -> String {
-    let raw = std::env::var("MSL_MAC_USER").unwrap_or_default().to_ascii_lowercase();
+    let raw = std::env::var("MSL_MACOS_USER").unwrap_or_default().to_ascii_lowercase();
     let s: String = raw.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect();
     let s = s.trim_start_matches(|c: char| !(c.is_ascii_lowercase() || c == '_')).to_string();
     if valid(&s) { s } else { String::new() }

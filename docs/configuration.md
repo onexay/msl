@@ -8,7 +8,7 @@ msl reads the same settings files as WSL: one file for the VM, one for each dist
 
 ```ini
 [msl2]
-memory = 8GB                 # default: 50% of the Mac's RAM
+memory = 8GB                 # default: 50% of the RAM
 processors = 4               # default: all
 kernel = ~/kernels/Image     # custom kernel
 kernelCommandLine = quiet
@@ -16,7 +16,7 @@ localhostForwarding = true   # default true
 dnsTunneling = true          # default true; false uses vmnet's DNS
 vmIdleTimeout = 60000        # ms; VM stops this long after the last distro stops
 defaultVhdSize = 256GB       # size of the shared disk when it's created (default 256GB,
-                             # at most the Mac's disk); grow it later with --manage --resize
+                             # at most the macOS disk); grow it later with --manage --resize
 
 [general]
 instanceIdleTimeout = 15000  # ms; an idle distro stops after this
@@ -33,7 +33,7 @@ msl reads `/etc/msl.conf`, falling back to `/etc/wsl.conf`, so existing distros 
 
 ## Environment variables
 
-- `MSLENV`: passes Mac variables into Linux (one way, with the `/p` and `/l` flags, like `WSLENV`).
+- `MSLENV`: passes macOS variables into Linux (one way, with the `/p` and `/l` flags, like `WSLENV`).
 - `MSL_ERROR_CODES=1`: adds wsl.exe-style `Error code:` lines to error messages.
 - `MSL_DISTRIBUTION_LIST_URL`: replaces Microsoft's distribution list.
 - `MSL_CONFIG`: path of the VM settings file (default `~/.mslconfig`).

@@ -56,7 +56,7 @@ check "--manage --resize can't shrink" "can only grow" "$($MSL --manage Debian -
 $MSL -u root -e sh -c "printf '[boot]\nsystemd=true\ncommand=touch /run/msl-bootcmd\n[automount]\nroot=/\n[network]\ngenerateResolvConf=false\n' > /etc/wsl.conf; rm -f /etc/resolv.conf; echo 'nameserver 9.9.9.9' > /etc/resolv.conf"
 $MSL -t Debian >/dev/null
 check "wsl.conf [boot] command ran" "yes" "$($MSL -e sh -c 'test -e /run/msl-bootcmd && echo yes')"
-check "wsl.conf [automount] root=/ → /mac" "Users" "$($MSL ls /mac)"
+check "wsl.conf [automount] root=/ → /macos" "Users" "$($MSL ls /macos)"
 check "wsl.conf generateResolvConf=false respected" "9.9.9.9" "$($MSL cat /etc/resolv.conf)"
 
 check "online install by exact name (--no-launch)" "Distribution successfully installed. It can be launched via 'msl -d Ubuntu-24.04'" \

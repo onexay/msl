@@ -527,7 +527,7 @@ public nonisolated struct Msl_V1_RunRequest: Sendable {
   public var cols: UInt32 = 0
 
   /// Caller's macOS working directory; used when `cwd` is empty. The guest maps
-  /// it under the distro's [automount] root (default /mnt/mac).
+  /// it under the distro's [automount] root (default /mnt/macos).
   public var macCwd: String = String()
 
   /// MSLENV (the WSLENV equivalent) and the macOS values of the variables it

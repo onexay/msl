@@ -30,20 +30,20 @@ $ shasum -a 256 -c msl-<version>-macos-arm64.tar.gz.sha256
 msl runs Linux distributions in one lightweight VM (Apple's Virtualization.framework) on behalf of **one macOS user**.
 
 - **Privileges.** `msl` and `msld` run as that user, never as root. `msld` holds the `com.apple.security.virtualization` entitlement only.
-- **Isolation.** The VM is the security boundary between Linux and macOS. As in WSL, distributions are **not** isolated from each other: they share one kernel and one network namespace. Root inside a distro is root in its own namespaces, not on the Mac.
-- **What the Mac exposes to Linux, by design:**
-  - the Mac filesystem at `/mnt/mac`, with the user's permissions;
+- **Isolation.** The VM is the security boundary between Linux and macOS. As in WSL, distributions are **not** isolated from each other: they share one kernel and one network namespace. Root inside a distro is root in its own namespaces, not on macOS.
+- **What macOS exposes to Linux, by design:**
+  - the macOS filesystem at `/mnt/macos`, with the user's permissions;
   - DNS resolution through macOS;
   - outbound network access through NAT.
 
   msl never runs macOS binaries from Linux.
-- **What Linux exposes to the Mac:**
+- **What Linux exposes to macOS:**
   - Distro listening ports are forwarded to `127.0.0.1` / `[::1]` only (`localhostForwarding`).
   - The control socket is `~/Library/Application Support/msl/msld.sock`, mode 0600.
 
 ### Known limitations
 
-- **`~/.msl/distros` file view.** Distro files are served over NFSv3 on a `127.0.0.1` port without authentication, so **other local user accounts on the same Mac** can reach it. On a shared Mac, avoid keeping secrets in distros until this is fixed ([#1](https://github.com/onexay/msl/issues/1)).
-- **Forwarded ports.** As with WSL's localhost forwarding, a port forwarded from a distro can be reached by every local user on the Mac.
+- **`~/.msl/distros` file view.** Distro files are served over NFSv3 on a `127.0.0.1` port without authentication, so **other local user accounts on the same macOS system** can reach it. On a shared system, avoid keeping secrets in distros until this is fixed ([#1](https://github.com/onexay/msl/issues/1)).
+- **Forwarded ports.** As with WSL's localhost forwarding, a port forwarded from a distro can be reached by every local user on macOS.
 - **Release signing.** Releases are ad-hoc signed and not notarised yet. Releases without a `.sha256.asc` (including v0.1.1) are verified only by a SHA-256 checksum published in the same GitHub release; signed releases also carry a PGP signature (see above). `install.sh` removes the quarantine attribute from the files it installs.
 - **`curl | sh` install.** Read `install.sh` before piping it to a shell if that matters to you. It's short, and it can also install a downloaded tarball with `--from`.

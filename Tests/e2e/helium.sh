@@ -53,7 +53,7 @@ check "list quiet" $'Debian\nUbuntu' "$($MSL -l -q)"
 
 check "exec mode" "Linux" "$($MSL -e uname -s)"
 check "exit code passthrough" "7" "$(code $MSL -- exit 7)"
-check "cwd translation" "/mnt/mac$(cd /tmp && pwd -P)" "$(cd /tmp && $MSL pwd)"
+check "cwd translation" "/mnt/macos$(cd /tmp && pwd -P)" "$(cd /tmp && $MSL pwd)"
 check "--cd ~" "/home/tester" "$($MSL --cd '~' pwd)"
 check "msl ~" "/home/tester" "$($MSL '~' -- pwd)"
 check "-u root" "root" "$($MSL -u root whoami)"

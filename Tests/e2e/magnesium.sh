@@ -29,7 +29,7 @@ check "--status shows free space in the VM" "Disk free:" "$($MSL --status)"
 check "resize refused while a distro runs" "must all be stopped" "$($MSL -d $D -e sh -c "sleep 30" & sleep 3; $MSL --manage $D --resize 16GB 2>&1)"
 $MSL --shutdown
 check "shrink refused" "can only grow" "$($MSL --manage $D --resize 4GB 2>&1)"
-check "more than the Mac holds refused" "more than the Mac's disk holds" "$($MSL --manage $D --resize 100TB 2>&1)"
+check "more than macOS holds refused" "more than the macOS disk holds" "$($MSL --manage $D --resize 100TB 2>&1)"
 check "invalid size refused" "Invalid size" "$($MSL --manage $D --resize lots 2>&1)"
 
 out=$($MSL --manage $D --resize 16GB 2>&1); rc=$?

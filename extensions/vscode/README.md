@@ -1,6 +1,6 @@
 # MSL for VS Code (preview)
 
-Opens folders inside msl distros, like the WSL extension on Windows. VS Code talks to the VS Code Server in the distro over managed pipes (msl → vsock → the server's Unix socket). It uses no SSH and opens no TCP port on the Mac. Design: [#38](https://github.com/onexay/msl/issues/38) (option C′), milestone Sodium.
+Opens folders inside msl distros, like the WSL extension on Windows. VS Code talks to the VS Code Server in the distro over managed pipes (msl → vsock → the server's Unix socket). It uses no SSH and opens no TCP port on macOS. Design: [#38](https://github.com/onexay/msl/issues/38) (option C′), milestone Sodium.
 
 The extension uses VS Code's proposed `resolvers` API, so it isn't on the Marketplace. msl ships it (`share/msl/msl.vsix`) and sets it up:
 
@@ -14,7 +14,7 @@ It installs the extension with the IDE's own CLI and adds `"enable-proposed-api"
 
 To build the `.vsix` on its own: `cd extensions/vscode && npm install && npm run package`. `scripts/build.sh` puts it in `build/share/msl/msl.vsix`.
 
-Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect to a distro, the extension installs the VS Code Server that matches your VS Code into `~/.vscode-server/bin/<commit>`. It downloads the server on the Mac, caches it in `~/Library/Caches/msl/vscode-server/` for every distro to reuse, and pipes it in, so the distro needs no `curl` or `wget` (stock Debian has neither). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on the Mac's `127.0.0.1`.
+Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect to a distro, the extension installs the VS Code Server that matches your VS Code into `~/.vscode-server/bin/<commit>`. It downloads the server on macOS, caches it in `~/Library/Caches/msl/vscode-server/` for every distro to reuse, and pipes it in, so the distro needs no `curl` or `wget` (stock Debian has neither). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on macOS's `127.0.0.1`.
 
 **Which msl:** the `msl.path` setting if it's set. Otherwise the msl that ran `msl --manage-ide --install`, which records its path in `~/Library/Application Support/msl/cli-path`, so any install location works. Failing both, `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`. It must be msl 0.1.3 or newer, because the extension relies on `--list --json`. Running `build/bin/msl --manage-ide` points the extension at a development build.
 

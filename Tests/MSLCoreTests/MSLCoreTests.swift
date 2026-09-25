@@ -189,7 +189,7 @@ import Testing
               case .refused(let bad) = DataDisk.checkGrow(current: 256 * gib, requested: "lots", volumeCapacity: nil) else {
             Issue.record("expected refusals"); return
         }
-        #expect(shrink.contains("can only grow") && big.contains("more than the Mac's disk holds") && bad.contains("Invalid size"))
+        #expect(shrink.contains("can only grow") && big.contains("more than the macOS disk holds") && bad.contains("Invalid size"))
         // [msl2] defaultVhdSize, as in .wslconfig; below 4 GB is a warning.
         #expect(MSLConfig.parse("[msl2]\ndefaultVhdSize = 64GB\n").defaultVhdSize == 64 * gib)
         let small = MSLConfig.parse("[wsl2]\ndefaultVhdSize = 1GB\n", path: "t")
@@ -263,9 +263,9 @@ import Testing
         var s = VMStatus(running: true, uptimeSeconds: 5, effective: base, configured: base, configPath: "/Users/u/.mslconfig", configExists: true,
                          disk: DiskStatus(maxBytes: 256 * gib, macUsedBytes: 4 * gib + gib / 2, macFreeBytes: 10 * gib, distroFreeBytes: 250 * gib))
         var text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
-        #expect(text.contains("  Disk:") && text.contains("256 GB max, 4.5 GB used on the Mac (data.img)"))
-        #expect(text.contains("Mac free space:") && text.contains("Disk free:"))
-        #expect(text.contains("Warning: distributions see 250 GB free, but the Mac has only 10 GB free."))
+        #expect(text.contains("  Disk:") && text.contains("256 GB max, 4.5 GB used on macOS (data.img)"))
+        #expect(text.contains("macOS free space:") && text.contains("Disk free:"))
+        #expect(text.contains("Warning: distributions see 250 GB free, but macOS has only 10 GB free."))
         s.disk?.macFreeBytes = 40 * gib  // less than the distros see, but not low: normal for a sparse disk
         text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
         #expect(!text.contains("Warning:"))

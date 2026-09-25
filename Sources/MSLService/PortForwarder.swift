@@ -61,7 +61,7 @@ final class PortForwarder: @unchecked Sendable {
         for p in add where p > 0 && p < 65536 {
             let fds = [Self.listen(port: UInt16(p), v6: false), Self.listen(port: UInt16(p), v6: true)].compactMap { $0 }
             guard !fds.isEmpty else {
-                log("localhost forwarding: port \(p) is in use on the Mac; skipped")
+                log("localhost forwarding: port \(p) is in use on macOS; skipped")
                 continue
             }
             let stop = StopFlag()

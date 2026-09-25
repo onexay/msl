@@ -60,7 +60,7 @@ public struct Manifest: Decodable, Sendable {
     /// Why `--install` can't install `entry` on this Mac, or nil if it can.
     public static func installRefusal(_ entry: Entry, rosetta: Bool, supported: Bool = x86Supported) -> String? {
         if entry.Arm64Url != nil { return nil }
-        guard entry.Amd64Url != nil else { return "'\(entry.Name)' has no image for this Mac." }
+        guard entry.Amd64Url != nil else { return "'\(entry.Name)' has no image for this system." }
         guard supported else { return "'\(entry.Name)' is only available for x86_64, which msl doesn't support yet." }
         guard rosetta else {
             return "'\(entry.Name)' is only available for x86_64, which needs Rosetta. Install it with: softwareupdate --install-rosetta"

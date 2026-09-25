@@ -8,11 +8,13 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - `msl --shutdown` leaves the shared disk clean. It used to power off with the filesystem still marked for journal recovery, which then ran at every boot ([#45](https://github.com/onexay/msl/issues/45)).
 
 ### Added
-- `msl --manage <distro> --resize <size>` grows the disk all distributions share ([#3](https://github.com/onexay/msl/issues/3)). Stop every distribution first (`msl --shutdown`). msl restarts the VM, which checks and grows the filesystem before mounting it (about 3 s for 256 GB). The disk can't shrink, and can't be larger than the Mac's disk.
-- `defaultVhdSize` in `[msl2]` (as in `.wslconfig`) sets the disk's size when it's created. Without it, a new disk is 256 GB, but never more than the Mac's disk.
-- `msl --status` shows the disk: its maximum size, what it uses on the Mac, what's free in the distributions and on the Mac. It warns when the Mac is nearly full, which the distributions can't see.
+- `msl --manage <distro> --resize <size>` grows the disk all distributions share ([#3](https://github.com/onexay/msl/issues/3)). Stop every distribution first (`msl --shutdown`). msl restarts the VM, which checks and grows the filesystem before mounting it (about 3 s for 256 GB). The disk can't shrink, and can't be larger than the macOS disk.
+- `defaultVhdSize` in `[msl2]` (as in `.wslconfig`) sets the disk's size when it's created. Without it, a new disk is 256 GB, but never more than the macOS disk.
+- `msl --status` shows the disk: its maximum size, what it uses on macOS, and what's free in the distributions and on macOS. It warns when macOS is nearly out of disk space, which the distributions can't see.
 
 ### Changed
+- **Renamed, breaking:** macOS files are mounted at `/mnt/macos` in every distribution, not `/mnt/mac` (`/macos` under a custom `[automount] root`). The environment variables `MSL_MAC_USER`, `MSL_MAC_HOME` and `MSL_MAC_VIEW` are now `MSL_MACOS_*`, and `msl --version --json` reports `macos` instead of `macOS`. Scripts that use the old names need updating.
+- Messages and docs say "macOS" throughout, instead of mixing "Mac" and "macOS".
 - `msl --version` and msld's log show the commit a build came from, as semver build metadata: `0.1.7+3af5916` (`.dirty` for uncommitted changes). Update checks still compare `0.1.7`.
 - Kernel releases are tagged with a hash of their config instead of a counter: `kernel-6.18.15-msl-76f230e`. The same config always gives the same tag, and `msl --version` shows it.
 - The kernel enables device-mapper (`CONFIG_BLK_DEV_DM`) and the NBD client (`CONFIG_BLK_DEV_NBD`).
