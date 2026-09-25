@@ -12,6 +12,7 @@ mod archive;
 mod bridge;
 mod compat;
 mod config;
+mod connect;
 mod distroinit;
 mod dns;
 mod framed;

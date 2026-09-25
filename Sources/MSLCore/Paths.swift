@@ -17,6 +17,8 @@ public struct Paths: Sendable {
     public var registry: URL { root.appendingPathComponent("registry.json") }
     public var dataDisk: URL { root.appendingPathComponent("data.img") }
     public var socket: URL { root.appendingPathComponent("msld.sock") }
+    /// Byte streams into distros (VS Code managed pipes); see Connect.swift.
+    public var connectSocket: URL { root.appendingPathComponent("connect.sock") }
     public var log: URL { root.appendingPathComponent("msld.log") }
     public var runDir: URL { root.appendingPathComponent("run", isDirectory: true) }
     public var consoleLog: URL { root.appendingPathComponent("console.log") }

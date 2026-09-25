@@ -39,6 +39,11 @@ struct Running {
     exited: std::sync::Arc<(Mutex<bool>, std::sync::Condvar)>,
 }
 
+/// PID 1 of a running distro (root pidns), for connect.rs.
+pub(crate) fn distro_init_pid(id: &str) -> Option<i32> {
+    running().lock().unwrap().get(id).map(|r| r.pid)
+}
+
 fn running() -> &'static Mutex<HashMap<String, Running>> {
     static R: OnceLock<Mutex<HashMap<String, Running>>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
@@ -106,6 +111,9 @@ pub fn main() -> sys::Result<()> {
         });
         if let Err(e) = crate::net::spawn_forwarder() {
             sys::log(&format!("forwarder: {e}"));
+        }
+        if let Err(e) = crate::connect::spawn_listener() {
+            sys::log(&format!("connect: {e}"));
         }
         let incoming = crate::rpc::incoming(CONTROL_PORT)?;
         sys::log(&format!("mini-init ready on vsock:{CONTROL_PORT} ({:?})", t0.elapsed()));

@@ -285,3 +285,20 @@ import Testing
         #expect(text == #"{"error":{"code":"Msl/Service/MSL_E_DEFAULT_DISTRO_NOT_FOUND","message":"No."},"schema":1}"#)
     }
 }
+
+@Suite struct ConnectRequestTests {
+    @Test func parsesTargets() {
+        #expect(ConnectRequest(line: "CONNECT distro=Ubuntu-26.04 unix=/home/a/.vscode-server/msl/x.sock")
+            == ConnectRequest(distro: "Ubuntu-26.04", target: .unix("/home/a/.vscode-server/msl/x.sock")))
+        #expect(ConnectRequest(line: "CONNECT distro=Debian tcp=8080")?.target == .tcp(8080))
+        #expect(ConnectRequest(line: "CONNECT distro=D unix=/a b/c.sock")?.target == .unix("/a b/c.sock"))
+    }
+
+    @Test func rejectsMalformed() {
+        for bad in ["", "CONNECT", "CONNECT distro= unix=/x", "CONNECT distro=D", "CONNECT distro=D unix=relative",
+                    "CONNECT distro=D tcp=0", "CONNECT distro=D tcp=70000", "CONNECT distro=D tcp=x", "connect distro=D tcp=1",
+                    "CONNECT distro=D path=/x"] {
+            #expect(ConnectRequest(line: bad) == nil, "\(bad)")
+        }
+    }
+}

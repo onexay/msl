@@ -38,9 +38,9 @@ Route:
 VS Code ─RPC─ msl extension ─unix─ msld ─vsock:1026─ msl-guest ─unix─ VS Code Server
  (Mac)        (local ext host)     (Mac)  (credit-framed) (VM)          (in distro)
 ```
-- **Extension:** `net.connect()` to msld's connect socket in a user-only (0700) directory. It sends one header line (`CONNECT distro=<id> path=<socket>`) and then uses the connection as the pipe. It waits for Node's `'drain'` event, so backpressure reaches VS Code.
-- **msld:** reads the header, opens a new vsock connection to guest port 1026 with a small binary header, and hands both ends to `FramedBridge`.
-- **msl-guest:** connects to `/proc/<distro-init-pid>/root/<path>`. Each distro has its own mount namespace ([distroinit.rs](../../guest/src/distroinit.rs)), so the socket can only be reached this way. It then relays with `framed::bridge`.
+- **Extension:** `net.connect()` to msld's `connect.sock` (mode 0600, next to `msld.sock`). It sends one line, `CONNECT distro=<name> unix=<path>` or `CONNECT distro=<name> tcp=<port>`, and reads back `OK` or `ERR <message>`. After `OK`, the connection is the pipe. It waits for Node's `'drain'` event, so backpressure reaches VS Code.
+- **msld** ([Connect.swift](../../Sources/MSLService/Connect.swift)): starts the distro if needed and counts the pipe as a session, so idle timeouts don't stop the distro. For `unix=` it opens vsock 1026 with a binary header (distro id, default uid, path) and reads a status byte. For `tcp=` it uses the port-1025 forwarder. Both are then handed to `FramedBridge`.
+- **msl-guest** ([connect.rs](../../guest/src/connect.rs)): checks the path against the allowlist below. It then connects from a throwaway thread that has run `unshare(CLONE_FS)`, then `setns` into the distro's mount namespace, and has taken the user's uid and gids through per-thread syscalls. Symlinks resolve inside the distro, and the kernel checks permissions as the user. It then relays with `framed::bridge`.
 - **Server:** started with `--socket-path ~/.vscode-server/msl/<commit>.sock`. It can't use `/run/user/<uid>`, because `msl -e` sessions don't go through PAM or logind and that directory usually doesn't exist.
 
 This reuses the localhost forwarder ([PortForwarder.swift](../../Sources/MSLService/PortForwarder.swift), [net.rs](../../guest/src/net.rs) `spawn_forwarder`). What changes: a Unix listener instead of a TCP one, port 1026 instead of 1025, a distro id and path header instead of a `u16` port, and a Unix connect inside the distro instead of a loopback TCP connect. The 1 MiB credit window carries over as is.
@@ -49,14 +49,9 @@ Compared with the TCP route: no port opens on the Mac, so browsers and other loc
 
 Lifecycle: each window uses at least 2 pipes, plus 1 per reconnect. Without `tunnelFactory` there would also be 1 per forwarded-port connection, so we implement `tunnelFactory`. It uses the same path as `makeConnection()`, but the target is a TCP port instead of a Unix socket. Before the connect socket exists, `msl-bridge tcp:<port>` connects to `localhost:<port>` inside the distro. After it exists, msld handles `CONNECT tcp=<port>` with the existing port-1025 forwarder, which needs no new guest code because distros share the VM's network namespace. When a pipe breaks, VS Code calls `makeConnection()` again and resumes with its reconnection token, which the server keeps for 3 h. If that fails, it calls `resolve()`, which restarts the distro.
 
-Stepping stone: until the connect socket exists, `makeConnection()` can run `msl -d X -e msl-bridge <path>` and use its stdin and stdout. This costs one process and one XPC session per connection.
+Fallback: when `connect.sock` doesn't exist (an older msld), the extension runs `msl -d X -e /run/msl/init msl-bridge <target>` and uses its stdin and stdout. This costs one process and one XPC session per connection.
 
-Build order:
-1. Resolver skeleton, with `makeConnection()` running through `msl-bridge`.
-2. `tunnelFactory`, also through `msl-bridge`.
-3. The msld connect socket (port 1026 for Unix sockets, 1025 for TCP), which replaces `msl-bridge`.
-
-**Security rule:** msld must not become a general proxy to Unix sockets in a distro (`docker.sock`, systemd's private socket). Accept only `~/.vscode-server/msl/*.sock` in the distro's default user's home directory, and have the guest check the path again after resolving it.
+**Security rule:** msld must not become a general proxy to Unix sockets in a distro (`docker.sock`, systemd's private socket). The guest accepts only `<home>/.vscode-server/msl/<name>.sock` of the distro's default user, and it connects as that user from inside the distro. A symlink there can therefore reach only what the user could reach anyway: a symlink to a root-only socket fails with `EACCES`, and one to a path that exists only in the utility VM fails with `ENOENT`.
 
 ### D. Thin "MSL" extension on top of Remote-SSH (recommended second step)
 Uses only the stable API, can be published on the Marketplace, and depends on B:

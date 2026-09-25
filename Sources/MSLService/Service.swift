@@ -56,6 +56,7 @@ public final class Service: @unchecked Sendable {
         let lfd = try listenUnix(paths.socket.path)
         _ = executableInode
         log("msld listening on \(paths.socket.path)")
+        serveConnect()
         startIdleMonitor()
         while true {
             let c = accept(lfd, nil, nil)

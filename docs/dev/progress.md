@@ -209,3 +209,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - The file view moved from `~/MSL` to `~/.msl/distros` (the old folder is removed when empty; tested). Finder still lists the `Ubuntu-26.04` disk at the hidden path, with its volume icon.
 - Stale `run/vsock-*.sock` files are now removed when the VM stops.
 - Reinstalled Ubuntu-26.04 with `--no-launch` (7.3 s).
+
+## 2026-09-25 10:36: #32 msld connect socket
+- `connect.sock` (msld, `Connect.swift`) plus guest vsock 1026 (`connect.rs`). The guest connects from a thread that has entered the distro's mount namespace and taken the default user's uid and gids. Only `<home>/.vscode-server/msl/<name>.sock` is allowed.
+- Tests: 3 guest unit tests and 2 Swift parser tests. A 100 MB echo took 0.39 s with a matching SHA-256. Refused as expected: docker.sock, systemd private, `..`, a symlink to a root-only socket (EACCES), a symlink to a VM-only path (ENOENT), a bad distro, and a malformed line. The TCP target works, and a connect to a stopped distro starts it.
+- The extension now uses connect.sock for every pipe (no `msl` processes; handshake about 48 ms). The distro stays running while VS Code holds pipes.
+- Found and fixed a tunnel bug: with a slow local reader, 10 of 12 50 MB downloads were cut short (40-47 MB), because `onDidClose` destroyed the socket with data still queued. Added backpressure (`Pipe.pause/resume`) and a clean end; after the fix, 12 of 12 were correct.

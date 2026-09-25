@@ -24,9 +24,15 @@ function listen(port: number): Promise<net.Server> {
 async function relay(distro: string, port: number, sock: net.Socket) {
     sock.pause();
     const pipe = await openPipe(distro, { tcp: port });
-    pipe.onDidReceiveMessage((d) => sock.write(d));
-    pipe.onDidEnd(() => sock.end());
-    pipe.onDidClose(() => sock.destroy());
+    // Backpressure both ways: stop reading one side while the other is full.
+    pipe.onDidReceiveMessage((d) => {
+        if (!sock.write(d)) {
+            pipe.pause();
+            sock.once('drain', () => pipe.resume());
+        }
+    });
+    pipe.onDidEnd(() => sock.end()); // after everything queued has been written
+    pipe.onDidClose((err) => (err ? sock.destroy() : sock.end()));
     sock.on('data', (d: Buffer) => {
         pipe.send(d);
         sock.pause();

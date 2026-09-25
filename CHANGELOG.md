@@ -8,10 +8,12 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
 
 ### Fixed
+- VS Code tunnels (forwarded ports) no longer cut off a download when the local client reads slowly: the tunnel now applies backpressure and ends cleanly instead of dropping queued data.
 - msld now removes its `run/vsock-*.sock` bridge sockets when the VM stops, so stale sockets no longer pile up.
 
 ### Added
 - Preview VS Code extension (`extensions/vscode`) that opens folders in a distro through managed pipes: no SSH, and no port on the Mac. It needs VS Code's proposed `resolvers` API (Sodium).
+- msld's connect socket (`connect.sock`): `CONNECT distro=<name> unix=<path>|tcp=<port>` opens a byte stream into a distro, over vsock 1026 or the localhost forwarder. Unix sockets are limited to `~/.vscode-server/msl/*.sock`, and the connection is made as the distro's default user. The VS Code extension uses it for every pipe and falls back to `msl-bridge` with an older msld ([#32](https://github.com/onexay/msl/issues/32)).
 - `/run/msl/init msl-bridge unix:<path>|tcp:<port>`: relays stdio to a Unix socket or localhost port inside a distro ([#29](https://github.com/onexay/msl/issues/29)).
 
 ## [0.1.3] - 2026-09-25
