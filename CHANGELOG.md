@@ -4,12 +4,14 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-25
+
 ### Changed
 - `msl --manage <distro> --move` now fails with "not supported" instead of reporting success. It only recorded the location: every distro lives on the shared disk, so nothing was moved.
 - The VM section of `~/.mslconfig` is now `[msl2]`. `[wsl2]` still works, so existing files and a copied `.wslconfig` need no change.
 
 ### Fixed
-- Names that are CNAME aliases (deb.debian.org, cdn.kernel.org, www.apple.com) resolve in distros again. 0.1.5's DNS fix made macOS report the CNAME record as well, and msld then answered with the alias alone or with records glibc rejects, so lookups failed and `apt` and `curl` couldn't reach those hosts.
+- Names that are CNAME aliases (deb.debian.org, cdn.kernel.org, www.apple.com) resolve in distros again. 0.1.5's DNS fix made macOS report the CNAME record as well, and msld then answered with the alias alone or with records glibc rejects, so lookups failed and `apt` and `curl` couldn't reach those hosts ([#42](https://github.com/onexay/msl/issues/42)).
 
 ## [0.1.5] - 2026-09-25
 
@@ -72,7 +74,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/onexay/msl/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/onexay/msl/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/onexay/msl/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/onexay/msl/compare/v0.1.2...v0.1.3
