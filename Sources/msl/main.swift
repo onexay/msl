@@ -237,9 +237,9 @@ case .list(let spec):
     if spec.online {
         let manifest = Online.manifest()
         if jsonMode {
-            outJSON(JSONOutput.online(manifest, rosetta: Online.x86Available))
+            outJSON(JSONOutput.online(manifest, rosetta: Manifest.x86Available(rosetta: Online.rosettaInstalled)))
         } else {
-            out(manifest.onlineListing(rosetta: Online.x86Available))
+            out(manifest.onlineListing(rosetta: Manifest.x86Available(rosetta: Online.rosettaInstalled)))
         }
         exit(0)
     }

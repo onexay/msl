@@ -186,6 +186,32 @@ import Testing
         #expect(m.installable.map(\.Name) == ["Ubuntu", "Ubuntu-24.04"])  // amd64-only arch is not listed
         #expect(m.onlineListing().contains("Ubuntu-24.04    Ubuntu 24.04 LTS"))
     }
+
+    @Test func x86Deferred() throws {
+        let json = """
+            {"ModernDistributions": {
+              "Ubuntu": [{"Name":"Ubuntu","FriendlyName":"Ubuntu","Arm64Url":{"Url":"u","Sha256":"h"},"Amd64Url":{"Url":"u","Sha256":"h"}}],
+              "archlinux": [{"Name":"archlinux","FriendlyName":"Arch Linux","Amd64Url":{"Url":"a","Sha256":"x"}}]}}
+            """
+        let m = try Manifest.parse(Data(json.utf8))
+        let arch = try #require(m.resolve("archlinux"))
+        let ubuntu = try #require(m.resolve("Ubuntu"))
+
+        // Deferred (#40): hidden and refused even with Rosetta installed.
+        #expect(!Manifest.x86Supported)
+        let offered = Manifest.x86Available(rosetta: true)
+        #expect(!offered)
+        #expect(!m.onlineListing(rosetta: offered).contains("archlinux"))
+        #expect(JSONOutput.online(m, rosetta: offered).distributions.map(\.name) == ["Ubuntu"])
+        #expect(Manifest.installRefusal(arch, rosetta: true) == "'archlinux' is only available for x86_64, which msl doesn't support yet.")
+        #expect(Manifest.installRefusal(ubuntu, rosetta: false) == nil)
+
+        // Turned back on: offered and installable only with Rosetta.
+        #expect(Manifest.x86Available(rosetta: true, supported: true))
+        #expect(!Manifest.x86Available(rosetta: false, supported: true))
+        #expect(Manifest.installRefusal(arch, rosetta: true, supported: true) == nil)
+        #expect(Manifest.installRefusal(arch, rosetta: false, supported: true)?.contains("needs Rosetta") == true)
+    }
 }
 
 @Suite struct StatusTests {

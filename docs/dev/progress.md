@@ -293,3 +293,4 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Stopped testing; the Rosetta vs qemu-user comparison and proposal are in #40 (design). The test VM is shut down.
 - x86_64 support deferred: #4, #7 and #9 updated, Nitrogen marked deferred, docs say so.
 - Hid x86_64-only distros: `Online.x86Supported = false` removes them from `--list --online` (text and JSON), and `--install <x86-only>` now fails with "only available for x86_64, which msl doesn't support yet". `--from-file` is unchanged. Checked with the dev build: 15 JSON entries, none emulated; `--install archlinux` exits 255.
+- Moved the x86_64 switch into MSLCore (`Manifest.x86Supported`, `x86Available`, `installRefusal`) and added the `x86Deferred` test (37 tests pass). With the switch flipped to true, the test fails with 5 issues.

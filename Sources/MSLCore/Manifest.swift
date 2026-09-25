@@ -48,6 +48,26 @@ public struct Manifest: Decodable, Sendable {
 
     public var installable: [Entry] { installable(rosetta: false) }
 
+    /// x86_64-only distributions are deferred (Nitrogen, #40): hidden from
+    /// `--list --online` and refused by `--install`. `--from-file` still works.
+    public static let x86Supported = false
+
+    /// Whether x86_64-only entries can be offered on this Mac.
+    public static func x86Available(rosetta: Bool, supported: Bool = x86Supported) -> Bool {
+        supported && rosetta
+    }
+
+    /// Why `--install` can't install `entry` on this Mac, or nil if it can.
+    public static func installRefusal(_ entry: Entry, rosetta: Bool, supported: Bool = x86Supported) -> String? {
+        if entry.Arm64Url != nil { return nil }
+        guard entry.Amd64Url != nil else { return "'\(entry.Name)' has no image for this Mac." }
+        guard supported else { return "'\(entry.Name)' is only available for x86_64, which msl doesn't support yet." }
+        guard rosetta else {
+            return "'\(entry.Name)' is only available for x86_64, which needs Rosetta. Install it with: softwareupdate --install-rosetta"
+        }
+        return nil
+    }
+
     /// WSL's resolution: a flavor name picks that flavor's default entry;
     /// otherwise an exact (case-insensitive) entry name.
     public func resolve(_ name: String?) -> Entry? {
