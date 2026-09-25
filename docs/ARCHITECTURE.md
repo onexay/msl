@@ -25,7 +25,7 @@ Trade-offs:
 ## Architecture
 
 ```
-msl (CLI) ──XPC──▶ msld (per-user LaunchAgent: wslservice + wslhost + wslrelay)
+msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand by msl: wslservice + wslhost + wslrelay)
                      │ owns VZVirtualMachine, registry, config, port relays
                      │ vsock (control + per-session stdio)
                      ▼
@@ -44,7 +44,7 @@ msl (CLI) ──XPC──▶ msld (per-user LaunchAgent: wslservice + wslhost + 
   - short aliases work, e.g. `-l -v -q -d -u -e -s -t`.
 - The English messages, table layouts (`NAME STATE VERSION`, `*` marking the default) and exit codes match WSL. The exit code is the Linux process's own code, or non-zero with an `Error code: Msl/<Component>/<Name>` line.
 - Output is always UTF-8. WSL's UTF-16 quirk is not copied.
-- stdin, stdout and stderr are passed to `msld` as file descriptors over XPC, and `msld` splices them to vsock. SIGWINCH and signals are sent as control messages.
+- stdin, stdout and stderr are passed to `msld` as file descriptors over its Unix socket (SCM_RIGHTS), and `msld` splices them to vsock. SIGWINCH and signals are sent as control messages.
 
 **`msld`**
 - A LaunchAgent with a Mach XPC service. It is started when `msl` first connects and stops the VM after `vmIdleTimeout`.

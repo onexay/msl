@@ -240,3 +240,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-25 12:04: #35 msl.path via cli-path
 - Instead of editing each IDE's settings.json, `msl --manage-ide --install` writes its resolved path to `<MSL_HOME>/cli-path`, and uninstall removes it (only if it names this msl; under sudo, as SUDO_USER). Extension 0.1.1 looks up msl in this order: the msl.path setting, then cli-path (ignored if the file it names is gone), then ~/.local/bin, /usr/local/bin, PATH. A Node harness with a stubbed vscode module passes 4 of 4. release.sh confirms cli-path is written by install.sh and removed by --uninstall.
+
+## 2026-09-25 12:53: README rewrite and complete --help
+- Rewrote README.md. New sections: what the installer sets up and what undoes each change; the full `msl --help` with grouped explanations; why the VS Code extension and the `argv.json` change are needed; a table of compatibility with WSL distributions.
+- `--help` now lists every accepted command (it had omitted --manage, --mount/--unmount, --update, --uninstall, --debug-shell, --set-version, --set-default-version, --list --online); --manage-ide moved to the MSL group. The README embeds the output verbatim, checked with diff.
+- Corrected README and ARCHITECTURE: msld is not a LaunchAgent and msl does not talk to it over XPC. msl starts msld on demand and passes stdio over a Unix socket (SCM_RIGHTS).
+- Removed unverified claims from the draft (a `code .` example; Ubuntu 22.04 as tested; exports round-tripping into WSL).

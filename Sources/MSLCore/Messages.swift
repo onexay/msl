@@ -93,11 +93,16 @@ public enum Messages {
 
         Arguments for managing \(product):
 
+            --debug-shell
+                Open a root shell in the utility virtual machine, outside every
+                distribution, for diagnostics.
+
             --help
                 Display usage information.
 
             --install [Distro] [Options...]
                 Install a \(product) distribution.
+                For a list of valid distributions, use '\(exe) --list --online'.
 
                 Options:
                     --from-file <Path>
@@ -115,6 +120,48 @@ public enum Messages {
                     --version <Version>
                         Specifies the version to use for the new distribution.
 
+            --manage-ide [--ide <IDE>] [--install | --uninstall]
+                Set up the MSL extension in VS Code or a similar IDE, so it can
+                open folders inside distributions. Without options, lists the IDEs
+                found and asks what to do.
+
+                Options:
+                    --ide <vscode | vscode-insiders | vscode-oss | cursor | all>
+                        The IDE to change (vscodium is an alias for vscode-oss).
+
+                    --install
+                        Install the extension and enable its proposed API in argv.json.
+
+                    --uninstall
+                        Uninstall the extension and remove it from argv.json.
+
+            --mount <Disk> [Options...]
+                Attaches and mounts a disk image in all distributions, at
+                /mnt/msl/<Name>.
+
+                Options:
+                    --vhd
+                        Accepted for compatibility; every disk is an image file.
+
+                    --bare
+                        Attach the disk, but don't mount it.
+
+                    --name <Name>
+                        Mount the disk using a custom name for the mountpoint.
+
+                    --type, -t <Type>
+                        Filesystem to use when mounting a disk, if not specified defaults to ext4.
+
+                    --options, -o <Options>
+                        Additional mount options.
+
+                    --partition <Index>
+                        Index of the partition to mount, if not specified defaults to the whole disk.
+
+            --set-default-version <Version>
+                Changes the default install version for new distributions.
+                Only version 2 is available.
+
             --shutdown
                 Immediately terminates all running distributions and the
                 lightweight utility virtual machine.
@@ -125,6 +172,21 @@ public enum Messages {
 
             --status
                 Show the status of \(product).
+
+            --uninstall
+                Remove \(product) from this Mac and undo --manage-ide.
+                Distributions and settings are kept.
+
+            --unmount [Disk]
+                Unmounts and detaches a disk from all distributions.
+                Unmounts and detaches all disks if called without argument.
+
+            --update [Options]
+                Update \(product) to the latest release.
+
+                Options:
+                    --pre-release
+                        Download a pre-release version if available.
 
             --version, -v
                 Display version information.
@@ -167,23 +229,31 @@ public enum Messages {
                     --verbose, -v
                         Show detailed information about all distributions.
 
-            --manage-ide [--ide <IDE>] [--install | --uninstall]
-                Set up the MSL extension in VS Code or a similar IDE, so it can
-                open folders inside distributions. Without options, lists the IDEs
-                found and asks what to do.
+                    --online, -o
+                        Displays a list of available distributions for install with '\(exe) --install'.
+
+            --manage <Distro> <Options...>
+                Changes distro specific options.
 
                 Options:
-                    --ide <vscode | vscode-insiders | vscode-oss | cursor | all>
-                        The IDE to change (vscodium is an alias for vscode-oss).
+                    --set-default-user <Username>
+                        Set the default user of the distribution.
 
-                    --install
-                        Install the extension and enable its proposed API in argv.json.
+                    --compact
+                        Return the space freed inside the distribution to macOS.
 
-                    --uninstall
-                        Uninstall the extension and remove it from argv.json.
+                    --move <Location>
+                        Accepted for compatibility; all distributions share one disk.
+
+                    --set-sparse, -s <true|false>
+                        Accepted for compatibility; the disk is always sparse.
 
             --set-default, -s <Distro>
                 Sets the distribution as the default.
+
+            --set-version <Distro> <Version>
+                Changes the version of the specified distribution.
+                Only version 2 is available.
 
             --terminate, -t <Distro>
                 Terminates the specified distribution.
