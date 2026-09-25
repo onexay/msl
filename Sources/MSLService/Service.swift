@@ -337,9 +337,10 @@ public final class Service: @unchecked Sendable {
             let reply = try blocking { try await agent.lookupUser(.with { $0.name = user }) }
             guard reply.found else { throw ServiceError(Messages.userNotFound, code: ErrorCode.userNotFound) }
             try registry.update(id: d.id) { $0.defaultUid = reply.uid }
-        case .move(let location):
-            // All distros live on the shared data disk; the location is only recorded.
-            try registry.update(id: d.id) { $0.location = location }
+        case .move:
+            // All distros are directories on the shared data disk, so there's no
+            // per-distro file to move. Refuse rather than pretend.
+            throw ServiceError("Failed to move distribution.\nAll distributions share one disk, so a single distribution can't be moved.", code: ErrorCode.unsupported)
         case .setSparse:
             break  // the data disk is always sparse
         case .resize:

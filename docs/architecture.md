@@ -52,7 +52,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
   - Registry (the Lxss equivalent): `~/Library/Application Support/msl/registry.json`, one entry per distro: GUID, name, state, default user, flags.
   - Global config: `~/.mslconfig`, the `.wslconfig` equivalent with the same INI keys and the same size-suffix and bad-file rules.
 - VM setup:
-  - virtio-blk data disk, a sparse ASIF image.
+  - virtio-blk data disk, a sparse raw image formatted as ext4 on the Mac.
   - `VZVmnetNetworkDeviceAttachment` in shared (NAT) mode (macOS 26). It works with ad-hoc signing and only the virtualization entitlement. The **subnet is pinned** with `vmnet_network_configuration_set_ipv4_subnet`, because it otherwise changes per launch.
   - `VZVirtioSocketDevice`.
   - virtiofs share of `/`.
@@ -108,7 +108,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
 ### Feature mapping (WSL → MSL)
 | WSL | MSL |
 |---|---|
-| Distro storage | One shared ext4 data disk (sparse ASIF). Each distro is a directory on it. `--manage --resize` sets an ext4 project quota. `--move` relocates the data disk. |
+| Distro storage | One shared ext4 data disk (a sparse raw file, 256 GiB). Each distro is a directory on it. `--manage --move` and `--resize` aren't supported: there's no per-distro disk to move, and the shared disk can't grow yet ([#3](https://github.com/onexay/msl/issues/3)). |
 | `.vhdx` import and `--mount` | Raw or ext4 images are hot-attached as USB mass storage, since virtio-blk can't be hot-plugged. `--import --vhd` copies the image into the store. |
 | `--install` | Uses **Microsoft's `DistributionInfo.json` `Arm64Url` entries** directly, so `.wsl` tarballs work as they are. `--from-file`, `--name`, `--location` and `--no-launch` are supported. `wsl-distribution.conf` OOBE is honoured; shortcut and terminal sections are ignored. Override with `MSL_DISTRIBUTION_LIST_URL`. |
 | amd64 distros | Rosetta, through binfmt. |

@@ -96,7 +96,7 @@ Tracked as [issues](https://github.com/onexay/msl/issues); planned work is in th
 
 - **x86_64 distros:** not supported yet.
 - **Memory:** returned to macOS only when the VM stops, because Virtualization.framework's balloon doesn't give pages back. `autoMemoryReclaim` has no effect.
-- **Disk:** `--manage --resize` isn't supported (the shared disk is fixed at 256 GiB). `--compact` and trim on shutdown shrink `data.img`.
+- **Disk:** `--manage --resize` and `--move` aren't supported (the shared disk is fixed at 256 GiB). `--compact` and trim on shutdown shrink `data.img`.
 - **`~/.msl/distros`:** available only while the VM runs.
 - **Not available:** GPU, WSLg and GUI apps, WSL 1, mirrored networking.
 - **Signing:** releases aren't notarised yet.

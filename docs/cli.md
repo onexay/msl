@@ -236,7 +236,8 @@ Terminals work as in WSL: a PTY when you're interactive, pipes otherwise; window
 | `msl --import <Distro> <location> <file>` | Imports a tar file as a new distribution. Use `-` for stdin. |
 | `msl --manage <Distro> --set-default-user <user>` | Sets the user that shells run as. |
 | `msl --manage <Distro> --compact` | Frees space in `data.img` after deleting files. |
-| `msl --manage <Distro> --move <location>` | Accepted; the location is only recorded, because every distro lives on the shared disk. |
+| `msl --manage <Distro> --move <location>` | Not supported: every distro lives on the shared disk, so there's no per-distro file to move. |
+| `msl --manage <Distro> --resize <size>` | Not supported yet ([#3](https://github.com/onexay/msl/issues/3)): the shared disk is fixed at 256 GiB. |
 | `msl --manage <Distro> --set-sparse <bool>` | Accepted; the disk is always sparse. |
 | `msl --set-version <Distro> 2`, `msl --set-default-version 2` | Accepted. Version 1 isn't available on macOS. |
 

@@ -5,6 +5,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ## [Unreleased]
 
 ### Changed
+- `msl --manage <distro> --move` now fails with "not supported" instead of reporting success. It only recorded the location: every distro lives on the shared disk, so nothing was moved.
 - The VM section of `~/.mslconfig` is now `[msl2]`. `[wsl2]` still works, so existing files and a copied `.wslconfig` need no change.
 
 ### Fixed

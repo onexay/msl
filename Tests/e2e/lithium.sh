@@ -49,7 +49,7 @@ check "--manage --set-default-user root" "The operation completed successfully."
 check "default user is now root" "root" "$($MSL whoami)"
 $MSL --manage Debian --set-default-user "$(id -un)" >/dev/null
 check "--manage unknown user" "User not found." "$($MSL --manage Debian --set-default-user nobody-here)"
-check "--manage --move records location" "The operation completed successfully." "$($MSL --manage Debian --move $WORK/elsewhere)"
+check "--manage --move refused honestly" "can't be moved" "$($MSL --manage Debian --move $WORK/elsewhere)"
 check "--manage --resize refused honestly" "can't be resized yet" "$($MSL --manage Debian --resize 10GB)"
 
 # wsl.conf: boot.command, automount.root, generateResolvConf
