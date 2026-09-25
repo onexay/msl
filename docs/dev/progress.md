@@ -384,3 +384,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-25 23:45: locale in sessions
 - Reported: the VS Code terminal in Ubuntu printed `bash: warning: setlocale: LC_CTYPE: cannot change locale (en_US.UTF-8)`. The VS Code Server ran with no LANG (msl set none); VS Code's `terminal.integrated.detectLocale` then set `LANG=en_US.UTF-8` for the terminal (seen in bash's /proc environ). Ubuntu has only C.utf8, and declares `LANG=C.UTF-8` in /etc/default/locale. macOS's own LANG is en_IN.UTF-8, so it didn't come through msl.
 - Fix: the guest adds LANG, LANGUAGE and LC_* from the distro's /etc/default/locale (else /etc/locale.conf) to every session, before the request's own env, as a login shell and WSL do. Stock Debian declares en_US.UTF-8 (and LC_ALL) and has it generated. beryllium.sh checks LANG/LC_TIME from the file and no setlocale warning (26 of 26); guest parser unit test (18 guest tests).
+
+## 2026-09-26 00:00: msl 0.1.9 released
+- Pre-release e2e: all suites passed (helium 41, lithium 25, beryllium 26, boron 55, carbon 20, neon 20, sodium 22, magnesium 16; guest 18). Found during the run: boron, carbon, beryllium and lithium ended with `pkill -f build/bin/msld`, and helium with `pkill -f msld -U <user>`, stopping any dev-build msld (or any msld) including one serving the real MSL_HOME. All now kill only the msld of their own MSL_HOME; rerun, the real one survived.
+- CHANGELOG: cut 0.1.9 (distro locale in sessions). Build, 40 unit tests, the link check and `Tests/e2e/release.sh` passed. LOG.md.old moved aside for publish.sh and restored unchanged.
+- v0.1.9 published as Latest; `update.json` serves 0.1.9; the tarball matches its SHA-256 (8d91794e…) and prints `0.1.9+99cc265`. Kernel and extension unchanged.
