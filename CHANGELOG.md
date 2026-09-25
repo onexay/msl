@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+- DNS lookups in distros no longer stall for 5 to 10 seconds when a name has an IPv4 address but no IPv6 one, as github.com does. msld now passes on macOS's "no such record" answer instead of waiting out its timeout. Tools that look up both address families, such as VS Code's extension host, curl and git, used to hit connect timeouts; VS Code timed out connecting to `api.github.com` while cloning ([#41](https://github.com/onexay/msl/issues/41)).
+
 ## [0.1.4] - 2026-09-25
 
 ### Changed

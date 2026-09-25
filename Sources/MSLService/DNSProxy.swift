@@ -86,7 +86,10 @@ enum DNSProxy {
             }
             if flags & DNSServiceFlags(kDNSServiceFlagsMoreComing) == 0 { c.done = true }
         }
-        let flags = DNSServiceFlags(kDNSServiceFlagsTimeout)
+        // Without ReturnIntermediates, mDNSResponder never reports a negative
+        // answer (e.g. AAAA for an IPv4-only name) and the query runs into the
+        // timeout, stalling every getaddrinfo(AF_UNSPEC) in the guest by 5 s.
+        let flags = DNSServiceFlags(kDNSServiceFlagsTimeout | kDNSServiceFlagsReturnIntermediates)
         guard DNSServiceQueryRecord(&ref, flags, 0, q.name, q.type, q.cls, callback, ctx.toOpaque()) == kDNSServiceErr_NoError,
               let ref else { return nil }
         defer { DNSServiceRefDeallocate(ref) }
