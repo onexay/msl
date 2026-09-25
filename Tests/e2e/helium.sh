@@ -90,6 +90,9 @@ check "invalid argument" "Invalid command line argument: --nope" "$($MSL --nope)
 
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 $MSL --shutdown --force >/dev/null 2>&1
-pkill -f "msld" -U "$(id -u)" 2>/dev/null  # stop this test's msld
+# Stop only this test's msld (the one started with our MSL_HOME), not yours.
+for pid in $(pgrep -f "$ROOT/build/bin/msld"); do
+  ps -E -ww -o command= -p "$pid" | grep -q "MSL_HOME=$MSL_HOME" && kill "$pid"
+done
 rm -rf "$WORK"
 [ "$fails" -eq 0 ]

@@ -60,5 +60,8 @@ check "--uninstall on a development build" "development build" "$($MSL --uninsta
 
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 $MSL --shutdown --force >/dev/null 2>&1
-pkill -f "$ROOT/build/bin/msld" 2>/dev/null
+# Stop only this test's msld (the one started with our MSL_HOME), not yours.
+for pid in $(pgrep -f "$ROOT/build/bin/msld"); do
+  ps -E -ww -o command= -p "$pid" | grep -q "MSL_HOME=$MSL_HOME" && kill "$pid"
+done
 [ "$fails" -eq 0 ]
