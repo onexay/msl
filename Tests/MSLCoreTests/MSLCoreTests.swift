@@ -154,7 +154,7 @@ import Testing
 @Suite struct ConfigTests {
     @Test func mslconfig() {
         let c = MSLConfig.parse("""
-            [wsl2]
+            [msl2]
             memory=8GB
             processors = 4
             vmIdleTimeout=-1
@@ -167,7 +167,10 @@ import Testing
         #expect(c.processors == 4)
         #expect(c.vmIdleTimeoutMs == -1)
         #expect(c.instanceIdleTimeoutMs == 5000)
-        #expect(c.warnings == ["Invalid integer 'abc' for .mslconfig entry 'wsl2.processors' in t:6"])
+        #expect(c.warnings == ["Invalid integer 'abc' for .mslconfig entry 'msl2.processors' in t:6"])
+        let w = MSLConfig.parse("[wsl2]\nprocessors = 2\nmemory = lots\n", path: "w")  // .wslconfig section name
+        #expect(w.processors == 2)
+        #expect(w.warnings == ["Invalid memory string 'lots' for .mslconfig entry 'wsl2.memory' in w:3"])
         #expect(MSLConfig.parseSize("512MB") == 512 << 20 && MSLConfig.parseSize("1024") == 1024 && MSLConfig.parseSize("x") == nil)
     }
 

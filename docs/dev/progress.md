@@ -309,3 +309,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Filed #41 (DNS stall for IPv4-only names, with the RCA). The fix commit carries the symptom, root cause and verification, and closed #41 on push.
 - CHANGELOG: cut 0.1.5 from Unreleased. `scripts/set-version.sh 0.1.5`. Build, 37 unit tests, the link check and `Tests/e2e/release.sh` passed.
 - `scripts/publish.sh 0.1.5` published v0.1.5 as Latest (ad-hoc signed, checksum not PGP-signed). The `update.json` channel serves 0.1.5, and the downloaded tarball matches its SHA-256 (9c1b2613…). Kernel and VS Code extension releases are unchanged.
+
+## 2026-09-25 17:15: [msl2] section in .mslconfig
+- The VM section is now `[msl2]`, with `[wsl2]` accepted as an alias (as `/etc/msl.conf` falls back to `/etc/wsl.conf`). Warnings name the section as written. Updated configuration.md, architecture.md, the proto comment and the lithium, boron and neon e2e configs.
+- 37 unit tests pass (the config test now also parses a `[wsl2]` file); lithium.sh 25 of 25.

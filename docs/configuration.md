@@ -4,10 +4,10 @@ msl reads the same settings files as WSL: one file for the VM, one for each dist
 
 ## VM: `~/.mslconfig`
 
-`~/.mslconfig` is the `.wslconfig` equivalent: same INI sections, keys, size suffixes and warnings. `MSL_CONFIG` overrides the path. Unknown `.wslconfig` keys are accepted and ignored.
+`~/.mslconfig` is the `.wslconfig` equivalent: same keys, size suffixes and warnings. The VM section is `[msl2]`; `[wsl2]` also works, so a `.wslconfig` can be copied as is. `MSL_CONFIG` overrides the path. Unknown `.wslconfig` keys are accepted and ignored.
 
 ```ini
-[wsl2]
+[msl2]
 memory = 8GB                 # default: 50% of the Mac's RAM
 processors = 4               # default: all
 kernel = ~/kernels/Image     # custom kernel

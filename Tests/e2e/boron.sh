@@ -96,7 +96,7 @@ check_not "shutdown unmounts every distro" "$(basename $MSL_HOME)/view/" "$(moun
 check "no mount points left behind" "" "$(ls -A $MSL_VIEW_DIR)"
 
 # Switches
-printf '[wsl2]\nlocalhostForwarding=false\ndnsTunneling=false\n' > "$MSL_CONFIG"
+printf '[msl2]\nlocalhostForwarding=false\ndnsTunneling=false\n' > "$MSL_CONFIG"
 $MSL -e sh -c 'setsid nohup python3 -m http.server 18767 --bind 127.0.0.1 >/dev/null 2>&1 </dev/null &'
 sleep 2
 check "localhostForwarding=false" "000" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:18767/)"

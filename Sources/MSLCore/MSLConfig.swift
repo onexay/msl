@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import Foundation
 
-/// `~/.mslconfig`, the `.wslconfig` equivalent (same INI sections and keys).
+/// `~/.mslconfig`, the `.wslconfig` equivalent (same keys). The VM section is
+/// `[msl2]`; `[wsl2]` is accepted too, so a copied `.wslconfig` works unchanged.
 /// Unknown keys are ignored; malformed values produce a warning and fall back to
 /// the default, and a malformed file never blocks startup (as in WSL).
 public struct MSLConfig: Equatable, Sendable {
-    // [wsl2]
+    // [msl2] (or [wsl2])
     public var memoryBytes: UInt64?          // default: 50% of host RAM
     public var processors: Int?              // default: all
     public var kernel: String?               // custom kernel image path
@@ -53,22 +54,22 @@ public struct MSLConfig: Equatable, Sendable {
             let key = line[..<eq].trimmingCharacters(in: .whitespaces).lowercased()
             var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
             if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") { value = String(value.dropFirst().dropLast()) }
-            let entry = "\(section).\(key)"
+            let entry = "\(section).\(key)"  // as written, for warnings
             let at = "\(path):\(i + 1)"
-            switch entry {
-            case "wsl2.memory":
+            switch "\(section == "wsl2" ? "msl2" : section).\(key)" {
+            case "msl2.memory":
                 if let v = parseSize(value) { c.memoryBytes = v } else { c.warnings.append("Invalid memory string '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
-            case "wsl2.processors":
+            case "msl2.processors":
                 if let v = Int(value), v > 0 { c.processors = v } else { c.warnings.append("Invalid integer '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
-            case "wsl2.kernel":
+            case "msl2.kernel":
                 c.kernel = (value as NSString).expandingTildeInPath
-            case "wsl2.kernelcommandline":
+            case "msl2.kernelcommandline":
                 c.kernelCommandLine = value
-            case "wsl2.localhostforwarding":
+            case "msl2.localhostforwarding":
                 if let b = parseBool(value) { c.localhostForwarding = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
-            case "wsl2.dnstunneling":
+            case "msl2.dnstunneling":
                 if let b = parseBool(value) { c.dnsTunneling = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
-            case "wsl2.vmidletimeout":
+            case "msl2.vmidletimeout":
                 if let v = Int(value) { c.vmIdleTimeoutMs = v } else { c.warnings.append("Invalid integer '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "experimental.automemoryreclaim":
                 switch value.lowercased() {

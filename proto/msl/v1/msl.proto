@@ -157,7 +157,7 @@ message StartDistroRequest {
   string id = 1;
   string name = 2;          // distro name (used for MSL_DISTRO_NAME, cgroup label)
   string hostname = 3;
-  // DNS tunneling ([wsl2] dnsTunneling): resolv.conf points at the guest stub
+  // DNS tunneling ([msl2] dnsTunneling): resolv.conf points at the guest stub
   // (10.255.255.254), which relays queries to the Mac's resolver over vsock.
   bool dns_tunneling = 4;
 }

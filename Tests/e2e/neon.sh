@@ -45,7 +45,7 @@ check "-l --running --json" "Running" "$($MSL -l --running --json | q 'd["distri
 st=$($MSL --status --json)
 check "--status --json: default distro" "Debian" "$(echo "$st" | q 'd["defaultDistribution"]')"
 check "--status --json: running VM with raw numbers" "True True True" "$(echo "$st" | q '" ".join(str(x) for x in (d["vm"]["running"], isinstance(d["vm"]["settings"]["memoryBytes"], int), d["vm"]["uptimeMs"] >= 0))')"
-printf '[wsl2]\nprocessors = 1\nmemory = lots\n' > "$MSL_CONFIG"
+printf '[msl2]\nprocessors = 1\nmemory = lots\n' > "$MSL_CONFIG"
 st=$($MSL --status --json 2>"$MSL_HOME/err")
 check "--status --json: pending change" "processors" "$(echo "$st" | q 'd["vm"]["pendingChanges"][0]["setting"]')"
 check "--status --json: warnings in JSON, not stderr" "1 0" "$(echo "$st" | q 'len(d["warnings"])') $(wc -c < "$MSL_HOME/err" | tr -d ' ')"

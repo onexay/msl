@@ -19,7 +19,7 @@ check_not() {
   if [[ "$3" != *"$2"* ]]; then echo "✔ $1"; pass=$((pass+1)); else echo "✘ $1 (found: $2)"; fails=$((fails+1)); fi
 }
 cat > "$MSL_CONFIG" <<'CFG'
-[wsl2]
+[msl2]
 memory = lots
 memory = 3GB
 processors = 2
@@ -43,7 +43,7 @@ check "image untouched by masks" "No such file" "$($MSL -u root ls /etc/systemd/
 
 check ".mslconfig processors" "2" "$($MSL nproc)"
 check ".mslconfig memory (~3 GiB)" "3" "$($MSL -e awk '/MemTotal/{print int($2/1048576+0.5)}' /proc/meminfo)"
-check ".mslconfig warning printed" "msl: Invalid memory string 'lots' for .mslconfig entry 'wsl2.memory'" "$($MSL true 2>&1)"
+check ".mslconfig warning printed" "msl: Invalid memory string 'lots' for .mslconfig entry 'msl2.memory'" "$($MSL true 2>&1)"
 
 check "--manage --set-default-user root" "The operation completed successfully." "$($MSL --manage Debian --set-default-user root)"
 check "default user is now root" "root" "$($MSL whoami)"
@@ -64,7 +64,7 @@ check "online install by exact name (--no-launch)" "Distribution successfully in
 check "online install duplicate rejected" "A distribution with the supplied name already exists" "$($MSL --install Ubuntu-24.04 --no-launch)"
 
 # Idle timeouts apply at the next VM start.
-printf '[wsl2]\nvmIdleTimeout = 3000\n[general]\ninstanceIdleTimeout = 2000\n' > "$MSL_CONFIG"
+printf '[msl2]\nvmIdleTimeout = 3000\n[general]\ninstanceIdleTimeout = 2000\n' > "$MSL_CONFIG"
 $MSL --shutdown
 $MSL true
 check "distro running right after a command" "Debian" "$($MSL -l --running)"

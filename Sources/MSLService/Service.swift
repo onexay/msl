@@ -66,7 +66,7 @@ public final class Service: @unchecked Sendable {
     }
 
     /// Stops idle distros after [general] instanceIdleTimeout and the VM after
-    /// [wsl2] vmIdleTimeout (both in ms; -1 = never).
+    /// [msl2] vmIdleTimeout (both in ms; -1 = never).
     func startIdleMonitor() {
         Thread.detachNewThread {
             while true {

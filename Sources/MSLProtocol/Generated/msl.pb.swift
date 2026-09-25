@@ -420,7 +420,7 @@ public nonisolated struct Msl_V1_StartDistroRequest: Sendable {
 
   public var hostname: String = String()
 
-  /// DNS tunneling ([wsl2] dnsTunneling): resolv.conf points at the guest stub
+  /// DNS tunneling ([msl2] dnsTunneling): resolv.conf points at the guest stub
   /// (10.255.255.254), which relays queries to the Mac's resolver over vsock.
   public var dnsTunneling: Bool = false
 
