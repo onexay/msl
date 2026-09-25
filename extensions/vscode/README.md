@@ -11,7 +11,7 @@ $ code --install-extension msl-0.1.0.vsix
 
 Then add `"enable-proposed-api": ["onexay.msl"]` to `~/.vscode/argv.json`, restart VS Code, and run **MSL: Connect to Distro**. You can also open `vscode-remote://msl+<distro>/home/<user>` directly.
 
-Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect, the extension downloads the VS Code Server that matches your VS Code into the distro (`~/.vscode-server/bin/<commit>`, using `curl` or `wget` in the distro). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on the Mac's `127.0.0.1`.
+Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect to a distro, the extension installs the VS Code Server that matches your VS Code into `~/.vscode-server/bin/<commit>`. It downloads the server on the Mac, caches it in `~/Library/Caches/msl/vscode-server/` for every distro to reuse, and pipes it in, so the distro needs no `curl` or `wget` (stock Debian has neither). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on the Mac's `127.0.0.1`.
 
 **Settings:** `msl.path` sets the `msl` binary. By default the extension uses `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`.
 
@@ -29,6 +29,6 @@ $ code --user-data-dir /tmp/msl-vsc --extensions-dir /tmp/msl-vsc-ext --enable-p
 - [ ] **Open:** the window connects, and the log (Output › MSL, or `exthost/onexay.msl/*.log`) shows `server at …`. No `msl` processes are running for pipes.
 - [ ] **VM restart:** `msl --shutdown` while the window is open. VS Code resolves again, `resolve()` starts the distro and server, and the window reloads.
 - [ ] **Forwarded port:** start a server in the distro. It's auto-forwarded, and a large download through the local port matches its hash even when read slowly (`curl … | shasum`).
-- [ ] **Two distros:** windows on two distros at once, each with its own server and label.
+- [ ] **Two distros:** windows on two distros at once, each with its own server and label. Use the installed `.vsix` for this: a second launch with `--extensionDevelopmentPath` reloads the development window instead of opening a new one.
 - [ ] **Label:** the window title and remote indicator show `MSL: <distro>`.
 - [ ] **Install:** install the `.vsix` into a normal profile, add `enable-proposed-api` to `~/.vscode/argv.json`, then run **MSL: Connect to Distro**.
