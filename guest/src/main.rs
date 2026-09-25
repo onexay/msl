@@ -5,9 +5,11 @@
 //! - `init` (the initramfs /init, PID 1)   -> utility-VM mini-init
 //! - `msl-distro-init <json>`              -> per-distro namespace setup + agent
 //! - `mslpath` (symlink in the distro)      -> path translation (wslpath equivalent)
+//! - `/run/msl/init msl-bridge <target>`   -> stdio relay for VS Code managed pipes
 
 mod agent;
 mod archive;
+mod bridge;
 mod compat;
 mod config;
 mod distroinit;
@@ -39,6 +41,9 @@ fn main() {
     // `/run/msl/init msl-oobe` inside a distro (never as PID 1).
     if args.get(1).map(String::as_str) == Some("msl-oobe") && std::process::id() != 1 {
         oobe::main();
+    }
+    if args.get(1).map(String::as_str) == Some("msl-bridge") && std::process::id() != 1 {
+        bridge::main(&args[2..]);
     }
     if role == "mslpath" {
         paths::mslpath_main(&args[1..]);
