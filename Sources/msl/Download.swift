@@ -34,7 +34,12 @@ enum Online {
         return try box.value!.get()
     }
 
+    /// x86_64-only distributions are deferred (Nitrogen, #40): hidden from
+    /// `--list --online` and refused by `--install`. `--from-file` still works.
+    static let x86Supported = false
     static var rosettaInstalled: Bool { VZLinuxRosettaDirectoryShare.availability == .installed }
+    /// Whether the online list offers x86_64-only distributions.
+    static var x86Available: Bool { x86Supported && rosettaInstalled }
 
     /// Download (or reuse from cache) and verify; returns the local file.
     /// Prefers the arm64 image; x86_64-only distributions run through Rosetta.
@@ -43,6 +48,9 @@ enum Online {
         if let arm = entry.Arm64Url {
             chosen = arm
         } else if let amd = entry.Amd64Url {
+            guard x86Supported else {
+                fail("'\(entry.Name)' is only available for x86_64, which msl doesn't support yet.", ErrorCode.unsupported)
+            }
             guard rosettaInstalled else {
                 fail("'\(entry.Name)' is only available for x86_64, which needs Rosetta. Install it with: softwareupdate --install-rosetta", ErrorCode.unsupported)
             }

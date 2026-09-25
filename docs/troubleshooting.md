@@ -20,7 +20,7 @@
 
 **msl uses more memory than the distributions need.** Virtualization.framework doesn't give memory back to macOS while the VM runs, so it returns only when the VM stops, either after `vmIdleTimeout` or with `msl --shutdown`. [#37](https://github.com/onexay/msl/issues/37) explains why.
 
-**A distribution is x86_64-only.** Not supported yet. `msl --list --online` marks these distributions. See [Compatibility with WSL distributions](wsl_compatibility.md).
+**A distribution is x86_64-only.** Not supported yet: `msl --list --online` leaves these distributions out, and `msl --install` refuses them. See [Compatibility with WSL distributions](wsl_compatibility.md).
 
 **VS Code can't connect.** See the troubleshooting section of the [extension's README](../extensions/vscode/README.md).
 
