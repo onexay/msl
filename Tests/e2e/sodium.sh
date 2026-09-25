@@ -59,6 +59,10 @@ client() { python3 "$MSL_HOME/client.py" "$@"; }
 $MSL --install $D --no-launch >/dev/null
 $MSL -d $D -u root -e sh -c 'id tester >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash tester'
 $MSL --manage $D --set-default-user tester >/dev/null
+# instanceIdleTimeout is 2 s here: hold a session open while the echo server is
+# needed, or the distro can stop (taking the server and its tmpfs /tmp with it).
+$MSL -d $D -e sleep 600 & KEEP=$!
+sleep 1
 $MSL -d $D -e sh -c "mkdir -p $SOCKDIR && cat > /tmp/echo.py" < "$MSL_HOME/echo.py"
 $MSL -d $D -e sh -c "setsid python3 /tmp/echo.py $SOCKDIR/echo.sock >/dev/null 2>&1 </dev/null & sleep 1"
 
@@ -87,6 +91,7 @@ check "connect: symlink to a VM-only path (resolves in the distro)" "No such fil
 check "connect: unknown distro" "ERR There is no distribution" "$(client Nope unix=$SOCKDIR/echo.sock)"
 check "connect: malformed line" "ERR expected: CONNECT" "$(printf 'HELLO\n' | nc -U "$MSL_HOME/connect.sock")"
 
+kill $KEEP 2>/dev/null; wait $KEEP 2>/dev/null  # from here on, only the pipe keeps the distro running
 # Sessions: an open pipe keeps the distro past instanceIdleTimeout (2 s here),
 # and connecting starts a stopped distro.
 client $D unix=$SOCKDIR/echo.sock 0 6 >/dev/null &
