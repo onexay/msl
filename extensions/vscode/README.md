@@ -16,11 +16,11 @@ To build the `.vsix` on its own: `cd extensions/vscode && npm install && npm run
 
 Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect to a distro, the extension installs the VS Code Server that matches your VS Code into `~/.vscode-server/bin/<commit>`. It downloads the server on the Mac, caches it in `~/Library/Caches/msl/vscode-server/` for every distro to reuse, and pipes it in, so the distro needs no `curl` or `wget` (stock Debian has neither). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on the Mac's `127.0.0.1`.
 
-**Settings:** `msl.path` sets the `msl` binary. By default the extension uses `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`. The binary must be msl 0.1.3 or newer, because the extension relies on `--list --json`. Point `msl.path` at `build/bin/msl` to use a development build.
+**Which msl:** the `msl.path` setting if it's set. Otherwise the msl that ran `msl --manage-ide --install`, which records its path in `~/Library/Application Support/msl/cli-path`, so any install location works. Failing both, `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`. It must be msl 0.1.3 or newer, because the extension relies on `--list --json`. Running `build/bin/msl --manage-ide` points the extension at a development build.
 
 **Troubleshooting:**
 - *"No remote extension installed to resolve msl":* the extension didn't activate. Output › Log (Extension Host) shows `CANNOT use API proposal: resolvers`. Run `msl --manage-ide`, or add `enable-proposed-api` to `~/.vscode/argv.json` by hand (**Preferences: Configure Runtime Arguments**). Then quit VS Code with ⌘Q; closing the window isn't enough.
-- *"msl --list --verbose --json exited with 255":* `msl.path` points to an `msl` older than 0.1.3.
+- *"msl --list --verbose --json exited with 255":* the extension found an `msl` older than 0.1.3. Run `msl --manage-ide --install` with the msl you want, or set `msl.path`.
 
 **Licence note:** the VS Code Server is Microsoft's build, which is licensed for use with VS Code.
 

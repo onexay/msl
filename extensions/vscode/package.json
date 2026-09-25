@@ -2,7 +2,7 @@
   "name": "msl",
   "displayName": "MSL",
   "description": "Open folders in msl Linux distros on macOS, like the WSL extension on Windows.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "onexay",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "https://github.com/onexay/msl" },
@@ -24,7 +24,7 @@
         "msl.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the `msl` command. Empty: `~/.local/bin/msl`, `/usr/local/bin/msl`, then `PATH`."
+          "markdownDescription": "Path to the `msl` command. Empty: the msl that ran `msl --manage-ide`, else `~/.local/bin/msl`, `/usr/local/bin/msl`, then `PATH`."
         }
       }
     }

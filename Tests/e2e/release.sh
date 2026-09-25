@@ -19,6 +19,7 @@ echo "\$ install.sh --from msl-0.1.0-macos-arm64.tar.gz --prefix $P --yes --no-p
 HOME=$IH sh "$ROOT/install.sh" --from /tmp/msl-0.1.0-macos-arm64.tar.gz --prefix $P --yes --no-path 2>&1 | grep -E "error|Installed|Visual Studio Code|✔ (installed|added)"
 echo "argv.json enables onexay.msl: $(grep -c '"enable-proposed-api": \["onexay.msl"\]' $IH/.vscode/argv.json)"
 echo "extension listed: $(grep -c '"onexay.msl"' $IH/.vscode/extensions/extensions.json)"
+echo "cli-path names the installed msl: $([ "$(cat $MSL_HOME/cli-path 2>/dev/null)" = "$P/bin/msl" ] && echo yes || echo "NO ($(cat $MSL_HOME/cli-path 2>&1))")"
 echo "\$ $P/bin/msl --version"; $P/bin/msl --version | head -1
 $P/bin/msl --install Debian --no-launch | tail -1
 echo "run from installed copy: $($P/bin/msl -d Debian -e cat /etc/debian_version)"
@@ -32,6 +33,7 @@ echo "\$ msl --update again"; MSL_UPDATE_URL=file://$ROOT/dist/update.json $P/bi
 echo "\$ msl --uninstall   (HOME=$IH)"; HOME=$IH $P/bin/msl --uninstall
 echo "argv.json restored: $(cmp -s $IH/argv.orig $IH/.vscode/argv.json && echo yes || echo NO)"
 echo "extension listed after uninstall: $(grep -c '"onexay.msl"' $IH/.vscode/extensions/extensions.json)"
+echo "cli-path removed: $([ -e $MSL_HOME/cli-path ] && echo NO || echo yes)"
 rm -rf $IH
 echo "left in prefix: $(find $P -type f | wc -l | tr -d ' ') files"; ls $MSL_HOME | tr '\n' ' '; echo
 pgrep -fl "msl-prefix/libexec" || echo "no msld left"

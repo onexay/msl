@@ -9,11 +9,28 @@ import * as vscode from 'vscode';
 
 export const log = vscode.window.createOutputChannel('MSL', { log: true });
 
-/** The `msl` binary: the setting, then the usual install locations, then PATH. */
+/** msl's data folder (MSL_HOME), where msld's sockets and cli-path live. */
+export function mslHome(): string {
+    return process.env.MSL_HOME || path.join(os.homedir(), 'Library/Application Support/msl');
+}
+
+/**
+ * The `msl` binary: the msl.path setting; else the msl that ran
+ * `msl --manage-ide --install` (it records itself in cli-path); else the usual
+ * install locations, then PATH.
+ */
 export function mslPath(): string {
     const configured = vscode.workspace.getConfiguration('msl').get<string>('path');
     if (configured) {
         return configured.replace(/^~(?=\/)/, os.homedir());
+    }
+    try {
+        const recorded = fs.readFileSync(path.join(mslHome(), 'cli-path'), 'utf8').trim();
+        if (recorded && fs.existsSync(recorded)) {
+            return recorded;
+        }
+    } catch {
+        // not set up by msl --manage-ide
     }
     for (const p of [path.join(os.homedir(), '.local/bin/msl'), '/usr/local/bin/msl']) {
         if (fs.existsSync(p)) {

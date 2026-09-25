@@ -237,3 +237,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Removed the `.pkg` from package.sh, publish.sh and CONTRIBUTING (the README documents only install.sh).
 - The extension version is package.json's, released as `vscode-<version>` (never Latest) by `extensions/vscode/publish.sh`, which records `release.tag` and `release.sha256`. `extensions/vscode/fetch.sh` downloads and verifies it. `scripts/build.sh` uses a local `dist/msl-<version>.vsix` if present, else fetches, so building msl needs no Node. The msl `publish.sh` refuses to publish unless the bundled .vsix is the published one.
 - Published **vscode-0.1.0** (msl-0.1.0.vsix, sha256 32e1054d…). A build with no local dist fetched it, and the hash matched. Added LICENSE to the extension; vsce warned it was missing from 0.1.0.
+
+## 2026-09-25 12:04: #35 msl.path via cli-path
+- Instead of editing each IDE's settings.json, `msl --manage-ide --install` writes its resolved path to `<MSL_HOME>/cli-path`, and uninstall removes it (only if it names this msl; under sudo, as SUDO_USER). Extension 0.1.1 looks up msl in this order: the msl.path setting, then cli-path (ignored if the file it names is gone), then ~/.local/bin, /usr/local/bin, PATH. A Node harness with a stubbed vscode module passes 4 of 4. release.sh confirms cli-path is written by install.sh and removed by --uninstall.

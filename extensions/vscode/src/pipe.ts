@@ -8,10 +8,9 @@
 import { once } from 'events';
 import * as fs from 'fs';
 import * as net from 'net';
-import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { log, spawnInDistro } from './msl';
+import { log, mslHome, spawnInDistro } from './msl';
 
 export type Target = { unix: string } | { tcp: number };
 
@@ -26,8 +25,7 @@ function describe(t: Target): string {
 }
 
 function connectSocket(): string {
-    const home = process.env.MSL_HOME || path.join(os.homedir(), 'Library/Application Support/msl');
-    return path.join(home, 'connect.sock');
+    return path.join(mslHome(), 'connect.sock');
 }
 
 export function openPipe(distro: string, target: Target): Promise<Pipe> {

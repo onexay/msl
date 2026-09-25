@@ -120,10 +120,32 @@ enum ManageIDE {
             if ok.changed { changed.append(f.ide.name) }
             if !ok.success { failed = true }
         }
+        if action == .install && !failed { recordCLI() }
+        if action == .uninstall { forgetCLI() }
         if !changed.isEmpty {
             out("Quit and reopen \(changed.joined(separator: " and ")) (⌘Q) for the change to take effect.")
         }
         exit(failed ? 1 : 0)
+    }
+
+    static var exe: String { URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path }
+
+    /// Tell the extension which msl to run (it reads Paths.cliPointer before
+    /// its defaults), so an install anywhere works without editing settings.
+    static func recordCLI() {
+        let p = Paths()
+        try? FileManager.default.createDirectory(at: p.root, withIntermediateDirectories: true)
+        if (try? String(contentsOf: p.cliPointer, encoding: .utf8)) != exe + "\n" {
+            try? (exe + "\n").write(to: p.cliPointer, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Remove the pointer if it names this msl.
+    static func forgetCLI() {
+        let p = Paths()
+        if (try? String(contentsOf: p.cliPointer, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == exe {
+            try? FileManager.default.removeItem(at: p.cliPointer)
+        }
     }
 
     /// For `msl --uninstall` (before its files are removed): undo the setup in
@@ -131,12 +153,12 @@ enum ManageIDE {
     static func uninstallEverywhere() {
         if getuid() == 0 {
             guard let user = ProcessInfo.processInfo.environment["SUDO_USER"], !user.isEmpty, user != "root" else { return }
-            let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
             let (_, output) = capture("/usr/bin/sudo", ["-u", user, "-H", exe, "--manage-ide", "--ide", "all", "--uninstall"])
             let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty && !text.hasPrefix("No supported IDE") { out(text) }
             return
         }
+        forgetCLI()
         let setUp = detect().filter { $0.extensionInstalled || $0.argvEnabled }
         for f in setUp {
             out("\(f.ide.name):")
