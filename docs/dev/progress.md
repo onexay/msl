@@ -304,3 +304,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Reported: cloning from GitHub in a connected window failed with a connect timeout for api.github.com:443. In the distro, `getent ahostsv6 github.com` took 10 s, `ahosts` 5 s, and names with an AAAA record answered at once. Node fetch took 5 s for api.github.com and 10 s (or UND_ERR_CONNECT_TIMEOUT) for github.com; undici's 10 s connect timeout includes the lookup.
 - Cause: DNSProxy called `DNSServiceQueryRecord` without `kDNSServiceFlagsReturnIntermediates`, and mDNSResponder then never delivers a negative answer, so every NODATA AAAA query ran into msld's 5 s timeout. A Swift probe on the Mac: AAAA github.com with the timeout flag alone never completed in 8 s; with ReturnIntermediates it returned NoSuchRecord (-65554) in 0.00 s.
 - Fix: add the flag. The dev build in a throwaway MSL_HOME (Debian) resolves github.com and api.github.com in 1–8 ms for v4, v6 and both.
+
+## 2026-09-25 16:57: msl 0.1.5 released
+- Filed #41 (DNS stall for IPv4-only names, with the RCA). The fix commit carries the symptom, root cause and verification, and closed #41 on push.
+- CHANGELOG: cut 0.1.5 from Unreleased. `scripts/set-version.sh 0.1.5`. Build, 37 unit tests, the link check and `Tests/e2e/release.sh` passed.
+- `scripts/publish.sh 0.1.5` published v0.1.5 as Latest (ad-hoc signed, checksum not PGP-signed). The `update.json` channel serves 0.1.5, and the downloaded tarball matches its SHA-256 (9c1b2613…). Kernel and VS Code extension releases are unchanged.
