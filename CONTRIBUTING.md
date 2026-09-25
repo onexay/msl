@@ -44,7 +44,7 @@ Run what your change touches, and say in the pull request what you ran:
 $ swift test                       # host unit tests
 $ scripts/test-guest.sh            # guest unit tests (in Linux, via Apple's container)
 $ Tests/e2e/<milestone>.sh         # end-to-end, against a real VM: helium, lithium,
-                                   # beryllium, boron, carbon, neon
+                                   # beryllium, boron, carbon, neon, sodium
 $ Tests/e2e/release.sh             # packaging, install, --update, --uninstall
 ```
 

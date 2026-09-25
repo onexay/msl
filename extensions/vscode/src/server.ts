@@ -54,15 +54,21 @@ if [ ! -s "$tok" ]; then
   (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$tok")
 fi
 
+# Alive and ours: pids start over when the VM restarts, so a bare kill -0 on
+# an old pidfile can hit an unrelated process.
 running() {
-  [ -S "$sock" ] && [ -s "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null
+  [ -S "$sock" ] && [ -s "$pidf" ] || return 1
+  tr '\0' ' ' 2>/dev/null < "/proc/$(cat "$pidf")/cmdline" | grep -qF -- "--socket-path $sock "
 }
+# Both of a window's connections resolve at once; start one server.
+exec 8>"$run/start.lock"
+flock 8
 if ! running; then
   echo "starting the VS Code Server" >&2
   rm -f "$sock"
   setsid "$bin/bin/$exe" --socket-path "$sock" --connection-token-file "$tok" \
     --accept-server-license-terms --enable-remote-auto-shutdown --telemetry-level off \
-    </dev/null >"$run/$commit.log" 2>&1 &
+    </dev/null >"$run/$commit.log" 2>&1 8>&- &
   echo $! > "$pidf"
   i=0
   while [ ! -S "$sock" ]; do
@@ -73,6 +79,7 @@ if ! running; then
     sleep 0.1
   done
 fi
+exec 8>&-
 echo "MSL_SOCKET=$sock"
 echo "MSL_TOKEN=$(cat "$tok")"
 `;

@@ -8,6 +8,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
 
 ### Fixed
+- The VS Code extension no longer hands back a dead server after the VM restarts. It used to trust a pidfile that a new, unrelated process could now match, because pids start over. It now checks that the process is the server for that socket, and starts only one server when a window's connections resolve at the same time.
 - VS Code tunnels (forwarded ports) no longer cut off a download when the local client reads slowly: the tunnel now applies backpressure and ends cleanly instead of dropping queued data.
 - msld now removes its `run/vsock-*.sock` bridge sockets when the VM stops, so stale sockets no longer pile up.
 
