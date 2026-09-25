@@ -76,8 +76,27 @@ $MSL -u tester -e sh -c 'echo from-linux > /home/tester/fromlinux.txt'
 check "Linux write visible on the Mac" "from-linux" "$(cat $MSL_VIEW_DIR/Ubuntu-24.04/home/tester/fromlinux.txt)"
 check "mslpath -w points into the view" "$MSL_VIEW_DIR/Ubuntu-24.04/etc/hosts" "$($MSL mslpath -w /etc/hosts)"
 VIEWMNT=$(mount | grep "$(basename $MSL_HOME)/view/Ubuntu-24.04 ")  # the mount table shows /private/tmp/…
-check "per-distro mount of 127.0.0.1:/<name>" "127.0.0.1:/Ubuntu-24.04 on" "$VIEWMNT"
+check "per-distro mount over the Unix socket" "nfs.sock>:/Ubuntu-24.04 on" "$VIEWMNT"
 check "mounted by the user" "mounted by $(id -un)" "$VIEWMNT"
+# #1: only the user's own mounts and calls get through.
+SOCK=$MSL_HOME/nfs.sock
+check "view socket is 0600" "600" "$(stat -f %Lp "$SOCK")"
+mkdir -p "$MSL_HOME/rogue"
+check "a mount msld didn't start is refused" "refused" "$(perl -e 'alarm 20; exec @ARGV' /sbin/mount_nfs -o "vers=3,nolocks,soft,timeo=10,retrans=1,retrycnt=0,mountport=$SOCK" "<$SOCK>:/Ubuntu-24.04" "$MSL_HOME/rogue" >/dev/null 2>&1 && echo mounted || echo refused)"
+umount "$MSL_HOME/rogue" 2>/dev/null
+check "msld logged the refused MOUNT" "refused an NFS call (MOUNT outside msld's own mount)" "$(cat "$MSL_HOME/msld.log")"
+# A raw NFS GETATTR (bad handle): another uid gets AUTH_ERROR from msld; the owner reaches the server.
+rpc() { python3 - "$SOCK" "$1" <<'PY'
+import socket, struct, sys
+s = socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); uid = int(sys.argv[2])
+cred = struct.pack(">II4sIII", 0, 3, b"mac\0", uid, 20, 0)
+call = struct.pack(">6I", 42, 0, 2, 100003, 3, 1) + struct.pack(">II", 1, len(cred)) + cred + struct.pack(">II", 0, 0) + struct.pack(">I4s", 4, b"xxxx")
+s.sendall(struct.pack(">I", 0x80000000 | len(call)) + call)
+rep = s.recv(64); print("denied" if struct.unpack_from(">I", rep, 12)[0] == 1 else "accepted")
+PY
+}
+check "another uid's NFS call is denied" "denied" "$(rpc 12345)"
+check "the owner's NFS call reaches the server" "accepted" "$(rpc "$(id -u)")"
 check_not "browsable (Finder Locations, like Explorer's 'Linux' node)" "nobrowse" "${VIEWMNT:-nobrowse (not mounted)}"
 check "Finder lists the distro by name" "Ubuntu-24.04" "$(osascript -e 'tell application "Finder" to get name of every disk')"
 check "distro logo as the volume icon" "512" "$(sips -g pixelWidth $MSL_VIEW_DIR/Ubuntu-24.04/.VolumeIcon.icns 2>/dev/null | tail -1)"
@@ -101,11 +120,13 @@ check_not "shutdown unmounts every distro" "$(basename $MSL_HOME)/view/" "$(moun
 check "no mount points left behind" "" "$(ls -A $MSL_VIEW_DIR)"
 
 # Switches
-printf '[msl2]\nlocalhostForwarding=false\ndnsTunneling=false\n' > "$MSL_CONFIG"
+printf '[msl2]\nlocalhostForwarding=false\ndnsTunneling=false\nfileViewTransport=tcp\n' > "$MSL_CONFIG"
 $MSL -e sh -c 'setsid nohup python3 -m http.server 18767 --bind 127.0.0.1 >/dev/null 2>&1 </dev/null &'
 sleep 2
 check "localhostForwarding=false" "000" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:18767/)"
 check_not "dnsTunneling=false → vmnet DNS" "10.255.255.254" "$($MSL cat /etc/resolv.conf)"
+check "fileViewTransport=tcp mounts from 127.0.0.1" "127.0.0.1:/Ubuntu-24.04 on" "$(mount | grep "$(basename $MSL_HOME)/view/Ubuntu-24.04 ")"
+check "fileViewTransport=tcp: files readable" "Ubuntu 24.04" "$(cat $MSL_VIEW_DIR/Ubuntu-24.04/etc/os-release)"
 
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 $MSL --shutdown --force >/dev/null 2>&1

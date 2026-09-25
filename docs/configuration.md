@@ -17,6 +17,8 @@ dnsTunneling = true          # default true; false uses vmnet's DNS
 vmIdleTimeout = 60000        # ms; VM stops this long after the last distro stops
 defaultVhdSize = 256GB       # size of the shared disk when it's created (default 256GB,
                              # at most the macOS disk); grow it later with --manage --resize
+fileViewTransport = unix     # how ~/.msl/distros is served: unix (default, a 0600 socket)
+                             # or tcp (a 127.0.0.1 port; weaker on a shared system)
 
 [general]
 instanceIdleTimeout = 15000  # ms; an idle distro stops after this

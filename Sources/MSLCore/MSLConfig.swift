@@ -15,6 +15,11 @@ public struct MSLConfig: Equatable, Sendable {
     public var dnsTunneling = true
     public var vmIdleTimeoutMs: Int = 60_000
     public var defaultVhdSize: UInt64?       // size of a new data.img (default: see DataDisk)
+    /// How msld serves ~/.msl/distros to macOS's NFS client. `unix` (default): a
+    /// 0600 socket in msl's folder, no TCP port. `tcp`: a 127.0.0.1 port, which
+    /// other local users can reach and forge credentials on.
+    public enum FileViewTransport: String, Sendable { case unix, tcp }
+    public var fileViewTransport: FileViewTransport = .unix
     // [general]
     public var instanceIdleTimeoutMs: Int = 15_000
     // [experimental]
@@ -72,6 +77,8 @@ public struct MSLConfig: Equatable, Sendable {
                 if let b = parseBool(value) { c.dnsTunneling = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "msl2.defaultvhdsize":
                 if let v = parseSize(value), v >= DataDisk.minimum { c.defaultVhdSize = v } else { c.warnings.append("Invalid size '\(value)' for .mslconfig entry '\(entry)' in \(at) (minimum 4GB)") }
+            case "msl2.fileviewtransport":
+                if let t = FileViewTransport(rawValue: value.lowercased()) { c.fileViewTransport = t } else { c.warnings.append("Invalid value '\(value)' for .mslconfig entry '\(entry)' in \(at) (unix or tcp)") }
             case "msl2.vmidletimeout":
                 if let v = Int(value) { c.vmIdleTimeoutMs = v } else { c.warnings.append("Invalid integer '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "experimental.automemoryreclaim":

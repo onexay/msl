@@ -174,6 +174,37 @@ import Testing
         #expect(MSLConfig.parseSize("512MB") == 512 << 20 && MSLConfig.parseSize("1024") == 1024 && MSLConfig.parseSize("x") == nil)
     }
 
+    /// An ONC RPC call (first fragment, no record mark) with AUTH_SYS or AUTH_NONE.
+    static func rpcCall(xid: UInt32 = 7, prog: UInt32 = 100_003, proc: UInt32 = 1, uid: UInt32? = 501) -> [UInt8] {
+        var w: [UInt32] = [xid, 0, 2, prog, 3, proc]
+        if let uid {
+            let name = Array("mac".utf8) + [0]  // padded to 4
+            let body: [UInt32] = [0 /* stamp */, 3] + [UInt32(name[0]) << 24 | UInt32(name[1]) << 16 | UInt32(name[2]) << 8] + [uid, 20, 0 /* no gids */]
+            w += [1, UInt32(body.count * 4)] + body
+        } else {
+            w += [0, 0]
+        }
+        w += [0, 0]  // verifier AUTH_NONE
+        return w.flatMap { [UInt8($0 >> 24), UInt8($0 >> 16 & 0xff), UInt8($0 >> 8 & 0xff), UInt8($0 & 0xff)] }
+    }
+
+    @Test func nfsViewFilter() {
+        let call = Self.rpcCall
+        #expect(RPCFilter.check(call(7, 100_003, 1, 501), owner: 501, mountAllowed: false) == .allow)       // the owner
+        #expect(RPCFilter.check(call(7, 100_003, 6, 0), owner: 501, mountAllowed: false) == .allow)         // the kernel (read-ahead)
+        #expect(RPCFilter.check(call(9, 100_003, 3, 502), owner: 501, mountAllowed: false) == .deny(xid: 9, why: "uid 502"))
+        #expect(RPCFilter.check(call(4, 100_005, 1, 0), owner: 501, mountAllowed: false) == .deny(xid: 4, why: "MOUNT outside msld's own mount"))
+        #expect(RPCFilter.check(call(4, 100_005, 1, 0), owner: 501, mountAllowed: true) == .allow)
+        #expect(RPCFilter.check(call(5, 100_003, 0, nil), owner: 501, mountAllowed: false) == .allow)       // NULL ping, AUTH_NONE
+        #expect(RPCFilter.check(call(5, 100_003, 1, nil), owner: 501, mountAllowed: false) == .deny(xid: 5, why: "AUTH_NONE for procedure 1"))
+        #expect(RPCFilter.check([1, 2, 3], owner: 501, mountAllowed: false) == .deny(xid: 0, why: "short record"))
+        // MSG_DENIED / AUTH_ERROR / AUTH_TOOWEAK, one last fragment of 20 bytes.
+        #expect(RPCFilter.denial(xid: 9) == [0x80, 0, 0, 20, 0, 0, 0, 9, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 5])
+        #expect(MSLConfig.parse("").fileViewTransport == .unix)
+        #expect(MSLConfig.parse("[msl2]\nfileViewTransport = TCP\n").fileViewTransport == .tcp)
+        #expect(MSLConfig.parse("[msl2]\nfileViewTransport = smb\n", path: "t").warnings == ["Invalid value 'smb' for .mslconfig entry 'msl2.fileviewtransport' in t:2 (unix or tcp)"])
+    }
+
     @Test func dataDiskSizing() {
         let gib: UInt64 = 1 << 30
         // New disk: 256 GiB, capped at the Mac volume; an explicit size wins.

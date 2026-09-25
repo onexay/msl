@@ -5,10 +5,12 @@ import MSLCore
 /// `~/.msl/distros/<distro>`: the distros' files on the Mac (the `\\wsl.localhost` equivalent).
 ///
 /// The guest serves NFSv3 on its loopback (port 21049) from /run/msl-view, which
-/// holds one folder per distro *name*. msld exposes it on a private 127.0.0.1
-/// port (relayed over vsock, independent of localhost forwarding) and mounts
-/// **each distro separately**, as the user, at `~/.msl/distros/<name>` from
-/// `127.0.0.1:/<name>`. Finder names a network volume after the last component
+/// holds one folder per distro *name*. msld exposes it on a 0600 Unix socket in
+/// msl's folder (or, with `fileViewTransport = tcp`, a private 127.0.0.1 port),
+/// relayed over vsock independently of localhost forwarding, and mounts **each
+/// distro separately**, as the user, at `~/.msl/distros/<name>`. Every RPC call
+/// passes RPCFilter first (#1): only the user's and the kernel's credentials,
+/// and MOUNT only while msld is mounting. Finder names a network volume after the last component
 /// of its export path, so every distro shows up in Finder's Locations under its
 /// own name (and logo, see DistroIcon), like Explorer's "Linux" node. macOS
 /// metadata (.DS_Store, ._*) stays in the guest's memory (nfsview.rs).
@@ -21,7 +23,12 @@ final class FileView: @unchecked Sendable {
     private let guest: GuestClients
     private let lock = NSLock()
     private var stop: StopFlag?
-    private var port: UInt16?
+    /// Where the view is served: a Unix socket path, or a 127.0.0.1 port.
+    private enum Endpoint { case unix(String), tcp(UInt16) }
+    private var endpoint: Endpoint?
+    /// > 0 while msld runs mount_nfs: the only time a MOUNT call is accepted.
+    private var mounting = 0
+    private let owner = getuid()
 
     init(vm: VMHost, paths: Paths, registry: Registry, guest: GuestClients) {
         self.vm = vm
@@ -41,30 +48,47 @@ final class FileView: @unchecked Sendable {
     private var legacyMountPoint: URL { paths.root.appendingPathComponent("files", isDirectory: true) }
     private var legacyViewDir: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("MSL", isDirectory: true) }
 
-    func start() {
+    var socketPath: String { paths.root.appendingPathComponent("nfs.sock").path }
+
+    func start(transport: MSLConfig.FileViewTransport) {
         let flag = StopFlag()
         lock.withLock { stop?.set(); stop = flag }
-        guard let (lfd, port) = Self.listenEphemeral() else { log("files: could not open a bridge port"); return }
-        Thread.detachNewThread { [vm] in
+        let lfd: Int32, ep: Endpoint
+        switch transport {
+        case .unix:
+            guard socketPath.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path),
+                  let fd = try? listenUnix(socketPath, backlog: 16) else {
+                log("files: could not listen on \(socketPath); set fileViewTransport = tcp in .mslconfig"); return
+            }
+            (lfd, ep) = (fd, .unix(socketPath))
+        case .tcp:
+            guard let (fd, port) = Self.listenEphemeral() else { log("files: could not open a bridge port"); return }
+            (lfd, ep) = (fd, .tcp(port))
+        }
+        Thread.detachNewThread { [vm, weak self] in
             defer { close(lfd) }
             while !flag.isSet {
                 var p = pollfd(fd: lfd, events: Int16(POLLIN), revents: 0)
                 if poll(&p, 1, 200) <= 0 { continue }
                 let c = accept(lfd, nil, nil)
                 if c < 0 { continue }
-                guard let v = try? vm.connect(port: PortForwarder.guestForwarderPort) else { close(c); continue }
+                guard let self, let v = try? vm.connect(port: PortForwarder.guestForwarderPort) else { close(c); continue }
                 var hdr = Self.guestNFSPort.bigEndian
-                guard write(v, &hdr, 2) == 2 else { close(c); close(v); continue }
-                _ = FramedBridge(vsock: v, localIn: c, localOut: c, shutdownOnEOF: true, ownsLocal: true)
+                var pair: [Int32] = [0, 0]
+                guard write(v, &hdr, 2) == 2, socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0 else { close(c); close(v); continue }
+                // client ⇄ RPC filter ⇄ pair ⇄ framed vsock bridge ⇄ guest NFS server
+                _ = FramedBridge(vsock: v, localIn: pair[1], localOut: pair[1], shutdownOnEOF: true, ownsLocal: true)
+                self.filter(client: c, bridge: pair[0])
             }
+            if case .unix(let path) = ep { unlink(path) }
         }
-        lock.withLock { self.port = port }
+        lock.withLock { endpoint = ep }
         cleanupLegacy()
         syncLinks()
     }
 
     func shutdown() {
-        lock.withLock { stop?.set(); stop = nil; port = nil }
+        lock.withLock { stop?.set(); stop = nil; endpoint = nil }
         for (name, url) in mountedDistros() {
             unmount(url)
             log("files: unmounted \(name)")
@@ -74,7 +98,7 @@ final class FileView: @unchecked Sendable {
     /// Bring guest view and Mac mounts in line with the registry. Call on
     /// start and after every registry change.
     func syncLinks() {
-        guard vm.isRunning, let mini = try? guest.miniInit, let port = lock.withLock({ port }) else { return }
+        guard vm.isRunning, let mini = try? guest.miniInit, let ep = lock.withLock({ endpoint }) else { return }
         let map = Dictionary(registry.all.map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })
         _ = try? blocking { try await mini.setFileView(.with { $0.distros = map }) }
 
@@ -94,12 +118,20 @@ final class FileView: @unchecked Sendable {
                 continue
             }
             try? fm.removeItem(at: url.appendingPathComponent(".DS_Store"))
-            let opts = "nolocks,vers=3,tcp,port=\(port),mountport=\(port),soft,retrans=2,timeo=10,actimeo=1,nfc"
+            let common = "nolocks,vers=3,soft,retrans=2,timeo=10,actimeo=1,nfc"
+            let (opts, source): (String, String) = switch ep {
+            // Undocumented in mount_nfs(8), implemented in Apple's NFS source:
+            // a host "<path>" is an AF_LOCAL address, and mountport= takes a path.
+            case .unix(let path): ("\(common),mountport=\(path)", "<\(path)>:/\(name)")
+            case .tcp(let port): ("\(common),tcp,port=\(port),mountport=\(port)", "127.0.0.1:/\(name)")
+            }
             var ok = false
+            lock.withLock { mounting += 1 }
             for _ in 0..<30 {  // the guest server may still be starting
-                if run("/sbin/mount_nfs", ["-o", opts, "127.0.0.1:/\(name)", url.path]) == 0 { ok = true; break }
+                if run("/sbin/mount_nfs", ["-o", opts, source, url.path]) == 0 { ok = true; break }
                 usleep(100_000)
             }
+            lock.withLock { mounting -= 1 }
             if ok {
                 log("files: mounted \(name) at \(url.path)")
                 if let rec = registry.find(name: name) { DistroIcon.apply(record: rec, volume: url) }
@@ -186,6 +218,73 @@ final class FileView: @unchecked Sendable {
         do { try p.run() } catch { return -1 }
         p.waitUntilExit()
         return p.terminationStatus
+    }
+
+    /// Relay one NFS client connection to the guest, calls through RPCFilter.
+    /// Records (RFC 5531 record marking) are forwarded whole; a denied call is
+    /// answered here with AUTH_ERROR, between two of the guest's replies.
+    private func filter(client c: Int32, bridge b: Int32) {
+        let writeLock = NSLock()
+        let done = DispatchGroup()
+        let maxFragment = 16 << 20
+        func readFull(_ fd: Int32, _ n: Int) -> [UInt8]? {
+            var buf = [UInt8](repeating: 0, count: n), got = 0
+            while got < n {
+                let r = buf.withUnsafeMutableBytes { read(fd, $0.baseAddress! + got, n - got) }
+                if r <= 0 { return nil }
+                got += r
+            }
+            return buf
+        }
+        func writeAll(_ fd: Int32, _ bytes: [UInt8]) -> Bool {
+            var put = 0
+            while put < bytes.count {
+                let r = bytes.withUnsafeBytes { write(fd, $0.baseAddress! + put, bytes.count - put) }
+                if r <= 0 { return false }
+                put += r
+            }
+            return true
+        }
+        func mark(_ h: [UInt8]) -> (len: Int, last: Bool) {
+            let m = UInt32(h[0]) << 24 | UInt32(h[1]) << 16 | UInt32(h[2]) << 8 | UInt32(h[3])
+            return (Int(m & 0x7fff_ffff), m & 0x8000_0000 != 0)
+        }
+        done.enter()
+        Thread.detachNewThread { [self] in  // macOS → guest: calls
+            defer { Darwin.shutdown(b, SHUT_WR); done.leave() }
+            var verdict: RPCFilter.Verdict?
+            var denied = 0
+            while let h = readFull(c, 4) {
+                let (len, last) = mark(h)
+                guard len <= maxFragment, let frag = readFull(c, len) else { return }
+                if verdict == nil {
+                    verdict = RPCFilter.check(frag, owner: owner, mountAllowed: lock.withLock { mounting > 0 })
+                }
+                if verdict == .allow, !writeAll(b, h + frag) { return }
+                if last {
+                    if case .deny(let xid, let why) = verdict {
+                        if denied < 5 { log("files: refused an NFS call (\(why))") }
+                        denied += 1
+                        guard writeLock.withLock({ writeAll(c, RPCFilter.denial(xid: xid)) }) else { return }
+                    }
+                    verdict = nil
+                }
+            }
+        }
+        done.enter()
+        Thread.detachNewThread {  // guest → macOS: replies, whole records under writeLock
+            defer { Darwin.shutdown(c, SHUT_WR); done.leave() }
+            var holding = false
+            defer { if holding { writeLock.unlock() } }
+            while let h = readFull(b, 4) {
+                let (len, last) = mark(h)
+                guard len <= maxFragment, let frag = readFull(b, len) else { return }
+                if !holding { writeLock.lock(); holding = true }
+                guard writeAll(c, h + frag) else { return }
+                if last { writeLock.unlock(); holding = false }
+            }
+        }
+        done.notify(queue: .global()) { close(c); close(b) }
     }
 
     private static func listenEphemeral() -> (Int32, UInt16)? {

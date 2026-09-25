@@ -62,5 +62,9 @@ check "--json in a Linux command line is passed through" "--json" "$($MSL -d Deb
 check "text output unchanged without --json" "  NAME" "$($MSL -l -v | head -1 | cut -c1-6)"
 
 $MSL --shutdown >/dev/null 2>&1
+# Stop only this test's msld (the one started with our MSL_HOME), not yours.
+for pid in $(pgrep -f "$ROOT/build/bin/msld"); do
+  ps -E -ww -o command= -p "$pid" | grep -q "MSL_HOME=$MSL_HOME" && kill "$pid"
+done
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 [ "$fails" = 0 ]

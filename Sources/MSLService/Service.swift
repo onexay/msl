@@ -242,7 +242,7 @@ public final class Service: @unchecked Sendable {
             try guest.waitForMiniInit(timeout: 15)
             if config.localhostForwarding { forwarder.start() }
             if config.dnsTunneling { vm.listen(port: DNSProxy.vsockPort) { DNSProxy.handle($0) } }
-            files.start()
+            files.start(transport: config.fileViewTransport)
         }
     }
 
