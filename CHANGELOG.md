@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-25
+
 ### Fixed
 - `msl` failed with "could not start <current directory>/msld" when msld wasn't already running, for example right after `msl --update`. It looked for msld next to `argv[0]`, which is just `msl` when run from `PATH`. The same lookup set the install prefix for `--update`, `--uninstall` and `--version --json`, and the msl path recorded for the VS Code extension. msl now uses its real executable path.
 
@@ -98,7 +100,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/onexay/msl/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/onexay/msl/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/onexay/msl/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/onexay/msl/compare/v0.1.4...v0.1.5
