@@ -91,7 +91,10 @@ echo "-- data dir:"; ls -la "$DATA"
 echo "-- run dir:"; ls -A "$DATA/run" 2>/dev/null | sed 's/^/  /'; [ -n "$(ls -A "$DATA/run" 2>/dev/null)" ] || echo "  (empty)"
 echo "-- data.img on disk:"; du -h "$DATA/data.img" 2>/dev/null | cut -f1
 echo "-- msl mounts:"; mount | grep -iE 'msl|127\.0\.0\.1:/' || echo "(none)"
-echo "-- ~/MSL:"; if [ -d "$HOME/MSL" ]; then ls -A "$HOME/MSL" | sed 's/^/  /'; [ -n "$(ls -A "$HOME/MSL")" ] || echo "  (empty)"; else echo "  (missing)"; fi
+for d in "$HOME/.msl/distros" "$HOME/MSL"; do
+  echo "-- ${d#$HOME/}:"
+  if [ -d "$d" ]; then ls -A "$d" | sed 's/^/  /'; [ -n "$(ls -A "$d")" ] || echo "  (empty)"; else echo "  (missing)"; fi
+done
 echo "-- processes:"; pgrep -lf 'bin/msld|msl-bridge' || echo "(no msld)"
 
 step "done; log: $LOG"

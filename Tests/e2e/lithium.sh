@@ -8,7 +8,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
 export MSL_HOME=$(mktemp -d /tmp/msl-lithium.XXXXXX)
-export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/MSL
+export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/.msl/distros
 WORK=$(mktemp -d)
 export MSL_CONFIG=$WORK/mslconfig
 pass=0; fails=0

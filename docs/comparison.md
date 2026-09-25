@@ -16,7 +16,7 @@ msl's goal is narrow: **be `wsl.exe` on a Mac**. That means the same CLI, the sa
 | VM model | One shared VM, per-distro namespaces | One shared VM, per-distro namespaces | One shared VM | One VM per machine | One VM per instance | One VM per instance | One VM per VM | One VM per VM |
 | systemd | Yes (`[boot] systemd`) | Yes | Yes (also OpenRC, runit) | Yes (images with `/sbin/init`) | Yes | Yes | Yes | Yes |
 | Mac/host files in Linux | `/mnt/mac`, virtiofs | `/mnt/c`, DrvFs (9p) | `/mnt/mac` and `/Users/...`, virtiofs | `$HOME` at `/Users/<you>`, virtiofs | virtiofs (vz), 9p (qemu), reverse-sshfs | SSHFS, or 9p on QEMU | virtiofs (Apple backend), 9p/WebDAV (QEMU) | virtiofs, mounted by hand |
-| Linux files in Finder / Explorer | `~/MSL/<distro>` over NFS, per-distro entry with logo in Finder Locations (VM must be running) | `\\wsl.localhost\<distro>` in Explorer | `~/OrbStack` and a Finder sidebar entry | No | No | No | No | No |
+| Linux files in Finder / Explorer | `~/.msl/distros/<distro>` over NFS, per-distro entry with logo in Finder Locations (VM must be running) | `\\wsl.localhost\<distro>` in Explorer | `~/OrbStack` and a Finder sidebar entry | No | No | No | No | No |
 | localhost forwarding | Automatic, IPv4 and IPv6 | Automatic (NAT), or mirrored | Automatic | Explicit `-p` publish | Automatic (TCP; UDP with gRPC forwarder) | No (instance IP) | No | No |
 | DNS | macOS resolver via mDNSResponder (VPN, split DNS, `.local`) | `dnsTunneling` through Windows | Forwards to macOS (VPN aware) | Embedded DNS; `/etc/resolver` for its own domain | Host resolver (hosts, mDNS) | ? | ? | ? |
 | x86_64 Linux | **No** (qemu-user planned) | n/a (x86_64 host) | Rosetta | Rosetta | Rosetta (vz) or QEMU | No | QEMU emulation, Rosetta (Apple backend) | Rosetta (`--rosetta`) |
@@ -80,7 +80,7 @@ These run containers, not your day-to-day distro, but they are what many Mac tea
 - **Same distro images as Windows.** `msl --install Ubuntu` reads Microsoft's `DistributionInfo.json` and uses the `.wsl` tarballs unmodified. It honours `wsl.conf` and the distro's own OOBE (`wsl-distribution.conf`), and masks Windows-only units at runtime. A Windows developer and a Mac developer run the same image.
 - **Same config files.** `.mslconfig` uses `.wslconfig`'s sections, keys and warnings, and distros read `/etc/wsl.conf` (or `/etc/msl.conf`).
 - **WSL's architecture, on Apple's stack only.** One VM with per-distro namespaces (like WSL 2 and OrbStack; unlike Apple `container machine`, Lima, Multipass, Tart and UTM). Distro start takes milliseconds, all distros share one memory pool and one localhost, and there's no QEMU, libkrun or custom hypervisor on the Mac.
-- **Finder per distro.** Each distro is its own Finder Locations entry at `~/MSL/<distro>`, with the distro's logo. Mac metadata (`.DS_Store`, AppleDouble) stays out of the Linux filesystem.
+- **Finder per distro.** Each distro is its own Finder Locations entry at `~/.msl/distros/<distro>`, with the distro's logo. Mac metadata (`.DS_Store`, AppleDouble) stays out of the Linux filesystem.
 - **DNS through mDNSResponder.** Queries resolve with the Mac's own resolver, so VPN split DNS, `/etc/resolver` and `.local` behave as on the Mac.
 - **Linux only, by design.** No `mac` command, no Mach-O binfmt, no Mac paths in `PATH`. Build tools can only find Linux toolchains, so outputs are always Linux ELF. OrbStack and WSL go the other way.
 - **Free and small.** Unlike OrbStack or Docker Desktop, there's no commercial licence fee. The guest is one static Rust binary.
@@ -93,7 +93,7 @@ These run containers, not your day-to-day distro, but they are what many Mac tea
 - **GPU and GUI apps.** WSL has WSLg and GPU compute. Podman (libkrun), Lima/Colima (krunkit), UTM 5 and Parallels have Vulkan/3D in Linux guests. msl has neither, and Virtualization.framework offers only 2D virtio-gpu.
 - **Containers.** OrbStack, Docker Desktop, Podman, Rancher and Apple `container` ship a container engine and Kubernetes integration. With msl you install Docker or Podman inside a distro yourself.
 - **Disk.** WSL resizes VHDs, while msl can't grow the store (`--manage --resize` isn't supported yet).
-- **Files view.** `~/MSL` works only while the VM runs (there's no auto-start on access; an FSKit version could add it). WSL's `\\wsl.localhost` starts the distro on access.
+- **Files view.** `~/.msl/distros` works only while the VM runs (there's no auto-start on access; an FSKit version could add it). WSL's `\\wsl.localhost` starts the distro on access.
 - **Networking modes.** WSL has mirrored and `consomme` modes, and Apple `container` gives each VM its own IP. msl has NAT only.
 - **Distro choice.** msl runs what Microsoft's list offers for arm64 (Ubuntu, Debian, Fedora, AlmaLinux, openSUSE, Kali) plus any `.wsl` or tar you import. OrbStack and Lima offer more distros out of the box, and Apple `container machine` takes any OCI image with an init.
 - **Extras others have:** USB device passthrough and sound (OrbStack), SSH-agent forwarding and cloud-init (OrbStack, Lima), snapshots (UTM, Parallels), macOS guests (Tart, UTM, Lima 2.2).

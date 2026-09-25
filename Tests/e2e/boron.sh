@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Boron milestone end-to-end test: hostname/hosts, localhost forwarding, DNS tunneling, ~/MSL file view.
+# Boron milestone end-to-end test: hostname/hosts, localhost forwarding, DNS tunneling, ~/.msl/distros file view.
 #   Tests/e2e/boron.sh [path/to/msl]
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -60,8 +60,8 @@ check "public name resolves" "example.com" "$($MSL getent hosts example.com)"
 check "NXDOMAIN" "not found" "$($MSL getent hosts no-such-host.invalid || echo 'not found')"
 check "TCP DNS path (python getaddrinfo)" "ok" "$($MSL -e python3 -c 'import socket; socket.getaddrinfo("apple.com", 443); print("ok")')"
 
-# ~/MSL file view
-check "~/MSL/<distro> folder by name" "Ubuntu-24.04" "$(ls $MSL_VIEW_DIR)"
+# ~/.msl/distros file view
+check "~/.msl/distros/<distro> folder by name" "Ubuntu-24.04" "$(ls $MSL_VIEW_DIR)"
 check "read distro file from the Mac" "Ubuntu 24.04" "$(cat $MSL_VIEW_DIR/Ubuntu-24.04/etc/os-release)"
 echo from-mac > "$MSL_VIEW_DIR/Ubuntu-24.04/home/tester/note.txt"
 check "write from the Mac, owner inherited" "tester:tester from-mac" "$($MSL -e sh -c 'stat -c %U:%G /home/tester/note.txt | tr -d "\n"; echo -n " "; cat /home/tester/note.txt')"

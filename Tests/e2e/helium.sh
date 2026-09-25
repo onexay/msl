@@ -7,7 +7,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
 export MSL_HOME=$(mktemp -d /tmp/msl-helium.XXXXXX)
-export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/MSL
+export MSL_VIEW_DIR=$MSL_HOME/view   # never touch the real ~/.msl/distros
 CACHE=${MSL_E2E_CACHE:-$HOME/Library/Caches/msl/e2e}
 mkdir -p "$CACHE"
 # image <distro-name> <file>: download the arm64 image into $CACHE/<file> once;

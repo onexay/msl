@@ -48,7 +48,7 @@ $ Tests/e2e/<milestone>.sh         # end-to-end, against a real VM: helium, lith
 $ Tests/e2e/release.sh             # packaging, install, --update, --uninstall
 ```
 
-The e2e suites use a throwaway `MSL_HOME` and never touch your real distros or `~/MSL`. Keep it that way in new tests: set `MSL_HOME`, `MSL_CONFIG` and `MSL_VIEW_DIR`.
+The e2e suites use a throwaway `MSL_HOME` and never touch your real distros or `~/.msl/distros`. Keep it that way in new tests: set `MSL_HOME`, `MSL_CONFIG` and `MSL_VIEW_DIR`.
 
 CI runs the unit tests and lints. It can't run the e2e suites, because hosted runners can't start VMs.
 

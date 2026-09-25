@@ -4,6 +4,12 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+- Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
+
+### Fixed
+- msld now removes its `run/vsock-*.sock` bridge sockets when the VM stops, so stale sockets no longer pile up.
+
 ### Added
 - Preview VS Code extension (`extensions/vscode`) that opens folders in a distro through managed pipes: no SSH, and no port on the Mac. It needs VS Code's proposed `resolvers` API (Sodium).
 - `/run/msl/init msl-bridge unix:<path>|tcp:<port>`: relays stdio to a Unix socket or localhost port inside a distro ([#29](https://github.com/onexay/msl/issues/29)).

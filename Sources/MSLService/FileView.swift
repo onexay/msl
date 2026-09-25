@@ -2,12 +2,12 @@
 import Foundation
 import MSLCore
 
-/// `~/MSL/<distro>`: the distros' files on the Mac (the `\\wsl.localhost` equivalent).
+/// `~/.msl/distros/<distro>`: the distros' files on the Mac (the `\\wsl.localhost` equivalent).
 ///
 /// The guest serves NFSv3 on its loopback (port 21049) from /run/msl-view, which
 /// holds one folder per distro *name*. msld exposes it on a private 127.0.0.1
 /// port (relayed over vsock, independent of localhost forwarding) and mounts
-/// **each distro separately**, as the user, at `~/MSL/<name>` from
+/// **each distro separately**, as the user, at `~/.msl/distros/<name>` from
 /// `127.0.0.1:/<name>`. Finder names a network volume after the last component
 /// of its export path, so every distro shows up in Finder's Locations under its
 /// own name (and logo, see DistroIcon), like Explorer's "Linux" node. macOS
@@ -32,12 +32,14 @@ final class FileView: @unchecked Sendable {
 
     static var viewDir: URL {
         if let p = ProcessInfo.processInfo.environment["MSL_VIEW_DIR"], !p.isEmpty { return URL(fileURLWithPath: p) }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("MSL", isDirectory: true)
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".msl/distros", isDirectory: true)
     }
 
-    /// Earlier designs: a hidden mount at <msl>/files with ~/MSL symlinks, then
-    /// one mount at ~/MSL itself. Both are cleaned up on start.
+    /// Earlier designs, all cleaned up on start: a hidden mount at <msl>/files
+    /// with ~/MSL symlinks, one mount at ~/MSL itself, then one mount per distro
+    /// at ~/MSL/<name> (before ~/.msl/distros).
     private var legacyMountPoint: URL { paths.root.appendingPathComponent("files", isDirectory: true) }
+    private var legacyViewDir: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("MSL", isDirectory: true) }
 
     func start() {
         let flag = StopFlag()
@@ -147,13 +149,19 @@ final class FileView: @unchecked Sendable {
         let fm = FileManager.default
         if isNFS(legacyMountPoint) { _ = run("/sbin/umount", ["-f", legacyMountPoint.path]) }
         try? fm.removeItem(at: legacyMountPoint)
-        if isNFS(Self.viewDir) { _ = run("/sbin/umount", ["-f", Self.viewDir.path]) }  // single-mount design
-        for name in (try? fm.contentsOfDirectory(atPath: Self.viewDir.path)) ?? [] {
-            let p = Self.viewDir.appendingPathComponent(name).path
-            if let t = try? fm.destinationOfSymbolicLink(atPath: p), t.hasPrefix(legacyMountPoint.path) {
-                try? fm.removeItem(atPath: p)
+        let old = legacyViewDir
+        guard Self.realPath(old.path) != Self.realPath(Self.viewDir.path) else { return }  // MSL_VIEW_DIR=~/MSL
+        if isNFS(old) { _ = run("/sbin/umount", ["-f", old.path]) }  // single-mount design
+        for name in (try? fm.contentsOfDirectory(atPath: old.path)) ?? [] {
+            let url = old.appendingPathComponent(name)
+            if let t = try? fm.destinationOfSymbolicLink(atPath: url.path), t.hasPrefix(legacyMountPoint.path) {
+                try? fm.removeItem(at: url)
+            } else if isNFS(url) {
+                unmount(url)  // per-distro design; removes the empty mount point
             }
         }
+        try? fm.removeItem(at: old.appendingPathComponent(".DS_Store"))
+        if rmdir(old.path) == 0 { log("files: removed the old ~/MSL folder (now \(Self.viewDir.path))") }  // only when empty
     }
 
     private func isNFS(_ url: URL) -> Bool {

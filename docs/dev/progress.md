@@ -202,3 +202,10 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - `extensions/vscode`: resolver for `msl+<distro>` (#27), server install/start in the distro (#28), `makeConnection` over `msl-bridge` (#30), and `tunnelFactory` (#31). VS Code 1.138.0 was tested in an isolated instance (`--enable-proposed-api`).
 - First resolve took 1.65 s (7.7 s when the server was downloaded on an earlier run), and both pipes finished the handshake in about 60 ms. After killing the bridges in the distro, VS Code resolved again (24 ms, reusing the server) and reconnected both channels. A distro port was auto-forwarded through `tunnelFactory`, and 50 MB downloaded through it with a matching SHA-256 in 0.16 s.
 - Gotcha: VS Code refuses a `--user-data-dir` whose IPC socket path is longer than 103 characters.
+
+## 2026-09-25 10:10: clean slate script, view dir move, reinstall
+- `scripts/clean-slate.sh [--stop-msld]` resets msl (terminate/unregister all, retrying once for #34; shutdown; stale sockets; optional msld stop) and reports what is left, with a log in `build/logs/`.
+- #34 filed: the first `--unregister` failed with ENOTEMPTY and left 47,816 files registered; the retry worked.
+- The file view moved from `~/MSL` to `~/.msl/distros` (the old folder is removed when empty; tested). Finder still lists the `Ubuntu-26.04` disk at the hidden path, with its volume icon.
+- Stale `run/vsock-*.sock` files are now removed when the VM stops.
+- Reinstalled Ubuntu-26.04 with `--no-launch` (7.3 s).

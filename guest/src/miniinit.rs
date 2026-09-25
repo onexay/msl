@@ -25,7 +25,7 @@ use tonic::{Request, Response, Status};
 const CONTROL_PORT: u32 = 1024;
 const FIRST_AGENT_PORT: u32 = 2000;
 const DATA: &str = "/var/lib/msl";
-/// NFS export root for ~/MSL: one bind mount of each distro's rootfs, by name.
+/// NFS export root for ~/.msl/distros: one bind mount of each distro's rootfs, by name.
 const VIEW: &str = "/run/msl-view";
 const ROSETTA_MAGIC: &str = r":rosetta:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00:\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/run/rosetta/rosetta:CF";
 
@@ -486,7 +486,7 @@ impl MiniInit for MiniInitService {
         let dir = distro_dir(&id)?;
         blocking(move || {
             stop_blocking(&id);
-            // Drop it from the ~/MSL view first (its bind mount pins the rootfs).
+            // Drop it from the ~/.msl/distros view first (its bind mount pins the rootfs).
             let keep: HashMap<String, String> = view_state().lock().unwrap().iter().filter(|(_, v)| **v != id).map(|(k, v)| (k.clone(), v.clone())).collect();
             set_view(&keep);
             if dir.exists() {

@@ -550,7 +550,7 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > The ~/MSL file view: one folder per distro *name* (bind mounts of the
+        /// > The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
         /// > rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
         ///
         /// - Parameters:
@@ -1027,7 +1027,7 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > The ~/MSL file view: one folder per distro *name* (bind mounts of the
+        /// > The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
         /// > rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
         ///
         /// - Parameters:
@@ -1438,7 +1438,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > The ~/MSL file view: one folder per distro *name* (bind mounts of the
+    /// > The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
     /// > rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
     ///
     /// - Parameters:
@@ -1895,7 +1895,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > The ~/MSL file view: one folder per distro *name* (bind mounts of the
+    /// > The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
     /// > rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
     ///
     /// - Parameters:

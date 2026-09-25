@@ -57,7 +57,7 @@ service MiniInit {
   // FITRIM the distro store so freed blocks go back to the Mac (sparse data.img).
   rpc CompactDisk(Empty) returns (CompactDiskReply);
 
-  // The ~/MSL file view: one folder per distro *name* (bind mounts of the
+  // The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
   // rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
   rpc SetFileView(FileViewRequest) returns (Empty);
 }

@@ -24,7 +24,7 @@ pub fn to_linux(mac: &str, mount: &str) -> String {
 
 /// Linux path -> macOS path. Paths under the Mac mount map back directly;
 /// Linux-only paths map to the distro's view on the Mac (`<view>/<distro>/...`,
-/// normally `~/MSL/<distro>/...`).
+/// normally `~/.msl/distros/<distro>/...`).
 pub fn to_mac(linux: &str, mount: &str, view: &str, distro: &str) -> String {
     if linux == mount {
         return "/".to_string();

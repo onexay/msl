@@ -91,7 +91,7 @@ What uses it:
 | Session stdout/stderr/stdin, tty | `Service.session` | `session.rs` |
 | `--export` / `--import` tar streams | `Service.export` / `importDistro` | `miniinit.rs` via `framed::sender/receiver` |
 | Localhost forwarding | `PortForwarder` | `net.rs` forwarder |
-| `~/MSL` NFS bridge | `FileView` | `net.rs` forwarder |
+| `~/.msl/distros` NFS bridge | `FileView` | `net.rs` forwarder |
 
 What doesn't use it, and why that's safe:
 - **gRPC control channels** (msld ↔ mini-init/agents): the host reader is SwiftNIO and the guest reader is tonic, and both always read eagerly.

@@ -15,7 +15,7 @@ $ msl -l -v
 * Ubuntu          Running         2
   Debian          Stopped         2
 $ python3 -m http.server 8000     # inside a distro → http://localhost:8000 on the Mac
-$ ls ~/MSL/Ubuntu/home            # the distro's files, from the Mac (also in Finder › Locations, with the distro's logo)
+$ ls ~/.msl/distros/Ubuntu/home            # the distro's files, from the Mac (also in Finder › Locations, with the distro's logo)
 ```
 
 ### Install
@@ -80,7 +80,7 @@ $ echo $MSL_DISTRO_NAME
   - localhost forwarding (IPv4 and IPv6);
   - DNS through macOS's own resolver (VPN, split DNS, `.local`);
   - the Mac's name as the hostname, and a generated `/etc/hosts`.
-- **Files from the Mac:** each distro's filesystem at `~/MSL/<distro>` (NFS over vsock), listed in Finder › Locations under its own name and logo, while the VM runs.
+- **Files from the Mac:** each distro's filesystem at `~/.msl/distros/<distro>` (NFS over vsock), listed in Finder › Locations under its own name and logo, while the VM runs.
 - **Disks and debugging:** `--mount`/`--unmount` (images at `/mnt/msl/<name>` in every distro), `--debug-shell`, `--manage --compact`.
 - **Service:** `--update`, `--uninstall`, `.mslconfig` (the `.wslconfig` equivalent), `--status`. Errors print just the message; set `MSL_ERROR_CODES=1` to add wsl.exe-style `Error code:` lines.
 - **Scripting:** `--json` on `--list`, `--list --online`, `--status` and `--version` prints JSON ([docs/json.md](docs/json.md)).
@@ -92,7 +92,7 @@ msl never runs macOS binaries inside distros: Linux sees only Linux binaries. `n
 ```
 msl (CLI) ──XPC──▶ msld (per-user LaunchAgent)
                      │ owns the VZVirtualMachine, registry, .mslconfig,
-                     │ port forwarding, DNS proxy, ~/MSL NFS mounts
+                     │ port forwarding, DNS proxy, ~/.msl/distros NFS mounts
                      │ gRPC + credit-framed streams over vsock
                      ▼
            One utility VM (msl kernel + initrd)
@@ -127,7 +127,7 @@ Tracked as [issues](https://github.com/onexay/msl/issues); planned work is in th
 - **x86_64 distros:** not supported yet. arm64 images only in practice. An untested Rosetta path activates only if Rosetta is already installed (msl never installs it); the [Nitrogen](https://github.com/onexay/msl/milestone/7) milestone adds qemu-user instead.
 - **Memory:** returned to macOS only when the VM stops (`vmIdleTimeout`). Virtualization.framework's balloon doesn't give pages back, so `autoMemoryReclaim` has no effect.
 - **Disk:** `--manage --resize` isn't supported (no online resize of the shared 256 GiB sparse store). `--compact` and trim on shutdown do shrink `data.img`.
-- **`~/MSL`** is only available while the VM runs.
+- **`~/.msl/distros`** is only available while the VM runs.
 - **No GPU** (Virtualization.framework has only 2D virtio-gpu), no WSLg/GUI apps, no WSL1, no mirrored networking.
 - **Not notarised yet**; releases need a Developer ID.
 - Distros are isolated by namespaces, not separate VMs (same as WSL2).

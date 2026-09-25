@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The ~/MSL NFS filesystem: `MirrorFS` plus an in-memory store for macOS
+//! The ~/.msl/distros NFS filesystem: `MirrorFS` plus an in-memory store for macOS
 //! metadata files.
 //!
 //! macOS writes `.DS_Store` into folders Finder shows, and stores extended

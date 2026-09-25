@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
-//! `~/MSL/<distro>` file server: an NFSv3 server (userspace, TCP) exporting the
+//! `~/.msl/distros/<distro>` file server: an NFSv3 server (userspace, TCP) exporting the
 //! distros' root filesystems, mounted on the Mac by msld (the `\\wsl.localhost`
 //! equivalent).
 //!
@@ -312,7 +312,7 @@ impl MirrorFS {
         }
 
         // msl: new objects take the owner of their parent directory (created
-        // from the Mac in ~/MSL/<distro>/home/<user> -> owned by that user).
+        // from the Mac in ~/.msl/distros/<distro>/home/<user> -> owned by that user).
         if let Some(parent) = path.parent() {
             if let Ok(pm) = std::fs::metadata(parent) {
                 let _ = std::os::unix::fs::lchown(&path, Some(pm.uid()), Some(pm.gid()));

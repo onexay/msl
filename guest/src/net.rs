@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 pub const FORWARDER_PORT: u32 = 1025;
-/// The ~/MSL file server (loopback only; excluded from localhost forwarding).
+/// The ~/.msl/distros file server (loopback only; excluded from localhost forwarding).
 pub const NFS_PORT: u16 = 21049;
 
 /// Parse /proc/net/tcp{,6}: LISTEN sockets on any/loopback addresses.
@@ -56,7 +56,7 @@ pub fn spawn_port_watcher() -> watch::Receiver<Vec<u32>> {
 }
 
 /// vsock:1025 -> 127.0.0.1:<port> (or [::1]) relay for localhost forwarding
-/// and the ~/MSL file server. After a 2-byte port header the connection is a
+/// and the ~/.msl/distros file server. After a 2-byte port header the connection is a
 /// flow-controlled bridge (framed.rs).
 pub fn spawn_forwarder() -> std::io::Result<()> {
     let listener = tokio_vsock::VsockListener::bind(tokio_vsock::VsockAddr::new(tokio_vsock::VMADDR_CID_ANY, FORWARDER_PORT))?;

@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 
 /// Distro logos in Finder. WSL images declare a Windows icon in
 /// /etc/wsl-distribution.conf (`[shortcut] icon = /usr/share/wsl/ubuntu.ico`).
-/// msld converts it to .icns and gives the distro's ~/MSL volume a custom icon
+/// msld converts it to .icns and gives the distro's ~/.msl/distros volume a custom icon
 /// (`.VolumeIcon.icns` plus the FinderInfo "has custom icon" flag). Both live in
 /// the guest's in-memory metadata store (nfsview.rs), never in the distro image.
 enum DistroIcon {
