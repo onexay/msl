@@ -189,3 +189,11 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-25 00:16: v0.1.3
 - Published **v0.1.3** (Latest) with `--json` for the query commands (Neon). Checked: installed v0.1.2 with the public one-liner, ran `msl --update` to 0.1.3, and `--version --json` reports 0.1.3 with the install prefix.
+
+## 2026-09-25 01:26: VS Code managed-pipe transport (design)
+- Added option C′ to `docs/design/vscode-integration.md`: a resolver extension whose `makeConnection()` pipe runs extension → msld Unix socket → vsock:1026 → msl-guest → the server's Unix socket inside the distro. It reuses the forwarder's framed bridge. Still depends on the proposed `resolvers` API, which is recorded as an open question.
+
+## 2026-09-25 09:35: Sodium started (VS Code via managed pipes)
+- New milestone **Sodium** with #27–#33: resolver skeleton, server install, `msl-bridge`, `makeConnection`, `tunnelFactory`, msld connect socket, tests/docs.
+- #29 `msl-bridge` (`/run/msl/init msl-bridge unix:<path>|tcp:<port>`): stdio relay with half-close both ways. Unit test plus a real distro check: 100 MB echoed through `msl -e` with matching SHA-256 in 0.41 s; the TCP target and the error exits (1, and 2 for usage) work.
+- Found: `/run/user/<uid>` does not exist for `msl -e` sessions (no PAM/logind), so the server socket moves to `~/.vscode-server/msl/<commit>.sock`. Updated the design doc, #28 and #32.

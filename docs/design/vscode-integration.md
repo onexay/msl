@@ -28,6 +28,36 @@ Blockers:
 - **Server licence.** The VS Code Server that runs inside the remote is licensed for use with Microsoft's remote extensions. `open-remote-ssh` and `open-remote-wsl` (jeanp413, for VSCodium) work around this with the open-source server build. That gives full VSCodium support but a grey area for VS Code.
 - **Upkeep.** The resolver API changes with VS Code releases.
 
+#### C′. Resolver with a managed pipe (revisited 2026-09-25)
+SSH (B) works, but it has quirks, so we looked at C again using a managed pipe as the transport. The blockers above still apply: `ManagedResolvedAuthority` belongs to the same proposed `resolvers` API.
+
+With a managed pipe, VS Code doesn't open a socket to the server. For every connection it needs (management, extension host, each reconnect), it calls the extension's `makeConnection()`. The extension returns a two-way byte stream (`send`, `end`, `onDidReceiveMessage`, `onDidClose`, `onDidEnd`). VS Code sends `GET /?reconnectionToken=…&skipWebSocketFrames=true` with an upgrade header, the server answers 101, and after that the stream carries VS Code's own protocol frames. The pipe doesn't parse anything. It only has to deliver bytes in order and report when either side closes.
+
+Route:
+```
+VS Code ─RPC─ msl extension ─unix─ msld ─vsock:1026─ msl-guest ─unix─ VS Code Server
+ (Mac)        (local ext host)     (Mac)  (credit-framed) (VM)          (in distro)
+```
+- **Extension:** `net.connect()` to msld's connect socket in a user-only (0700) directory. It sends one header line (`CONNECT distro=<id> path=<socket>`) and then uses the connection as the pipe. It waits for Node's `'drain'` event, so backpressure reaches VS Code.
+- **msld:** reads the header, opens a new vsock connection to guest port 1026 with a small binary header, and hands both ends to `FramedBridge`.
+- **msl-guest:** connects to `/proc/<distro-init-pid>/root/<path>`. Each distro has its own mount namespace ([distroinit.rs](../../guest/src/distroinit.rs)), so the socket can only be reached this way. It then relays with `framed::bridge`.
+- **Server:** started with `--socket-path ~/.vscode-server/msl/<commit>.sock`. It can't use `/run/user/<uid>`, because `msl -e` sessions don't go through PAM or logind and that directory usually doesn't exist.
+
+This reuses the localhost forwarder ([PortForwarder.swift](../../Sources/MSLService/PortForwarder.swift), [net.rs](../../guest/src/net.rs) `spawn_forwarder`). What changes: a Unix listener instead of a TCP one, port 1026 instead of 1025, a distro id and path header instead of a `u16` port, and a Unix connect inside the distro instead of a loopback TCP connect. The 1 MiB credit window carries over as is.
+
+Compared with the TCP route: no port opens on the Mac, so browsers and other local processes can't reach the server, and the connection token is still checked. There's no wait for `WatchPorts`. Distros can't collide on ports, and it works with `localhostForwarding=false`.
+
+Lifecycle: each window uses at least 2 pipes, plus 1 per reconnect. Without `tunnelFactory` there would also be 1 per forwarded-port connection, so we implement `tunnelFactory`. It uses the same path as `makeConnection()`, but the target is a TCP port instead of a Unix socket. Before the connect socket exists, `msl-bridge tcp:<port>` connects to `localhost:<port>` inside the distro. After it exists, msld handles `CONNECT tcp=<port>` with the existing port-1025 forwarder, which needs no new guest code because distros share the VM's network namespace. When a pipe breaks, VS Code calls `makeConnection()` again and resumes with its reconnection token, which the server keeps for 3 h. If that fails, it calls `resolve()`, which restarts the distro.
+
+Stepping stone: until the connect socket exists, `makeConnection()` can run `msl -d X -e msl-bridge <path>` and use its stdin and stdout. This costs one process and one XPC session per connection.
+
+Build order:
+1. Resolver skeleton, with `makeConnection()` running through `msl-bridge`.
+2. `tunnelFactory`, also through `msl-bridge`.
+3. The msld connect socket (port 1026 for Unix sockets, 1025 for TCP), which replaces `msl-bridge`.
+
+**Security rule:** msld must not become a general proxy to Unix sockets in a distro (`docker.sock`, systemd's private socket). Accept only `~/.vscode-server/msl/*.sock` in the distro's default user's home directory, and have the guest check the path again after resolving it.
+
 ### D. Thin "MSL" extension on top of Remote-SSH (recommended second step)
 Uses only the stable API, can be published on the Marketplace, and depends on B:
 - an **MSL** section in Remote Explorer listing distros with their state and logo (from `msl -l -v`);
@@ -48,6 +78,7 @@ Works today, but needs a GitHub or Microsoft login and goes through Microsoft's 
 B → D → (optional) E.
 
 ## Open questions
+- C′ (managed pipe) vs B/D: is a better transport worth shipping only as a `.vsix` with `enable-proposed-api`, and depending on the server licence? A possible middle path: D's stable-API extension first, with C′ offered as an opt-in.
 - sshd in the distro (`sshd -i`) or an SSH server built into msl?
 - Write `~/.ssh/config` automatically, or on request? (Use an `Include ~/.ssh/msl_config` line rather than editing the user's file directly.)
 - Whether to allow `code .` (E).
