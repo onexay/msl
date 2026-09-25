@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-09-25
+
 ### Fixed
 - Sessions get the distribution's locale (`LANG`, `LANGUAGE`, `LC_*` from `/etc/default/locale` or `/etc/locale.conf`), as in WSL and login shells. Without it, VS Code's terminal set `LANG` from its own UI language, and bash printed `setlocale: cannot change locale (en_US.UTF-8)` on distros that don't have that locale, such as Ubuntu with only `C.UTF-8`.
 
@@ -103,7 +105,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/onexay/msl/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/onexay/msl/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/onexay/msl/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/onexay/msl/compare/v0.1.5...v0.1.6
