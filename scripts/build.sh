@@ -39,15 +39,18 @@ install_bin() {  # install_bin <src> <name> [entitlements]
 install_bin "$BIN/msl" msl
 install_bin "$BIN/msld" msld "$ROOT/Sources/msld/msld.entitlements"
 
-# The VS Code extension (msl --manage-ide installs it). Needs Node.js; a build
-# without it just can't set up IDEs, and scripts/package.sh refuses to package.
+# The VS Code extension (msl --manage-ide installs it), like the kernel: a local
+# build for package.json's version (cd extensions/vscode && npm run package) if
+# there is one, else the published release (extensions/vscode/fetch.sh).
 EXT=$ROOT/extensions/vscode
-if command -v npm >/dev/null 2>&1; then
-  (cd "$EXT" && { [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error; } \
-    && npm run -s compile && npx vsce package --no-dependencies -o "$OUT/share/msl/msl.vsix" >/dev/null) \
-    || { echo "error: building the VS Code extension failed" >&2; exit 1; }
-else
-  rm -f "$OUT/share/msl/msl.vsix"
-  echo "warning: npm not found; skipped the VS Code extension (msl --manage-ide won't work)"
+EXTV=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$EXT/package.json")
+VSIX=$EXT/dist/msl-$EXTV.vsix
+if [ ! -f "$VSIX" ]; then
+  if [ "$(cat "$EXT/release.tag" 2>/dev/null)" = "vscode-$EXTV" ]; then
+    "$EXT/fetch.sh" >/dev/null || echo "warning: could not fetch the VS Code extension $EXTV"
+  else
+    echo "warning: VS Code extension $EXTV isn't published; build it: (cd extensions/vscode && npm run package)"
+  fi
 fi
+if [ -f "$VSIX" ]; then cp "$VSIX" "$OUT/share/msl/msl.vsix"; else rm -f "$OUT/share/msl/msl.vsix"; fi
 echo "built: build/bin/{msl,msld} build/share/msl/{Image,initrd.gz,msl.vsix} (kernel $(cat "$OUT/share/msl/kernel.version"))"

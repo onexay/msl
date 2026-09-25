@@ -3,3 +3,8 @@ types/**
 out/**/*.map
 tsconfig.json
 node_modules/**
+dist/**
+fetch.sh
+publish.sh
+release.tag
+release.sha256

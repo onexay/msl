@@ -71,7 +71,12 @@ CI runs the unit tests and lints. It can't run the e2e suites, because hosted ru
 
 `scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`). `kernel/build.sh` rebuilds it from source with Apple's `container`.
 
+## VS Code extension
+
+`scripts/build.sh` bundles `extensions/vscode` as `build/share/msl/msl.vsix`. For `package.json`'s version, it uses a local build (`cd extensions/vscode && npm run package`, which writes `dist/msl-<version>.vsix`) if there is one. Otherwise it downloads the release named in `extensions/vscode/release.tag` (`fetch.sh`, checked against `release.sha256`). Building msl therefore needs Node only when you're changing the extension.
+
 ## Releases
 
-- **msl** ships as `v<version>` releases. The Latest one is what `install.sh` and `msl --update` use. Set the version with `scripts/set-version.sh <version>` (the root `VERSION` file is the source of truth), move the *Unreleased* changelog entries under it, commit and push, then run `scripts/publish.sh <version>`. It packages the release (tarball + `.sha256`, `.pkg`, `update.json`), signs the checksum when `MSL_GPG_KEY` is set, attaches the BusyBox source, and takes the notes from `CHANGELOG.md`. `scripts/package.sh <version>` builds the same files locally without publishing.
+- **msl** ships as `v<version>` releases. The Latest one is what `install.sh` and `msl --update` use. Set the version with `scripts/set-version.sh <version>` (the root `VERSION` file is the source of truth), move the *Unreleased* changelog entries under it, commit and push, then run `scripts/publish.sh <version>`. It packages the release (tarball + `.sha256`, `update.json`), signs the checksum when `MSL_GPG_KEY` is set, attaches the BusyBox source, and takes the notes from `CHANGELOG.md`. `scripts/package.sh <version>` builds the same files locally without publishing.
 - **The kernel** has its own releases, `kernel-<linux version>-msl.<n>`, published only when it changes, with `kernel/publish.sh`. Bump `n` for config-only changes. They are never marked Latest. Each msl release's notes name the kernel it bundles.
+- **The VS Code extension** has its own releases, `vscode-<version>`, published with `extensions/vscode/publish.sh` when it changes. Bump `"version"` in `package.json` first, then commit the updated `release.tag` and `release.sha256`. They are never marked Latest. `scripts/publish.sh` refuses to publish an msl release whose bundled `.vsix` isn't the published one.
