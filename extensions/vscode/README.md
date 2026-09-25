@@ -13,7 +13,11 @@ Then add `"enable-proposed-api": ["onexay.msl"]` to `~/.vscode/argv.json`, resta
 
 Every connection goes through msld's `connect.sock`. With an older msld that doesn't have it, the extension falls back to one `msl -e … msl-bridge` process per connection. On first connect to a distro, the extension installs the VS Code Server that matches your VS Code into `~/.vscode-server/bin/<commit>`. It downloads the server on the Mac, caches it in `~/Library/Caches/msl/vscode-server/` for every distro to reuse, and pipes it in, so the distro needs no `curl` or `wget` (stock Debian has neither). The server listens on `~/.vscode-server/msl/<commit>.sock`. Forwarded ports listen on the Mac's `127.0.0.1`.
 
-**Settings:** `msl.path` sets the `msl` binary. By default the extension uses `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`.
+**Settings:** `msl.path` sets the `msl` binary. By default the extension uses `~/.local/bin/msl`, then `/usr/local/bin/msl`, then `PATH`. The binary must be msl 0.1.3 or newer, because the extension relies on `--list --json`. Point `msl.path` at `build/bin/msl` to use a development build.
+
+**Troubleshooting:**
+- *"No remote extension installed to resolve msl":* the extension didn't activate. Output › Log (Extension Host) shows `CANNOT use API proposal: resolvers`. Add `enable-proposed-api` to `~/.vscode/argv.json` (**Preferences: Configure Runtime Arguments**), then quit VS Code with ⌘Q; closing the window isn't enough.
+- *"msl --list --verbose --json exited with 255":* `msl.path` points to an `msl` older than 0.1.3.
 
 **Licence note:** the VS Code Server is Microsoft's build, which is licensed for use with VS Code.
 
