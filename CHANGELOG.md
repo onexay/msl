@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-09-25
+
 ### Fixed
 - DNS lookups in distros no longer stall for 5 to 10 seconds when a name has an IPv4 address but no IPv6 one, as github.com does. msld now passes on macOS's "no such record" answer instead of waiting out its timeout. Tools that look up both address families, such as VS Code's extension host, curl and git, used to hit connect timeouts; VS Code timed out connecting to `api.github.com` while cloning ([#41](https://github.com/onexay/msl/issues/41)).
 
@@ -63,7 +65,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/onexay/msl/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/onexay/msl/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/onexay/msl/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/onexay/msl/compare/v0.1.1...v0.1.2
