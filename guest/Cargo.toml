@@ -1,6 +1,6 @@
 [package]
 name = "msl-guest"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "MSL guest: utility-VM PID 1 (mini-init) and per-distro init/agent"
 publish = false

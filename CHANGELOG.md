@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-09-26
+
 ### Fixed
 - msl starts on macOS 26 again. 0.1.9 was built with Xcode 27, whose Swift runtime links libraries macOS 26 doesn't have, so msld failed to start there. Releases are now built by CI with Xcode 26, the version that matches msl's minimum macOS, and `scripts/publish.sh` publishes that build instead of packaging on the releaser's Mac.
 
@@ -108,7 +110,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/onexay/msl/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/onexay/msl/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/onexay/msl/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/onexay/msl/compare/v0.1.6...v0.1.7
