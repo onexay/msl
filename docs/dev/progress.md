@@ -450,3 +450,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 - Rosetta ran first, so its Debian install includes cold caches (first translation of dpkg and friends, and the page cache); the 25 s vs 13 s is not a clean comparison. The native sha256 uses the ARMv8 SHA instructions; the x86 build gets no SHA-NI under either translator.
 - Without systemd, the distros' first-boot units don't run: Arch needed `pacman-key --init && pacman-key --populate archlinux` (normally `pacman-init.service`). pacman 7 also needs `--disable-sandbox` (or `DisableSandbox` in pacman.conf), because msl's kernel has no Landlock.
+
+## 2026-09-27 03:05: Decision: arm64 only for now
+- x86_64 distro support stays deferred (Nitrogen), and msl supports arm64 distros only. Everything from 2026-09-25 to 09-27 is summarised in #40's update comment: Apple's guidance, the Rosetta/qemu/FEX results, the `systemd=false` table, the FEX `clone3` patch and its test program (both inlined in the issue), and the steps if this resumes. The FEX patch was not sent upstream.
+- The test VM is shut down and its temporary home removed. #46 (binfmt flush) stays open: it also affects x86 programs in arm64 distros.
