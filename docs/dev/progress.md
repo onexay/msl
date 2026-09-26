@@ -433,3 +433,20 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Boot with the patched FEX plus a `service.d` `MemoryDenyWriteExecute=no` drop-in: Debian 13 amd64 (systemd 257) only fails `e2scrub_reap`, as it does under every engine. Arch (systemd 261) runs journald, udevd and dbus, but logind and nsresourced die with SIGILL, homed with SIGSEGV, networkd/resolved/userdbd hang in `activating`, and `/usr/bin/ldconfig` (static-pie) segfaults when run directly, so that one is a separate FEX issue.
 - FEX logs `Failed to remap /proc/pid/cmdline data (prctl … errno 22)`: `PR_SET_MM` needs `CONFIG_CHECKPOINT_RESTORE` in msl's kernel.
 - Opened #46 for the binfmt flush bug.
+
+## 2026-09-27 02:50: Nitrogen: x86_64 distros with systemd=false
+- Set `[boot] systemd=false` in the archlinux and Debian 13 amd64 WSL images (both ship `systemd=true`), so msl's arm64 init is PID 1 and only the distro's programs are x86_64, as in a container. Same script under Rosetta (macOS 27.0) and the patched FEX 2609; packages downloaded beforehand and removed between runs.
+
+| | Rosetta: Debian | Rosetta: Arch | FEX: Debian | FEX: Arch | native arm64 |
+|---|---|---|---|---|---|
+| package install (gcc, sudo …, from cache) | 25.3 s | 2.2 s | 13.1 s | 2.3 s | |
+| gcc -O2 hello, then run | ok, 0.30 s | ok, 0.43 s | ok, 0.50 s | ok, 0.84 s | 0.13 s |
+| `ps -e`, `pgrep` | **crash** (Rosetta assertion) | ok | ok | ok | |
+| setuid `sudo` | ok | ok | ok | ok | |
+| `ldconfig` (Arch, static-pie) | | ok | | **SIGSEGV** | |
+| sha256sum 256 MB | 0.49 s | 0.49 s | 0.54 s | 0.54 s | 0.11 s |
+| xz -6, 64 MB, 1 thread | 24.5 s | 23.6 s | 24.9 s | 25.2 s | 20.0 s |
+| 300 × fork+exec `true` | 2.64 s | 2.69 s | 4.58 s | 4.67 s | 0.05 s |
+
+- Rosetta ran first, so its Debian install includes cold caches (first translation of dpkg and friends, and the page cache); the 25 s vs 13 s is not a clean comparison. The native sha256 uses the ARMv8 SHA instructions; the x86 build gets no SHA-NI under either translator.
+- Without systemd, the distros' first-boot units don't run: Arch needed `pacman-key --init && pacman-key --populate archlinux` (normally `pacman-init.service`). pacman 7 also needs `--disable-sandbox` (or `DisableSandbox` in pacman.conf), because msl's kernel has no Landlock.
