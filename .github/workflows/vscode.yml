@@ -1,0 +1,34 @@
+# Build the VS Code extension whenever it changes. extensions/vscode/publish.sh
+# publishes the artifact (vscode-<version>); CI never publishes.
+name: VS Code extension
+on:
+  push:
+    branches: [main]
+    paths: ["extensions/vscode/**", ".github/workflows/vscode.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  vsix:
+    name: VS Code extension
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: extensions/vscode } }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          npm ci --no-audit --no-fund --loglevel=error
+          npm run -s compile
+          npm run -s package >/dev/null
+          [ -f "dist/msl-$V.vsix" ]
+          { echo "commit ${{ github.sha }}"; echo "node $(node --version)"; } > dist/build-info.txt
+          echo "V=$V" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-${{ env.V }}
+          path: |
+            extensions/vscode/dist/msl-${{ env.V }}.vsix
+            extensions/vscode/dist/build-info.txt
+          if-no-files-found: error

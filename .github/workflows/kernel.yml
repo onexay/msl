@@ -1,0 +1,33 @@
+# Build the MSL kernel whenever its inputs change. kernel/publish.sh publishes
+# the artifact (named after kernel/tag.sh's tag); CI never publishes.
+name: Kernel
+on:
+  push:
+    branches: [main]
+    paths: ["kernel/base.config", "kernel/msl.fragment", "kernel/build-linux.sh", "kernel/build.sh", "kernel/tag.sh", ".github/workflows/kernel.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    name: Kernel
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq build-essential flex bison bc libelf-dev libssl-dev curl xz-utils cpio kmod python3
+      - name: Build
+        run: |
+          VER=$(sed -n 's/^VER=${KVER:-\(.*\)}$/\1/p' kernel/build.sh)
+          kernel/build-linux.sh kernel out "$VER"
+          echo "commit ${{ github.sha }}" > out/build-info.txt
+          echo "TAG=$(cat out/tag)" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAG }}
+          path: |
+            out/Image
+            out/config
+            out/tag
+            out/build-info.txt
+          if-no-files-found: error
