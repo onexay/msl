@@ -1,7 +1,7 @@
 # Documentation site: https://onexay.github.io/msl/
 # Built from docs/ by .github/workflows/docs.yml (mkdocs build --strict).
 # Local preview: pip install -r docs/requirements.txt && mkdocs serve
-site_name: msl
+site_name: Modern Subsystem for Linux
 site_description: Linux distributions on macOS, the way WSL runs them on Windows
 site_url: https://onexay.github.io/msl/
 repo_url: https://github.com/onexay/msl
@@ -14,11 +14,14 @@ exclude_docs: |
   dev/
   readme.md
   requirements.txt
+  /logo.png
 hooks:
   - scripts/docs_hooks.py
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/favicon.png
   features:
     - navigation.sections
     - navigation.top

@@ -1,4 +1,4 @@
-# msl
+# Modern Subsystem for Linux
 
 msl runs Linux distributions on macOS the way WSL runs them on Windows. The `msl` command is `wsl.exe` for macOS: same arguments, same output, same exit codes. It runs Microsoft's WSL distribution images, unmodified, in one lightweight Linux VM, using only Apple's Virtualization.framework. It needs Apple silicon and macOS 26 or later.
 
