@@ -1,0 +1,51 @@
+# The documentation site (mkdocs.yml). Every PR and push builds it with
+# --strict, which fails on broken links, anchors and nav entries. Pushes to
+# main deploy it to GitHub Pages: https://onexay.github.io/msl/
+name: Docs
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "*.md", "extensions/vscode/README.md", "extensions/vscode/release.tag", "kernel/release.tag", "mkdocs.yml", "scripts/docs_hooks.py", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["docs/**", "*.md", "extensions/vscode/README.md", "mkdocs.yml", "scripts/docs_hooks.py", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - run: pip install -r docs/requirements.txt
+      - run: mkdocs build --strict -d site
+        env: { NO_MKDOCS_2_WARNING: "1" }
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with: { path: site }
+
+  deploy:
+    name: Deploy
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -38,6 +38,8 @@ The installer asks before each step. [Installing msl](docs/install.md) lists its
 
 ## Documentation
 
+The documentation is also published as a website: [onexay.github.io/msl](https://onexay.github.io/msl/).
+
 `msl` accepts `wsl.exe`'s arguments and prints the same messages, so anything that works with `wsl.exe` in a script or a README should work with `msl`. It runs the images from Microsoft's WSL distribution list, unmodified, and honours their `/etc/wsl.conf`. Tested: Ubuntu 26.04 and 24.04, and Debian 13.
 
 - [Getting started](docs/getting_started.md): install, a first distribution, files, ports and VS Code

@@ -1,11 +1,18 @@
 # msl documentation
 
+These pages are also the website [onexay.github.io/msl](https://onexay.github.io/msl/).
+
 **Getting started**
+- [Download](download.md): msl and the VS Code extension, with the one-line installer or by hand
 - [Getting started](getting_started.md): install msl, a first distribution, files, ports and VS Code
 - [Installing msl](install.md): installer options, and everything msl adds to macOS with what undoes it
+- [Upgrading](upgrading.md): breaking changes by version
 
 **Guides**
-- [VS Code and other IDEs](../README.md#vs-code-and-other-ides): what the extension does and how to set it up; [extension README](../extensions/vscode/README.md) for details and troubleshooting
+- [Files and paths](files.md): `/mnt/macos`, `mslpath`, `MSLENV`, `~/.msl/distros` and `msl --mount`
+- [Networking](networking.md): localhost, DNS and the hostname
+- [Disk and storage](storage.md): the shared disk, its size, growing it and returning space to macOS
+- [VS Code](vscode.md): setting up the extension, connecting, and troubleshooting
 - [Troubleshooting](troubleshooting.md): logs, diagnostics and common problems
 
 **Reference**

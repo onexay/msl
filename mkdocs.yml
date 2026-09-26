@@ -1,0 +1,78 @@
+# Documentation site: https://onexay.github.io/msl/
+# Built from docs/ by .github/workflows/docs.yml (mkdocs build --strict).
+# Local preview: pip install -r docs/requirements.txt && mkdocs serve
+site_name: msl
+site_description: Linux distributions on macOS, the way WSL runs them on Windows
+site_url: https://onexay.github.io/msl/
+repo_url: https://github.com/onexay/msl
+repo_name: onexay/msl
+edit_uri: edit/main/docs/
+copyright: Apache-2.0. Not affiliated with Microsoft or Apple.
+
+docs_dir: docs
+exclude_docs: |
+  dev/
+  readme.md
+  requirements.txt
+hooks:
+  - scripts/docs_hooks.py
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle: { icon: material/weather-sunny, name: Light mode }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+validation:
+  nav: { omitted_files: warn, not_found: warn }
+  links: { not_found: warn, anchors: warn, unrecognized_links: warn }
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Download: download.md
+      - Getting started: getting_started.md
+      - Installer details: install.md
+      - Upgrading: upgrading.md
+      - Troubleshooting: troubleshooting.md
+  - Using msl:
+      - The msl command: cli.md
+      - Files and paths: files.md
+      - Networking: networking.md
+      - Disk and storage: storage.md
+      - VS Code: vscode.md
+      - Configuration: configuration.md
+  - Reference:
+      - JSON output: json.md
+      - WSL compatibility: wsl_compatibility.md
+      - How msl compares: comparison.md
+  - Internals:
+      - Architecture: architecture.md
+      - Security: internals/security.md
+      - Third-party notices: third_party_notices.md
+  - Project:
+      - Contributing: project/contributing.md
+      - Changelog: project/changelog.md
+      - Roadmap: https://github.com/onexay/msl/milestones
