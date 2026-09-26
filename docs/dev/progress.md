@@ -416,3 +416,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Theme switched from Material to mkdocs-terminal 4.8.0 (docs/requirements.txt pins mkdocs 1.6.1 and mkdocs-terminal 4.8.0), palette `default`. Material-only config (palette toggles, features, button classes on the home page) removed.
 - The theme has no logo setting: `docs_theme/partials/top-nav/top.html` (a copy of the theme's, one line changed) puts `assets/logo.png` in front of the site name. It loads its favicon from fixed paths, so `docs/img/favicon.ico`, `favicon-16x16.png` and `favicon-32x32.png` are made from the logo.
 - The theme clips the site name (`.logo { overflow: hidden }` in a shrinking flex row): "Modern Subsystem for Li". `docs/css/msl.css` keeps it whole on wide screens and lets it wrap below 720 px, so the menu stays visible. Checked with headless Chrome screenshots at 1280 and 420 px. Strict build clean.
+
+## 2026-09-27 10:00: docs site unpublished
+- Unpublished for local polishing; a move from MkDocs to Hugo is under consideration. GitHub Pages turned off (`DELETE /repos/onexay/msl/pages`; the URL now returns 404) and the Docs workflow disabled with `gh workflow disable` (the file stays). README, CONTRIBUTING and docs/readme.md no longer link to the site. mkdocs.yml, the hook, the theme override and the new pages stay for `mkdocs serve`.

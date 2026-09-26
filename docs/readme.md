@@ -1,7 +1,5 @@
 # msl documentation
 
-These pages are also the website [onexay.github.io/msl](https://onexay.github.io/msl/).
-
 **Getting started**
 - [Download](download.md): msl and the VS Code extension, with the one-line installer or by hand
 - [Getting started](getting_started.md): install msl, a first distribution, files, ports and VS Code
