@@ -22,7 +22,7 @@ jobs:
           kernel/build-linux.sh kernel out "$VER"
           echo "commit ${{ github.sha }}" > out/build-info.txt
           echo "TAG=$(cat out/tag)" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.TAG }}
           path: |

@@ -49,7 +49,7 @@ jobs:
             scripts/package.sh "$V"
           { echo "commit ${{ github.sha }}"; echo "version $V"; xcodebuild -version | head -1; swift --version 2>&1 | head -1; } > dist/build-info.txt
           cat dist/build-info.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package
           path: |

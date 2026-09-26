@@ -30,7 +30,7 @@ jobs:
           [ -f "dist/msl-$V.vsix" ]
           { echo "commit ${{ github.sha }}"; echo "node $(node --version)"; } > dist/build-info.txt
           echo "V=$V" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vscode-${{ env.V }}
           path: |
