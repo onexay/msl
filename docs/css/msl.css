@@ -1,0 +1,10 @@
+/* msl: show the full site name next to the logo in the header. mkdocs-terminal
+   clips .logo (overflow: hidden) and lets the flex row shrink it. On narrow
+   screens the name wraps instead, so the menu and search stay visible. */
+#mkdocs-terminal-site-name { overflow: visible; }
+@media (min-width: 720px) {
+  .terminal-nav .terminal-logo { flex-shrink: 0; }
+}
+@media (max-width: 719px) {
+  #mkdocs-terminal-site-name { white-space: normal; }
+}

@@ -1,5 +1,6 @@
 # Documentation site: https://onexay.github.io/msl/
-# Built from docs/ by .github/workflows/docs.yml (mkdocs build --strict).
+# Built from docs/ by .github/workflows/docs.yml (mkdocs build --strict), with
+# the mkdocs-terminal theme.
 # Local preview: pip install -r docs/requirements.txt && mkdocs serve
 site_name: Modern Subsystem for Linux
 site_description: Linux distributions on macOS, the way WSL runs them on Windows
@@ -19,25 +20,11 @@ hooks:
   - scripts/docs_hooks.py
 
 theme:
-  name: material
-  logo: assets/logo.png
-  favicon: assets/favicon.png
-  features:
-    - navigation.sections
-    - navigation.top
-    - navigation.footer
-    - content.code.copy
-    - content.action.edit
-    - search.highlight
-  palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      toggle: { icon: material/weather-night, name: Dark mode }
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      toggle: { icon: material/weather-sunny, name: Light mode }
+  name: terminal
+  custom_dir: docs_theme     # header override: the logo in front of the site name
+  palette: default
+extra_css:
+  - css/msl.css
 
 markdown_extensions:
   - admonition

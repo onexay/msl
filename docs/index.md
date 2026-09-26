@@ -16,7 +16,7 @@ $ python3 -m http.server 8000     # inside a distro: http://localhost:8000 on ma
 $ ls ~/.msl/distros/Ubuntu/home   # the distro's files from macOS (also in Finder › Locations)
 ```
 
-[Download msl](download.md){ .md-button .md-button--primary } [Getting started](getting_started.md){ .md-button }
+[Download msl](download.md) · [Getting started](getting_started.md)
 
 ## What you get
 
