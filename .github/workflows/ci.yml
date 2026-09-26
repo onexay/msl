@@ -1,6 +1,6 @@
 # Unit tests and lints. The e2e suites (Tests/e2e) need a real VM, which hosted
 # runners can't start; run them locally (see CONTRIBUTING.md).
-name: CI
+name: MSLd
 on:
   push: { branches: [main] }
   pull_request:
