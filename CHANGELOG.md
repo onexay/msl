@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+- msl starts on macOS 26 again. 0.1.9 was built with Xcode 27, whose Swift runtime links libraries macOS 26 doesn't have, so msld failed to start there. Releases are now built by CI with Xcode 26, the version that matches msl's minimum macOS, and `scripts/publish.sh` publishes that build instead of packaging on the releaser's Mac.
+
 ## [0.1.9] - 2026-09-25
 
 ### Fixed

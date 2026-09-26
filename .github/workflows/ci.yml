@@ -21,6 +21,44 @@ jobs:
       - run: swift build
       - run: swift test
 
+  # The release package, built here rather than on a developer's Mac: msl claims
+  # macOS 26 as its minimum, so it must be built with Xcode 26. A newer Xcode's
+  # Swift runtime links libraries macOS 26 lacks (0.1.9 failed to start there).
+  # scripts/publish.sh publishes this artifact; CI never publishes.
+  package:
+    name: Release package
+    runs-on: macos-26
+    env: { GH_TOKEN: "${{ github.token }}" }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select Xcode for the minimum macOS
+        run: |
+          MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
+          XC=$(ls -d /Applications/Xcode_"$MIN"*.app | sort -V | tail -1)
+          [ -n "$XC" ] || { echo "no Xcode $MIN on this runner"; exit 1; }
+          sudo xcode-select -s "$XC"
+          xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
+          xcodebuild -version && swift --version
+      - name: Guest toolchain
+        run: rustup target add aarch64-unknown-linux-musl && brew install protobuf
+      - name: Package
+        run: |
+          V=$(cat VERSION)
+          MSL_RELEASE_BASE_URL=https://github.com/${{ github.repository }}/releases/download/v$V \
+          MSL_UPDATE_CHANNEL_URL=https://github.com/${{ github.repository }}/releases/latest/download/update.json \
+            scripts/package.sh "$V"
+          { echo "commit ${{ github.sha }}"; echo "version $V"; xcodebuild -version | head -1; swift --version 2>&1 | head -1; } > dist/build-info.txt
+          cat dist/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: |
+            dist/msl-*-macos-arm64.tar.gz
+            dist/msl-*-macos-arm64.tar.gz.sha256
+            dist/update.json
+            dist/build-info.txt
+          if-no-files-found: error
+
   guest:
     name: Guest (Rust)
     runs-on: ubuntu-24.04-arm

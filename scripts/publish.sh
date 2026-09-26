@@ -1,10 +1,13 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
-# Package and publish msl <version> as GitHub release v<version>, marked Latest:
-# tarball + .sha256 (install.sh), update.json (msl --update).
+# Publish msl <version> as GitHub release v<version>, marked Latest: tarball +
+# .sha256 (install.sh), update.json (msl --update).
 #   [MSL_GPG_KEY=<key id>] scripts/publish.sh <version> [--prerelease]
-# Requires a clean, pushed tree; the release is tagged at HEAD. With
-# MSL_GPG_KEY, the tarball's .sha256 is signed (.sha256.asc) for install.sh.
+# Requires a clean, pushed tree; the release is tagged at HEAD. The package is
+# not built here: it's the "package" artifact of HEAD's successful CI run,
+# built with the Xcode that matches msl's minimum macOS (a newer local Xcode
+# produces binaries that don't start there). With MSL_GPG_KEY, the tarball's
+# .sha256 is signed (.sha256.asc) for install.sh.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
@@ -27,19 +30,31 @@ CHANGES=$(awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {s=1; next} /^## \[/ {s=0}
 [ -z "$(git status --porcelain)" ] || { echo "commit your changes first" >&2; exit 1; }
 git fetch -q origin && [ "$(git rev-parse HEAD)" = "$(git rev-parse "@{u}")" ] || { echo "push HEAD first" >&2; exit 1; }
 
-export MSL_RELEASE_BASE_URL=https://github.com/$REPO/releases/download/$TAG
-export MSL_UPDATE_CHANNEL_URL=${MSL_UPDATE_CHANNEL_URL:-https://github.com/$REPO/releases/latest/download/update.json}
-scripts/package.sh "$VERSION"
+# The package: CI's artifact for exactly this commit.
+HEAD=$(git rev-parse HEAD)
+RUN=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$HEAD" --status success --json databaseId --jq '.[0].databaseId')
+[ -n "$RUN" ] || { echo "no successful CI run for $HEAD yet (gh run list --workflow ci.yml)" >&2; exit 1; }
+rm -rf dist/ci && gh run download "$RUN" --repo "$REPO" --name package --dir dist/ci
+for f in "$NAME" "$NAME.sha256" update.json build-info.txt; do
+  [ -f "dist/ci/$f" ] || { echo "CI run $RUN has no $f (was VERSION $VERSION when it ran?)" >&2; exit 1; }
+done
+grep -qx "commit $HEAD" dist/ci/build-info.txt || { echo "CI artifact is not from $HEAD" >&2; exit 1; }
+MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
+grep -q "^Xcode $MIN\." dist/ci/build-info.txt || { echo "CI built with $(grep ^Xcode dist/ci/build-info.txt), not Xcode $MIN" >&2; exit 1; }
+(cd dist/ci && shasum -a 256 -c "$NAME.sha256" >/dev/null) || { echo "$NAME doesn't match its .sha256" >&2; exit 1; }
+grep -q "$(cut -d' ' -f1 "dist/ci/$NAME.sha256")" dist/ci/update.json || { echo "update.json doesn't name $NAME's checksum" >&2; exit 1; }
+cp "dist/ci/$NAME" "dist/ci/$NAME.sha256" dist/ci/update.json dist/
+echo "package from CI run $RUN: $(grep ^Xcode dist/ci/build-info.txt), $(grep -i swift dist/ci/build-info.txt | cut -c1-40)"
 
-# The bundled kernel must be the published one.
+# The bundled kernel and VS Code extension must be the published ones.
+PKG=dist/ci/unpacked && rm -rf "$PKG" && mkdir -p "$PKG"
+tar -xzf "dist/$NAME" -C "$PKG" "msl-$VERSION/share/msl/Image" "msl-$VERSION/share/msl/msl.vsix" "msl-$VERSION/share/msl/kernel.version"
 KSUM=$(awk '$2=="Image"{print $1}' kernel/release.sha256)
-[ "$(shasum -a 256 build/share/msl/Image | cut -d' ' -f1)" = "$KSUM" ] \
-  || { echo "build/share/msl/Image is not $KTAG (run kernel/fetch.sh or kernel/publish.sh)" >&2; exit 1; }
-
-# So must the bundled VS Code extension.
+[ "$(shasum -a 256 "$PKG/msl-$VERSION/share/msl/Image" | cut -d' ' -f1)" = "$KSUM" ] \
+  || { echo "the packaged kernel is not $KTAG (run kernel/publish.sh, commit, and let CI rebuild)" >&2; exit 1; }
 XSUM=$(cut -d' ' -f1 extensions/vscode/release.sha256)
-[ "$(shasum -a 256 build/share/msl/msl.vsix | cut -d' ' -f1)" = "$XSUM" ] \
-  || { echo "build/share/msl/msl.vsix is not $XTAG (run extensions/vscode/publish.sh, or delete extensions/vscode/dist to fetch it)" >&2; exit 1; }
+[ "$(shasum -a 256 "$PKG/msl-$VERSION/share/msl/msl.vsix" | cut -d' ' -f1)" = "$XSUM" ] \
+  || { echo "the packaged msl.vsix is not $XTAG (run extensions/vscode/publish.sh)" >&2; exit 1; }
 
 # Sign the checksum with the release key (see SECURITY.md) when it's available.
 SIG=
@@ -63,12 +78,13 @@ Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an 
 
 | | |
 |---|---|
-| Kernel | Linux $(cat build/share/msl/kernel.version), release [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG) |
+| Kernel | Linux $(cat "$PKG/msl-$VERSION/share/msl/kernel.version"), release [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG) |
 | VS Code extension | release [\`$XTAG\`](https://github.com/$REPO/releases/tag/$XTAG), installed by \`msl --manage-ide\` |
 | Commit | $(git rev-parse --short HEAD) |
 | Requires | Apple silicon, macOS 26 or later |
 | GPL sources | BusyBox and e2fsprogs: the attached Debian source packages \`busybox_*\` and \`e2fsprogs_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG). |
-| Signing | $( [ -n "${MSL_SIGN_IDENTITY:-}" ] && echo "Developer ID" || echo "ad-hoc (not notarised)"); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |
+| Built by | CI run [$RUN](https://github.com/$REPO/actions/runs/$RUN), $(grep ^Xcode dist/ci/build-info.txt) |
+| Signing | ad-hoc (not notarised); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |
 
 \`$NAME\` SHA-256: \`$(cut -d' ' -f1 "dist/$NAME.sha256")\`
 NOTES
