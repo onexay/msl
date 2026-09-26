@@ -454,3 +454,4 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-27 03:05: Decision: arm64 only for now
 - x86_64 distro support stays deferred (Nitrogen), and msl supports arm64 distros only. Everything from 2026-09-25 to 09-27 is summarised in #40's update comment: Apple's guidance, the Rosetta/qemu/FEX results, the `systemd=false` table, the FEX `clone3` patch and its test program (both inlined in the issue), and the steps if this resumes. The FEX patch was not sent upstream.
 - The test VM is shut down and its temporary home removed. #46 (binfmt flush) stays open: it also affects x86 programs in arm64 distros.
+- Closed #46 as not planned: x86_64 programs inside arm64 distros are not supported either.
