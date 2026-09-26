@@ -13,9 +13,12 @@ jobs:
   kernel:
     name: Kernel
     runs-on: ubuntu-24.04-arm
+    # The same image as kernel/build.sh: the kernel config depends on the
+    # toolchain (GCC version, whether rustc exists), not only on our inputs.
+    container: docker.io/library/debian:trixie
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq build-essential flex bison bc libelf-dev libssl-dev curl xz-utils cpio kmod python3
+      - run: apt-get update -qq && apt-get install -y -qq build-essential flex bison bc libelf-dev libssl-dev curl xz-utils cpio kmod python3
       - name: Build
         run: |
           VER=$(sed -n 's/^VER=${KVER:-\(.*\)}$/\1/p' kernel/build.sh)
