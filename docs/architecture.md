@@ -53,7 +53,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
   - Global config: `~/.mslconfig`, the `.wslconfig` equivalent with the same INI keys and the same size-suffix and bad-file rules.
 - VM setup:
   - virtio-blk data disk, a sparse raw image formatted as ext4 on macOS.
-  - `VZVmnetNetworkDeviceAttachment` in shared (NAT) mode (macOS 26). It works with ad-hoc signing and only the virtualization entitlement. The **subnet is pinned** with `vmnet_network_configuration_set_ipv4_subnet`, because it otherwise changes per launch.
+  - `VZVmnetNetworkDeviceAttachment` in shared (NAT) mode (macOS 26). It works with ad-hoc signing and only the virtualization entitlement. The subnet isn't pinned: `vmnet_network_configuration_set_ipv4_subnet` stops vmnet's DHCP from answering the kernel's `ip=dhcp`, and pinning would need static addressing in the guest. If vmnet is unavailable, msld falls back to `VZNATNetworkDeviceAttachment`.
   - `VZVirtioSocketDevice`.
   - virtiofs share of `/`.
   - `VZLinuxRosettaDirectoryShare`.

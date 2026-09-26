@@ -121,4 +121,4 @@ Build requirements, tests, code layout and releases (msl, the kernel and the VS 
 
 msl is an independent project, not affiliated with or endorsed by Microsoft or Apple. WSL and Windows are trademarks of Microsoft Corporation; Mac and macOS are trademarks of Apple Inc.; they are used only to describe compatibility.
 
-msl is licensed under the [Apache License 2.0](LICENSE) (see also [NOTICE](NOTICE)). Release packages include the Linux kernel and BusyBox, which are GPL-2.0 and run inside the VM as separate programs; see [third-party notices](docs/third_party_notices.md).
+msl is licensed under the [Apache License 2.0](LICENSE) (see also [NOTICE](NOTICE)). Release packages include the Linux kernel, BusyBox and e2fsprogs (`e2fsck`, `resize2fs`), which are GPL-2.0 and run inside the VM as separate programs; see [third-party notices](docs/third_party_notices.md).

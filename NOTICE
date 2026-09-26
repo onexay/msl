@@ -4,8 +4,8 @@ Copyright 2026 onexay and the msl contributors
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 Release packages also contain third-party software under their own licences,
-including the Linux kernel and BusyBox (GPL-2.0), which run inside the virtual
-machine as separate programs. See docs/third_party_notices.md.
+including the Linux kernel, BusyBox and e2fsprogs (GPL-2.0), which run inside
+the virtual machine as separate programs. See docs/third_party_notices.md.
 
 msl is an independent project. It is not affiliated with, sponsored or endorsed
 by Microsoft Corporation or Apple Inc. Windows, WSL and Windows Subsystem for
