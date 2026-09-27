@@ -484,3 +484,10 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - The cacheable mapping through the driver is required: `memcpy` runs at 43 GB/s (unaligned too), the same as guest RAM, while stage A's sysfs device-memory mapping gets SIGBUS on `memcpy`. Coherence with the host poll thread and the GPU holds (ping p50 0.12 µs; 1 GiB GPU run correct).
 - Doorbell round trip p50 50 µs (min 27 µs) per kick, with the host handler at about 4.1 µs per element. Batching reaches 686k requests/s at 128 per kick. The doorbell is for wakeups; data goes through polled shm rings.
 - Results posted to #13. The next step is a first ggml graph round trip to host ggml-metal.
+
+## 2026-09-27 19:44: Spike (#13): ggml round trip at native speed
+- Reused llama.cpp's ggml-rpc (client backend, host `rpc-server`, graph cache) with a new byte-ring transport in the msl-accel window: `spikes/13-accel/ggml-rpc-shm.patch` on llama.cpp 9adc7f4, with TCP only for setup and a session epoch for reconnects. `msld` backs the window with a POSIX shm object (`MSL_ACCEL_SPIKE_SHM`) that the host `ggml-rpc-server` (Metal) also maps.
+- `llama-bench` (pp512/tg128, Q4_K_M) in the Ubuntu distro compared with native Metal: Llama 3.2 1B 2431/133.7 vs 2401/140.3 t/s (101%/95%), Qwen2.5 7B 382.7/28.7 vs 382.3/28.6 (100%/100%). ggml-rpc over TCP via vmnet gets 68% and 87% on tg. The distro's own CPU gets 73.6 and 17.1 t/s on tg.
+- Fixed a transport race along the way: `llama-bench` reconnects immediately, and the old server loop consumed the new client's HELLO before noticing the closed TCP peer. A session epoch in the ring header fixes it.
+- Seen: a `msl -d Ubuntu` command issued while msld was stopping the distro on its instance idle timeout hung until killed. Not investigated yet.
+- The shm object is unlinked, and the spike VM, msld and rpc-server are stopped. Results posted to #13.
