@@ -478,3 +478,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-27 19:15: Spike (#13): window size vs memory
 - A boot probe (kernel + busybox initrd, VM RAM 2–36 GiB) shows VZ's 64-bit PCI MMIO range is always 16 GiB, placed at RAM + 2 GiB. The largest window is 16 GiB when RAM + 2 GiB is 16 GiB-aligned (14, 30 GiB: assigned), otherwise 8 GiB. VZ caps VM memory at host RAM (36 GiB), so bigger hosts can't be simulated here; the probe is on `spike/13-accel` for a run on a larger Mac.
 - This doesn't limit model size: weights and KV cache are host-only Metal buffers, bounded by Metal's working set (about 75% of host RAM) minus the VM's RAM. Posted to #13.
+
+## 2026-09-27 19:22: Spike (#13), stage B: guest driver
+- Built-in virtio driver `spikes/13-accel/msl_accel.c` on `spike/13-accel`, compiled into `kernel/out-spike/Image` by `spikes/13-accel/build-kernel.sh` in Apple `container`, and booted with `MSL_KERNEL`. It binds device 63: the window is at 0x600000000 (8 GiB) with a 256-entry packed virtqueue, and it exposes `/dev/msl-accel`.
+- The cacheable mapping through the driver is required: `memcpy` runs at 43 GB/s (unaligned too), the same as guest RAM, while stage A's sysfs device-memory mapping gets SIGBUS on `memcpy`. Coherence with the host poll thread and the GPU holds (ping p50 0.12 µs; 1 GiB GPU run correct).
+- Doorbell round trip p50 50 µs (min 27 µs) per kick, with the host handler at about 4.1 µs per element. Batching reaches 686k requests/s at 128 per kick. The doorbell is for wakeups; data goes through polled shm rings.
+- Results posted to #13. The next step is a first ggml graph round trip to host ggml-metal.
