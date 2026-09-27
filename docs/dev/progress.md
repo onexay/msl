@@ -519,3 +519,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - The generation test (`accel genscan`: per-page generations to tell zeroed, stale-swap-copy and foreign pages apart) never started. The VM panicked 1 s into boot: `EXT4-fs error (device vda): ext4_lookup: inode #8194: deleted inode referenced: 16613400`. msl-guest's NFS file view then hit `entry.metadata().await.unwrap()` in `guest/src/nfs.rs:208`, which got EUCLEAN (117). That is PID 1, so the kernel panicked ("Attempted to kill init"). Every boot fails as soon as msld mounts the file view.
 - Likely fallout from the swap-induced guest memory corruption crashes earlier today (and data.img already had ext4 errors from 2026-09-25). Two MSL bugs to file: guest init must not die on filesystem errors in the file view, and the data disk should get a checked fsck at boot when ext4 has recorded errors.
 - data.img is untouched so far. Repair plan, pending the user: APFS clone backup, then `e2fsck -f`.
+
+## 2026-09-27 23:29: Clean slate with a corrupted data disk
+- `scripts/clean-slate.sh` hung on `--unregister Ubuntu`: unregister needs the guest, and the guest panics at boot on the corrupted ext4.
+- The script now puts a timeout on msl commands (`MSL_TIMEOUT`, default 120 s) and has `--reset-disk`. After the shutdown it stops msld, moves `data.img` and `registry.json` aside as `*.reset-<timestamp>`, and removes empty Finder-view mount points; msld creates a fresh disk on its next start.
+- Ran it: the shutdown timed out (the VM had panicked), then the disk and registry were moved aside. No distros are registered and no msld is running. The Ubuntu distro needs reinstalling.

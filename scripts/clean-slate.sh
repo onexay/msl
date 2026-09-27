@@ -4,7 +4,14 @@
 # (retrying a failed unregister once, see #34), shut down the VM, remove stale
 # vsock bridge sockets, optionally stop msld, then report what is left.
 #
-#   scripts/clean-slate.sh [--stop-msld]
+#   scripts/clean-slate.sh [--stop-msld] [--reset-disk]
+#
+# --reset-disk: for a data disk the VM can't boot from (e.g. ext4 corruption).
+#   After the shutdown it stops msld, moves data.img and registry.json aside as
+#   *.reset-<timestamp> (delete them once you don't need them), and msld creates a
+#   fresh disk on its next start. Implies --stop-msld.
+# msl commands time out after MSL_TIMEOUT seconds (default 120), so a VM that
+# can't boot doesn't hang the script.
 #
 # Uses build/bin/msl unless MSL is set. Everything is also written to
 # build/logs/clean-slate-<timestamp>.log. DELETES ALL DISTROS AND THEIR FILES.
@@ -13,10 +20,13 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 MSL=${MSL:-$ROOT/build/bin/msl}
 DATA="$HOME/Library/Application Support/msl"
 STOP_MSLD=0
+RESET_DISK=0
+TIMEOUT=${MSL_TIMEOUT:-120}
 for a in "$@"; do
   case $a in
     --stop-msld) STOP_MSLD=1 ;;
-    -h|--help) sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --reset-disk) RESET_DISK=1; STOP_MSLD=1 ;;
+    -h|--help) sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $a" >&2; exit 2 ;;
   esac
 done
@@ -26,10 +36,17 @@ LOG="$ROOT/build/logs/clean-slate-$(date '+%Y%m%d-%H%M%S').log"
 
 step() { printf '\n== %s %s\n' "$(date '+%H:%M:%S')" "$*"; }
 run() { printf '$ %s\n' "$*"; "$@"; rc=$?; [ $rc -eq 0 ] || printf '(exit %s)\n' "$rc"; return $rc; }
+# An msl command with a timeout (perl alarm: exit 142 when it fires).
+msl() {
+  printf '$ msl %s\n' "$*"
+  perl -e 'alarm shift; exec @ARGV' "$TIMEOUT" "$MSL" "$@"; rc=$?
+  [ $rc -eq 142 ] && printf '(timed out after %s s)\n' "$TIMEOUT" || { [ $rc -eq 0 ] || printf '(exit %s)\n' "$rc"; }
+  return $rc
+}
 
 # Registered distro names, one per line (empty when none).
 distros() {
-  "$MSL" --list --json 2>/dev/null | /usr/bin/python3 -c '
+  perl -e 'alarm shift; exec @ARGV' "$TIMEOUT" "$MSL" --list --json 2>/dev/null | /usr/bin/python3 -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -50,16 +67,17 @@ names=$(distros)
 echo "$names" | while IFS= read -r n; do
   [ -n "$n" ] || continue
   step "remove $n"
-  run "$MSL" --terminate "$n"
-  if ! run "$MSL" --unregister "$n"; then
+  msl --terminate "$n"
+  msl --unregister "$n"; rc=$?
+  if [ $rc -ne 0 ] && [ $rc -ne 142 ]; then
     echo "unregister failed; retrying once (#34)"
     sleep 2
-    run "$MSL" --unregister "$n"
+    msl --unregister "$n"
   fi
 done
 
 step "shutdown"
-run "$MSL" --shutdown
+msl --shutdown
 
 step "stale sockets"
 # The VM is stopped, so no vsock bridge is listening.
@@ -72,8 +90,10 @@ done
 [ $found -eq 1 ] || echo "(none)"
 
 # Ask msl before msld is stopped: any msl command starts msld again.
-step "distros after"
-names=$(distros); [ -n "$names" ] && echo "$names" || echo "(none)"
+if [ $RESET_DISK -eq 0 ]; then
+  step "distros after"
+  names=$(distros); [ -n "$names" ] && echo "$names" || echo "(none)"
+fi
 
 if [ $STOP_MSLD -eq 1 ]; then
   step "stop msld"
@@ -82,6 +102,20 @@ if [ $STOP_MSLD -eq 1 ]; then
     sleep 1
   else
     echo "(not running)"
+  fi
+fi
+
+if [ $RESET_DISK -eq 1 ]; then
+  step "reset data disk"
+  if pgrep -f 'bin/msld|libexec/msl/msld' >/dev/null; then
+    echo "an msld is still running (another install?); not touching data.img:"; pgrep -lf 'bin/msld|libexec/msl/msld'
+  else
+    ts=$(date '+%Y%m%d-%H%M%S')
+    [ -e "$DATA/data.img" ] && run mv "$DATA/data.img" "$DATA/data.img.reset-$ts"
+    [ -e "$DATA/registry.json" ] && run mv "$DATA/registry.json" "$DATA/registry.json.reset-$ts"
+    # Finder-view mount points of the old distros (rmdir only removes empty, unmounted ones).
+    for d in "$HOME/.msl/distros"/*; do [ -d "$d" ] && ! mount | grep -q " on $d " && run rmdir "$d"; done
+    echo "msld creates a fresh data.img on its next start; delete the *.reset-$ts files when you no longer need them."
   fi
 fi
 
