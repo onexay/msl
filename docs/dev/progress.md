@@ -524,3 +524,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - `scripts/clean-slate.sh` hung on `--unregister Ubuntu`: unregister needs the guest, and the guest panics at boot on the corrupted ext4.
 - The script now puts a timeout on msl commands (`MSL_TIMEOUT`, default 120 s) and has `--reset-disk`. After the shutdown it stops msld, moves `data.img` and `registry.json` aside as `*.reset-<timestamp>`, and removes empty Finder-view mount points; msld creates a fresh disk on its next start.
 - Ran it: the shutdown timed out (the VM had panicked), then the disk and registry were moved aside. No distros are registered and no msld is running. The Ubuntu distro needs reinstalling.
+
+## 2026-09-27 23:38: Generation test on stock MSL: the crash follows a swap burst; lost memory reads as zeros
+- Reinstalled Ubuntu (26.04.1) on the fresh disk with the installed release (msld 0.1.10+bb75105, release kernel, no accel device). `accel genscan 8` ran under host hogs, with `vmmap` sampling the VM process.
+- Timeline: the VM process's swapped size went 0 → 1.9 GB → 0.9 GB while pages were compressed and faulted back, and genscan generations 1–5 were all intact. Then a burst: host compressor 19.6 GB, swapouts 292k → 450k, the VM process 8.3 GB swapped. The guest oopsed at that moment (268 s uptime).
+- The damage hit long-idle kernel memory, not genscan's pages (rewritten every pass): `pc : 0x0` from `__seccomp_filter` (a seccomp BPF program's function pointer read back as 0), then `bpf_prog_free`, then Bad rss-counter. Every corruption caught so far is zeros (wait-queue func, bpf_func, page tables → zero page), which points to pages coming back zero-filled after swap, not stale or foreign.
+- Boot check afterwards: ext4 journal recovery and 4 orphan inodes deleted, no errors.
