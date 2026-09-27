@@ -491,3 +491,10 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Fixed a transport race along the way: `llama-bench` reconnects immediately, and the old server loop consumed the new client's HELLO before noticing the closed TCP peer. A session epoch in the ring header fixes it.
 - Seen: a `msl -d Ubuntu` command issued while msld was stopping the distro on its instance idle timeout hung until killed. Not investigated yet.
 - The shm object is unlinked, and the spike VM, msld and rpc-server are stopped. Results posted to #13.
+
+## 2026-09-27 20:41: Spike (#13): doorbell wakeups
+- Driver `MSL_ACCEL_KICK` and `MSL_ACCEL_WAIT(seq)` on one lock-protected virtqueue. msld wakes the host engine on KICK with `os_sync_wake_by_address_all` (cross-process, on the shm window) and holds WAIT elements until the engine bumps the guest seq and pokes a relay word. The ggml-rpc transport spins for `GGML_RPC_SHM_SPIN_US`, then sleeps; wakers signal only a sleeping peer.
+- tg128 in one session: pure doorbell 117.9 (1B) and 26.5 (7B) vs spin-only 127.8 and 27.4 t/s. pp is unaffected, and spinning roughly doubles CPU on both sides during generation. Idle `llama-server` session for 20 s: host engine 0.94 s CPU with the old 20 µs sleep loop vs 0.10 s with doorbells. Every config answered correctly after idle.
+- One guest kernel oops (slab corruption in `kmem_cache_free`) during the first matrix run. With a completion canary added (magic/kind/len/resp per completion; bad ones leaked, not freed), a rerun of the same sequence plus three extra runs, about 15k doorbell wakeups, showed nothing. Still open: a WAIT-heavy stress test and KASAN next.
+- The vmnet bridge subnet changes per VM boot (192.168.71.1 → 192.168.72.1), so the bench scripts read it from the guest's default route.
+- Results posted to #13; the spike VM and msld are stopped and the shm object is unlinked.
