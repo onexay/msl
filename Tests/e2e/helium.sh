@@ -43,9 +43,11 @@ check "install Debian --no-launch" "Distribution successfully installed. It can 
 check "duplicate install rejected" "A distribution with the supplied name already exists" \
   "$($MSL --install --from-file $CACHE/debian.wsl --no-launch)"
 
-# Ubuntu: install + launch runs Ubuntu's own OOBE (wsl-setup) through a real PTY.
-check "install Ubuntu + OOBE + shell (PTY)" "'exit=3': True" \
-  "$(python3 $ROOT/Tests/e2e/pty_session.py "account:" tester mslpass1 -- $MSL --install --from-file $CACHE/ubuntu-24.04.wsl --name Ubuntu 2>&1 | tr -d '\r' | tail -1)"
+# Ubuntu: install + launch runs Ubuntu's own OOBE (wsl-setup) through a real PTY,
+# with stdin from /dev/tty as install.sh runs it (`curl … | sh`): msl must pass
+# msld the real terminal, not the /dev/tty alias, or the username prompt hangs.
+check "install Ubuntu + OOBE + shell (PTY, stdin from /dev/tty)" "'exit=3': True" \
+  "$(python3 $ROOT/Tests/e2e/pty_session.py "account:" tester mslpass1 -- /bin/sh -c 'exec "$@" < /dev/tty' sh $MSL --install --from-file $CACHE/ubuntu-24.04.wsl --name Ubuntu 2>&1 | tr -d '\r' | tail -1)"
 check "Ubuntu default user after OOBE" "tester" "$($MSL -d Ubuntu whoami)"
 check "Ubuntu user groups from wsl-setup" "sudo" "$($MSL -d Ubuntu id)"
 

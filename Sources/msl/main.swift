@@ -129,6 +129,34 @@ func distros() -> [DistroSummary] {
 
 // MARK: - run
 
+extension TTY {
+    /// The descriptors to hand to msld. On macOS, /dev/tty is an alias the kernel
+    /// resolves to the *calling* process's controlling terminal on each read and
+    /// write; msld has none, so a passed /dev/tty descriptor reads nothing (the
+    /// installer's `msl --install … < /dev/tty` hung at the first prompt). Such
+    /// descriptors are replaced with the real terminal device.
+    static func passable(_ fds: [Int32]) -> [Int32] {
+        var alias = stat()
+        guard stat("/dev/tty", &alias) == 0 else { return fds }
+        var real: Int32?
+        return fds.map { fd in
+            var st = stat()
+            guard fstat(fd, &st) == 0, st.st_rdev == alias.st_rdev else { return fd }
+            if real == nil, let path = controllingTerminal() { real = open(path, O_RDWR | O_NOCTTY | O_CLOEXEC) }
+            return real.flatMap { $0 >= 0 ? $0 : nil } ?? fd
+        }
+    }
+
+    /// e.g. "/dev/ttys003", from the kernel's record of this process.
+    static func controllingTerminal() -> String? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(getpid(), PROC_PIDTBSDINFO, 0, &info, size) == size,
+              info.e_tdev != UInt32(bitPattern: -1), let name = devname(dev_t(bitPattern: info.e_tdev), S_IFCHR) else { return nil }
+        return "/dev/" + String(cString: name)
+    }
+}
+
 func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
     let tty = (isatty(0) != 0, isatty(1) != 0, isatty(2) != 0)
     var env: [String: String] = [:]
@@ -147,7 +175,7 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
     }
     let c = connect()
     do {
-        try c.send(debugShell ? Request.debugShell(req) : Request.run(req), fds: [0, 1, 2])
+        try c.send(debugShell ? Request.debugShell(req) : Request.run(req), fds: TTY.passable([0, 1, 2]))
     } catch {
         fail("Lost connection to msld: \(error)", ErrorCode.service)
     }
