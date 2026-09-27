@@ -537,3 +537,12 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - The same swap burst hit both (MSL 7.3 GB and container 6.5 GB swapped at the same instant). MSL panicked at 211 s (init killed by SIGSEGV). The container stayed clean for 10 more minutes of repeated paging (3.0 ↔ 6.5 GB swapped): genscan done at gen 34 with 0 ZERO, 0 STALE, 0 FOREIGN pages, and 0 oopses.
 - Caveat: the corruption only ever shows in cold kernel state, and the container runs far less of it than a systemd distro. So this points at MSL's configuration but doesn't prove it.
 - Config differences, from Containerization's `VZVirtualMachineInstance.toVZ`: MSL adds a memory balloon device and a USB xHCI controller (Apple has neither), leaves the platform default (Apple sets `VZGenericPlatformConfiguration`), shares the whole Mac `/` over virtiofs, uses disk caching `.automatic`/`.full` (Apple `.cached`/`.fsync`), and boots its own kernel build and cmdline.
+
+## 2026-09-28 00:12: Bisect: not the balloon, not USB, not our kernel
+- Added `MSL_VZ_NO_BALLOON`, `MSL_VZ_NO_USB` and `MSL_VZ_GENERIC_PLATFORM` to msld on `spike/13-accel` (msld logs the resulting VM config), and a cold region to genscan (written once, read back every 60 s). The default platform is already `VZGenericPlatformConfiguration`, so that difference from Apple's setup isn't real.
+- Same host swap pressure each time, one change at a time; the guest confirmed the device set every run:
+  - no balloon: corruption at 131 s (Bad rss-counter in rsyslog, genscan, journald), when the VM jumped 1.9 → 9.5 GB swapped;
+  - no balloon, no USB: oopses at 158 s;
+  - no balloon, no USB, Apple's container kernel (6.18.15 built 2026-03-17): oopses and Bad rss-counter at 210 s, with the VM about 7.8 GB swapped.
+- User pages have never been hit in any run (6 GiB hot plus 3 GiB cold genscan regions, all clean). It's always kernel memory: page tables, slab, BPF programs, wait queues. That's not what randomly lost host pages would look like.
+- Remaining differences from the Apple container that survived: guest workload (a systemd distro plus MSL init vs one process), 12 vCPUs/18 GiB vs 6/12, disk caching `.automatic`/`.full` vs `.cached`/`.fsync`, a virtiofs share of the whole Mac `/`, and the kernel cmdline.
