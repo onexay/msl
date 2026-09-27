@@ -474,3 +474,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - GPU zero-copy works: 1 GiB x*2+1 in 17 ms once warm (first use 215 ms, page wiring). Guest RAM through `guestMemoryMapping` also works as a no-copy `MTLBuffer`, but needs physically contiguous guest memory.
 - Mailbox round trip p50 0.12 µs vs an empty Metal command buffer at p50 14 µs: per-step overhead is Metal's, not the VM's.
 - Verdict: go. The design changes: the window is an 8 GiB aperture, and weights and KV cache live in host-only buffers. Results posted to #13. Next is stage B: a built-in guest driver, which needs a kernel rebuild (no module support).
+
+## 2026-09-27 19:15: Spike (#13): window size vs memory
+- A boot probe (kernel + busybox initrd, VM RAM 2–36 GiB) shows VZ's 64-bit PCI MMIO range is always 16 GiB, placed at RAM + 2 GiB. The largest window is 16 GiB when RAM + 2 GiB is 16 GiB-aligned (14, 30 GiB: assigned), otherwise 8 GiB. VZ caps VM memory at host RAM (36 GiB), so bigger hosts can't be simulated here; the probe is on `spike/13-accel` for a run on a larger Mac.
+- This doesn't limit model size: weights and KV cache are host-only Metal buffers, bounded by Metal's working set (about 75% of host RAM) minus the VM's RAM. Posted to #13.
