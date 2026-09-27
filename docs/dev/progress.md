@@ -509,3 +509,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - At 50 s uptime, before the llama load, 4 MiB of the scanned guest RAM read back as zeros, all mapped to the same physical page (the shared zero page). The kernel then crashed with "Bad rss-counter state" on several processes. So page-table pages were wiped: two 4 KiB page tables in one 16 KiB host page. The host had about 100 MB free, the compressor was growing from 9.5 to 16 GB, and swapouts had started. The window regions stayed identical from both sides.
 - Ruled out free-page reporting: the balloon didn't negotiate it (bit 5 clear), and MSL never inflates the balloon.
 - Open: is this VZ/macOS losing a guest RAM page under pressure in general, or only in VMs with a `mapMemory` window? Next is the same pressure with no accel device.
+
+## 2026-09-27 22:49: Control: guest RAM corruption under host swap, without the spike
+- Stock msld, stock release kernel, no accel device (no `/dev/msl-accel`, no 1af4:107f). Guest scanned 10 GiB of RAM while host hogs held 12, then 20 GB of incompressible memory.
+- About 4 min of compression only: clean. Once macOS swapped (swapouts 60k → 292k), the guest crashed about 2 min later: journald fault in `__handle_mm_fault` on a corrupted page table, oopses in `bpf_prog_free`, `refcount_warn_saturate` and `sk_alloc`, and `Bad rss-counter state` across processes. Same signature as the spike crashes.
+- Conclusion: the #13 crashes come from guest RAM losing contents under host swap. That's platform-level and affects MSL generally; the accel spike isn't the cause. Posted to #13; filing a separate MSL issue is pending the user's go-ahead.
