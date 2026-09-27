@@ -530,3 +530,10 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Timeline: the VM process's swapped size went 0 → 1.9 GB → 0.9 GB while pages were compressed and faulted back, and genscan generations 1–5 were all intact. Then a burst: host compressor 19.6 GB, swapouts 292k → 450k, the VM process 8.3 GB swapped. The guest oopsed at that moment (268 s uptime).
 - The damage hit long-idle kernel memory, not genscan's pages (rewritten every pass): `pc : 0x0` from `__seccomp_filter` (a seccomp BPF program's function pointer read back as 0), then `bpf_prog_free`, then Bad rss-counter. Every corruption caught so far is zeros (wait-queue func, bpf_func, page tables → zero page), which points to pages coming back zero-filled after swap, not stale or foreign.
 - Boot check afterwards: ext4 journal recovery and 4 orphan inodes deleted, no errors.
+
+## 2026-09-27 23:58: Differential: Apple's own VZ setup survives the same swap pressure
+- Stock MSL (release msld and kernel) and an Apple `container` VM (12 GiB, Apple's kernel and VZ config) ran side by side under the same host hogs, each with `genscan` and a /proc/vmstat balloon logger.
+- Balloon ruled out: inflate, deflate and nr_balloon_pages stayed 0 in both.
+- The same swap burst hit both (MSL 7.3 GB and container 6.5 GB swapped at the same instant). MSL panicked at 211 s (init killed by SIGSEGV). The container stayed clean for 10 more minutes of repeated paging (3.0 ↔ 6.5 GB swapped): genscan done at gen 34 with 0 ZERO, 0 STALE, 0 FOREIGN pages, and 0 oopses.
+- Caveat: the corruption only ever shows in cold kernel state, and the container runs far less of it than a systemd distro. So this points at MSL's configuration but doesn't prove it.
+- Config differences, from Containerization's `VZVirtualMachineInstance.toVZ`: MSL adds a memory balloon device and a USB xHCI controller (Apple has neither), leaves the platform default (Apple sets `VZGenericPlatformConfiguration`), shares the whole Mac `/` over virtiofs, uses disk caching `.automatic`/`.full` (Apple `.cached`/`.fsync`), and boots its own kernel build and cmdline.
