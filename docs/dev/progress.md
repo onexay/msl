@@ -498,3 +498,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - One guest kernel oops (slab corruption in `kmem_cache_free`) during the first matrix run. With a completion canary added (magic/kind/len/resp per completion; bad ones leaked, not freed), a rerun of the same sequence plus three extra runs, about 15k doorbell wakeups, showed nothing. Still open: a WAIT-heavy stress test and KASAN next.
 - The vmnet bridge subnet changes per VM boot (192.168.71.1 → 192.168.72.1), so the bench scripts read it from the guest's default route.
 - Results posted to #13; the spike VM and msld are stopped and the shm object is unlinked.
+
+## 2026-09-27 21:20: Spike (#13): stress test and KASAN
+- Built a KASAN + SLUB_DEBUG_ON + lockdep spike kernel (`kasan.fragment`, `EXTRA=` in `build-kernel.sh`). Doorbell stress (random-timeout WAITs, KICKs, batched BENCH, children killed mid-WAIT, `hostpoke` releasing every 0–200 µs) ran 120 s with 4.67M waits, 11.5M kicks and 9,884 kills: 0 reports. The llama.cpp doorbell workload under KASAN: 0 reports.
+- Kicks can hit ENOSPC on the 256-entry queue under 4 kicker threads. A real driver should coalesce kicks.
+- The guest panicked again about 2 min after the clean runs, at 316 s uptime: an ext4 printk woke the kernel-log wait queue and hit an entry with a NULL func. KASAN was silent, and the first crash also corrupted several unrelated slab caches, which points to guest RAM being written from outside the guest kernel (host or VZ), not to the driver. Not isolated yet; the next experiments (stock baseline, accel without the Metal buffer and mailbox thread, lower memory pressure) are listed on #13.
