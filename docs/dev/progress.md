@@ -565,3 +565,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Built the MSL kernel with `CONFIG_ARM64_16K_PAGES` (`spikes/13-accel/page16k.fragment`). Ubuntu 26.04 and the initrd binaries run fine (64 KiB-aligned segments).
 - Same repro with stock devices, from a clean Mac: two eviction bursts (6.3 GB and 7.2 GB of the VM), 0 oops, systemd running at 926 s, genscan 29 generations with 0 bad pages. Every 4 KiB-page run crashed within seconds of the first burst. So the trigger points at 4 KiB guest pages on a 16 KiB host (VZ's 4 KiB granule / TLBI path), most likely an Apple bug. One run so far; to be repeated. Posted to #48.
 - Fixed `swaprepro.sh`: a bare `wait` hung on the endless host logger.
+
+## 2026-09-28 21:22: #48: the 16 KiB-page kernel repeat is clean (2/2)
+- `swaprepro.sh page16k-2` on the 16 KiB-page kernel: VM peak 7.2 GB evicted, genscan clean (20 generations plus 7 cold checks), 0 oopses, systemd running. The host logger was silent for about 4.5 min under the heaviest pressure, and guest uptime lags wall time by about 4 min (the whole Mac stalled); the guest survived that too.
+- Tally: 4 KiB-page guests crashed in 8 of 8 runs with an eviction burst; 16 KiB-page guests 0 of 2 (three bursts in total). Posted to #48. Next: a 4 KiB-assumption audit before making the 16 KiB kernel MSL's default, and a minimal Hypervisor.framework reproducer for Apple.
