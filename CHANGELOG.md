@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Fixed
+- The VM no longer crashes when macOS runs short of memory. With the 4 KiB-page kernel, every distribution could crash within seconds once macOS started compressing or swapping the VM's memory, and a crash in the middle of a write could damage the data disk ([#48](https://github.com/onexay/msl/issues/48)). The cause is Virtualization.framework's handling of 4 KiB guest pages on the Mac's 16 KiB pages. MSL's kernel now uses 16 KiB pages, like the Mac (`getconf PAGESIZE` is 16384). Ubuntu 22.04 and 26.04, Debian 13, Fedora 44, AlmaLinux 9 and Kali were tested: every binary and library loads, and systemd and package managers work. Programs built to assume 4 KiB pages don't run; see [Troubleshooting](docs/troubleshooting.md).
+
 ## [0.1.10] - 2026-09-26
 
 ### Fixed

@@ -24,3 +24,9 @@ CONFIG_BLK_DEV_DM=y
 # NBD client (/dev/nbdN via nbd-client). VZ's NBD disk attachment needs nothing
 # here: the guest sees it as virtio-blk.
 CONFIG_BLK_DEV_NBD=y
+# 16 KiB pages, matching the host. With 4 KiB guest pages, Virtualization.framework's
+# 4 KiB IPA granule path corrupts guest kernel memory when macOS evicts VM memory
+# under pressure (#48); 16 KiB-page guests are unaffected.
+# CONFIG_ARM64_4K_PAGES is not set
+CONFIG_ARM64_16K_PAGES=y
+CONFIG_ARM64_VA_BITS_47=y

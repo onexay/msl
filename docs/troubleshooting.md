@@ -22,6 +22,8 @@
 
 **msl uses more memory than the distributions need.** Virtualization.framework doesn't give memory back to macOS while the VM runs, so it returns only when the VM stops, either after `vmIdleTimeout` or with `msl --shutdown`. [#37](https://github.com/onexay/msl/issues/37) explains why.
 
+**A program fails with "page size" errors, or refuses to start.** MSL's kernel uses 16 KiB pages, like the Mac itself, because 4 KiB guest pages hit a Virtualization.framework bug that corrupts guest memory when macOS runs short of memory ([#48](https://github.com/onexay/msl/issues/48)). Current distributions are built for this: every package tested so far runs, including allocators such as jemalloc. A program built on the assumption of 4 KiB pages (for example with `--with-lg-page=12`) fails to start, or fails to map files, on any 16 KiB or 64 KiB Arm Linux. Use your distribution's package or rebuild the program without that assumption. `getconf PAGESIZE` shows 16384.
+
 **A distribution is x86_64-only.** Not supported yet: `msl --list --online` leaves these distributions out, and `msl --install` refuses them. See [Compatibility with WSL distributions](wsl_compatibility.md).
 
 **VS Code can't connect.** See the troubleshooting section of the [extension's README](../extensions/vscode/README.md).

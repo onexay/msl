@@ -14,7 +14,7 @@ cd "linux-$VER"
 cp "$K/base.config" .config
 scripts/kconfig/merge_config.sh -m .config "$K/msl.fragment"
 make olddefconfig
-for o in USB_XHCI_PCI USB_STORAGE QUOTA NFSD BLK_DEV_DM BLK_DEV_NBD; do grep -q "^CONFIG_$o=y" .config || { echo "missing $o"; exit 1; }; done
+for o in USB_XHCI_PCI USB_STORAGE QUOTA NFSD BLK_DEV_DM BLK_DEV_NBD ARM64_16K_PAGES; do grep -q "^CONFIG_$o=y" .config || { echo "missing $o"; exit 1; }; done
 make -j"$(nproc)" Image
 cp arch/arm64/boot/Image "$OUT/Image"
 cp .config "$OUT/config"
