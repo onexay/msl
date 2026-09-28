@@ -546,3 +546,7 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
   - no balloon, no USB, Apple's container kernel (6.18.15 built 2026-03-17): oopses and Bad rss-counter at 210 s, with the VM about 7.8 GB swapped.
 - User pages have never been hit in any run (6 GiB hot plus 3 GiB cold genscan regions, all clean). It's always kernel memory: page tables, slab, BPF programs, wait queues. That's not what randomly lost host pages would look like.
 - Remaining differences from the Apple container that survived: guest workload (a systemd distro plus MSL init vs one process), 12 vCPUs/18 GiB vs 6/12, disk caching `.automatic`/`.full` vs `.cached`/`.fsync`, a virtiofs share of the whole Mac `/`, and the kernel cmdline.
+
+## 2026-09-28 08:22: Opened #48 (guest kernel memory corruption under host swap)
+- Wrote up every test and finding from the swap investigation in #48 (symptoms, repro, a results table for the six test setups, what's ruled out and what isn't, next steps, and the two related bugs to split out: init panic on EUCLEAN in the file view, and no fsck when ext4 has recorded errors). Linked it from #13.
+- Repro on `spike/13-accel`: `spikes/13-accel/swaprepro.sh` and `hog.c`, with no local paths.
