@@ -559,3 +559,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-28 20:37: #48 V1 rerun after a Mac restart: compression burst, not swap
 - `vsockab.sh quiet` from a clean baseline (16 GB free, no compressor, no swap): the guest panicked at 110 s uptime while macOS evicted 6.6 GB of the VM in about 17 s (vmmap swapped 0.6 → 7.2 GB), with host swapouts only 744 → 888. So the trigger is a large eviction of VM memory into the compressor, not disk swap. vsock is ruled out on a clean baseline too.
+
+## 2026-09-28 21:07: #48: a 16 KiB-page guest kernel survives
+- Static look at `com.apple.Virtualization.VirtualMachine`: it imports `hv_vm_map`/`unmap`/`protect`, `hv_vm_config_set_ipa_granule` (string `non_default_ipa_granule`) and the private `__hv_vcpu_config_set_tlbi_workaround_enabled` (strings `TLBI IPAS2E1IS` and others). So VZ can run a 4 KiB stage-2 granule on the 16 KiB host, with a TLBI workaround.
+- Built the MSL kernel with `CONFIG_ARM64_16K_PAGES` (`spikes/13-accel/page16k.fragment`). Ubuntu 26.04 and the initrd binaries run fine (64 KiB-aligned segments).
+- Same repro with stock devices, from a clean Mac: two eviction bursts (6.3 GB and 7.2 GB of the VM), 0 oops, systemd running at 926 s, genscan 29 generations with 0 bad pages. Every 4 KiB-page run crashed within seconds of the first burst. So the trigger points at 4 KiB guest pages on a 16 KiB host (VZ's 4 KiB granule / TLBI path), most likely an Apple bug. One run so far; to be repeated. Posted to #48.
+- Fixed `swaprepro.sh`: a bare `wait` hung on the endless host logger.
