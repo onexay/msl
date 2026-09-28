@@ -556,3 +556,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - The guest oopsed at 56 s uptime, right after the VM went 5.0 → 8.6 GB swapped (swapouts 1.40M → 1.72M). Same signature (Bad rss-counter in dbus, journald and systemd, then oopses). So vsock data traffic isn't needed to trigger it; V2 (heavy vsock) was skipped for now.
 - The Mac was already swapping before the test (76 MiB free, compressor 7.8 GB, 6.9 of 8 GB swap in use).
 - Found along the way: `~/.mslconfig` here has a `[msl]` section, which the parser ignores. It only reads `[msl2]` keys (like WSL's `[wsl2]`), and unknown keys are dropped silently (`default: break` in MSLConfig.parse). So the 8 GB / 8 CPU settings never applied, and every run used 12 CPUs / 18 GiB.
+
+## 2026-09-28 20:37: #48 V1 rerun after a Mac restart: compression burst, not swap
+- `vsockab.sh quiet` from a clean baseline (16 GB free, no compressor, no swap): the guest panicked at 110 s uptime while macOS evicted 6.6 GB of the VM in about 17 s (vmmap swapped 0.6 → 7.2 GB), with host swapouts only 744 → 888. So the trigger is a large eviction of VM memory into the compressor, not disk swap. vsock is ruled out on a clean baseline too.
