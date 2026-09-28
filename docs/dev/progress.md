@@ -550,3 +550,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 ## 2026-09-28 08:22: Opened #48 (guest kernel memory corruption under host swap)
 - Wrote up every test and finding from the swap investigation in #48 (symptoms, repro, a results table for the six test setups, what's ruled out and what isn't, next steps, and the two related bugs to split out: init panic on EUCLEAN in the file view, and no fsck when ext4 has recorded errors). Linked it from #13.
 - Repro on `spike/13-accel`: `spikes/13-accel/swaprepro.sh` and `hog.c`, with no local paths.
+
+## 2026-09-28 20:13: #48 V1: vsock quiet still corrupts
+- `spikes/13-accel/vsockab.sh quiet` (on `spike/13-accel`): a test config via `MSL_CONFIG` with localhost forwarding and DNS tunneling off and idle timeouts disabled; `MSL_NO_FILEVIEW=1`; the scanner started, then its session ended. Only the control channel was open.
+- The guest oopsed at 56 s uptime, right after the VM went 5.0 → 8.6 GB swapped (swapouts 1.40M → 1.72M). Same signature (Bad rss-counter in dbus, journald and systemd, then oopses). So vsock data traffic isn't needed to trigger it; V2 (heavy vsock) was skipped for now.
+- The Mac was already swapping before the test (76 MiB free, compressor 7.8 GB, 6.9 of 8 GB swap in use).
+- Found along the way: `~/.mslconfig` here has a `[msl]` section, which the parser ignores. It only reads `[msl2]` keys (like WSL's `[wsl2]`), and unknown keys are dropped silently (`default: break` in MSLConfig.parse). So the 8 GB / 8 CPU settings never applied, and every run used 12 CPUs / 18 GiB.
