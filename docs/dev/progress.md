@@ -583,3 +583,9 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - Contents: the 16 KiB-page kernel `kernel-6.18.15-msl-21f0ec7` (#48), and `msl --install` no longer hangs with stdin from `/dev/tty` (bad62ad). Package from CI run 36455383803 (Xcode 26.6), commit 1982505, unsigned like 0.1.10. `update.json` stable points to 0.1.11.
 - e2e against the release build before publishing (#44 isn't automated yet): helium 40/41, lithium 25/25, beryllium 26/26, boron 55/55, carbon 20/20, neon 20/20, sodium 22/22, magnesium 16/16, release.sh passed. The helium failure is the PTY OOBE check (`exit=3`), which ends without a result when run from a session with no controlling terminal. It's identical with the previous 4 KiB kernel, so not a regression. Filed #49.
 - Local only: `.git/info/exclude` now lists untracked local files (`LOG.md.old`, `kernel/out-spike*/`, `site/` drafts) so `publish.sh`'s clean-tree check passes.
+
+## 2026-09-28 23:09: Spike (#13) re-checked on the 16 KiB-page kernel
+- Merged main into `spike/13-accel` and built `msl_accel.c` into the release kernel config (16 KiB pages). The driver needed no change. The only fix was `accel.c`'s `virt2phys` (hardcoded 4096 for pagemap), commit 4730390.
+- Smaller sizing to stay out of swap: 8 GiB VM, 1 GiB window (was 18 and 8). Probes match or beat 4 KiB: mailbox p50 0.08–0.12 µs, driver-mapped memcpy 44–49 GB/s, GPU zero-copy correct, doorbell p50 41 µs, batched 1.85M req/s.
+- ggml over the shm rings vs native Metal: 1B pp 99%, tg 93% (default spin) / 97% (pure spin); 7B pp 100%, tg 98% / 100%. Doorbell stress 60 s with hostpoke: 3.07M waits, 9.6M kicks, 0 reports. Swap stayed at 377 MB.
+- Results posted to #13. The spike VM, msld and rpc-server are stopped and the shm object is unlinked. Next: step 2, the `msl-accel` core.
