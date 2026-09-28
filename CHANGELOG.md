@@ -4,8 +4,11 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-09-28
+
 ### Fixed
 - The VM no longer crashes when macOS runs short of memory. With the 4 KiB-page kernel, every distribution could crash within seconds once macOS started compressing or swapping the VM's memory, and a crash in the middle of a write could damage the data disk ([#48](https://github.com/onexay/msl/issues/48)). The cause is Virtualization.framework's handling of 4 KiB guest pages on the Mac's 16 KiB pages. MSL's kernel now uses 16 KiB pages, like the Mac (`getconf PAGESIZE` is 16384). Ubuntu 22.04 and 26.04, Debian 13, Fedora 44, AlmaLinux 9 and Kali were tested: every binary and library loads, and systemd and package managers work. Programs built to assume 4 KiB pages don't run; see [Troubleshooting](docs/troubleshooting.md).
+- `msl --install` no longer hangs at the first setup prompt when its input is `/dev/tty`, as when `install.sh` runs it. On macOS `/dev/tty` means the calling process's controlling terminal, and msld has none. msl now passes msld the real terminal device instead.
 
 ## [0.1.10] - 2026-09-26
 
@@ -113,7 +116,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/onexay/msl/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/onexay/msl/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/onexay/msl/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/onexay/msl/compare/v0.1.7...v0.1.8
