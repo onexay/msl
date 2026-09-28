@@ -578,3 +578,8 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-28 21:59: Published kernel-6.18.15-msl-21f0ec7 (16 KiB pages)
 - CI (Kernel workflow, run 36450256573, commit b1b90ca) built the 16 KiB-page kernel. `kernel/publish.sh` published it as release `kernel-6.18.15-msl-21f0ec7` (Image, config, release.sha256, linux-6.18.15.tar.xz) and wrote `kernel/release.tag` and `kernel/release.sha256`. The repo's Latest is still v0.1.10. The next MSL release packages this kernel; `msl --update` then delivers it.
+
+## 2026-09-28 22:42: Released v0.1.11
+- Contents: the 16 KiB-page kernel `kernel-6.18.15-msl-21f0ec7` (#48), and `msl --install` no longer hangs with stdin from `/dev/tty` (bad62ad). Package from CI run 36455383803 (Xcode 26.6), commit 1982505, unsigned like 0.1.10. `update.json` stable points to 0.1.11.
+- e2e against the release build before publishing (#44 isn't automated yet): helium 40/41, lithium 25/25, beryllium 26/26, boron 55/55, carbon 20/20, neon 20/20, sodium 22/22, magnesium 16/16, release.sh passed. The helium failure is the PTY OOBE check (`exit=3`), which ends without a result when run from a session with no controlling terminal. It's identical with the previous 4 KiB kernel, so not a regression. Filed #49.
+- Local only: `.git/info/exclude` now lists untracked local files (`LOG.md.old`, `kernel/out-spike*/`, `site/` drafts) so `publish.sh`'s clean-tree check passes.
