@@ -575,3 +575,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 - openSUSE Tumbleweed and Leap 16.0 didn't install: "The downloaded file's SHA-256 does not match the distribution list". That's independent of the kernel, and should be looked at separately.
 - `kernel/msl.fragment` now sets `CONFIG_ARM64_16K_PAGES` and `CONFIG_ARM64_VA_BITS_47`, and `build-linux.sh` fails if 16K pages aren't set. New kernel tag `kernel-6.18.15-msl-21f0ec7`, built locally with `kernel/build.sh`, not published yet. Smoke test of the stock build: PAGESIZE 16384, systemd running.
 - Docs: `docs/architecture.md` (kernel), `docs/troubleshooting.md` (programs that assume 4 KiB pages), CHANGELOG [Unreleased].
+
+## 2026-09-28 21:59: Published kernel-6.18.15-msl-21f0ec7 (16 KiB pages)
+- CI (Kernel workflow, run 36450256573, commit b1b90ca) built the 16 KiB-page kernel. `kernel/publish.sh` published it as release `kernel-6.18.15-msl-21f0ec7` (Image, config, release.sha256, linux-6.18.15.tar.xz) and wrote `kernel/release.tag` and `kernel/release.sha256`. The repo's Latest is still v0.1.10. The next MSL release packages this kernel; `msl --update` then delivers it.
