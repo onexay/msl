@@ -32,22 +32,22 @@ $ ls ~/.msl/distros/Ubuntu/home   # the distro's files from macOS (also in Finde
 $ curl -fsSL https://raw.githubusercontent.com/onexay/msl/main/install.sh | sh
 ```
 
-The installer asks before each step. [Installing msl](docs/install.md) lists its options for an unattended install, and everything msl adds to macOS with what undoes it. Update with `msl --update`. `msl --uninstall` removes msl and undoes the IDE setup, but keeps your distributions.
+The installer asks before each step. [Installing msl](https://onexay.github.io/msl-docs/docs/install/install-manual/) lists its options for an unattended install, and everything msl adds to macOS with what undoes it. Update with `msl --update`. `msl --uninstall` removes msl and undoes the IDE setup, but keeps your distributions.
 
-[Getting started](docs/getting_started.md) goes from here to a shell in Ubuntu and a VS Code window inside it.
+[Getting started](https://onexay.github.io/msl-docs/docs/install/install/) goes from here to a shell in Ubuntu and a VS Code window inside it.
 
 ## Documentation
 
 `msl` accepts `wsl.exe`'s arguments and prints the same messages, so anything that works with `wsl.exe` in a script or a README should work with `msl`. It runs the images from Microsoft's WSL distribution list, unmodified, and honours their `/etc/wsl.conf`. Tested: Ubuntu 26.04 and 24.04, and Debian 13.
 
-- [Getting started](docs/getting_started.md): install, a first distribution, files, ports and VS Code
-- [The msl command](docs/cli.md): the full `msl --help`, every command, and `/mnt/macos`, `mslpath`, localhost and DNS inside a distribution
-- [Configuration](docs/configuration.md): `~/.mslconfig`, `/etc/wsl.conf` and `/etc/msl.conf`, environment variables
-- [Compatibility with WSL distributions](docs/wsl_compatibility.md): each WSL feature and its msl equivalent
-- [JSON output](docs/json.md): `--json` for scripts
-- [Troubleshooting](docs/troubleshooting.md)
+- [Getting started](https://onexay.github.io/msl-docs/docs/install/install/): install, a first distribution, files, ports and VS Code
+- [The msl command](https://onexay.github.io/msl-docs/docs/overview/basic-commands/): the full `msl --help`, every command, and `/mnt/macos`, `mslpath`, localhost and DNS inside a distribution
+- [Configuration](https://onexay.github.io/msl-docs/docs/concepts/msl-config/): `~/.mslconfig`, `/etc/wsl.conf` and `/etc/msl.conf`, environment variables
+- [Compatibility with WSL distributions](https://onexay.github.io/msl-docs/docs/overview/compare-wsl/): each WSL feature and its msl equivalent
+- [JSON output](https://onexay.github.io/msl-docs/docs/how-to/json-output/): `--json` for scripts
+- [Troubleshooting](https://onexay.github.io/msl-docs/docs/troubleshooting/)
 
-The [documentation index](docs/readme.md) lists everything, including the architecture and design notes.
+Everything else is on the [MSL documentation site](https://onexay.github.io/msl-docs/). The [developer notes](docs/readme.md) cover the architecture and design.
 
 ## VS Code and other IDEs
 
@@ -67,7 +67,7 @@ $ msl --manage-ide --ide all --uninstall
 
 Then quit and reopen the IDE (⌘Q). In the command palette, run **MSL: Connect to Distro**, or use `code --folder-uri vscode-remote://msl+<distro>/home/<user>`. The first connection to a distro installs the VS Code Server that matches your IDE's version. It's downloaded on macOS and cached, so the distro needs no `curl` or `wget`.
 
-More: [VS Code](docs/vscode.md), including troubleshooting.
+More: [VS Code](https://onexay.github.io/msl-docs/docs/tutorials/msl-vscode/), including troubleshooting.
 
 ## How it works
 

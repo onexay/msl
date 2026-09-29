@@ -2,7 +2,7 @@
 import Foundation
 
 /// `--json` output of the query commands (`--list`, `--list --online`,
-/// `--status`, `--version`). Conventions (docs/json.md):
+/// `--status`, `--version`). Conventions (https://onexay.github.io/msl-docs/docs/how-to/json-output/):
 /// - one object on stdout with `"schema": 1`; bumped only for breaking changes,
 ///   new fields may appear at any time;
 /// - camelCase fields; unknown values are omitted, never `null`;
