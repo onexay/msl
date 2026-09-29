@@ -7,11 +7,14 @@ public struct DistroRecord: Codable, Equatable, Sendable {
     public var name: String
     public var version: Int = 2
     public var defaultUid: UInt32 = 0
-    public var location: String        // --import/--install location (recorded; storage is the shared data disk)
+    public var location: String        // --import/--install location: the folder holding its ext4.img
     public var oobeCommand: String = ""
     public var oobeDefaultUid: UInt32?
     public var oobePending: Bool = false
     public var createdAt: Date = Date()
+    /// Its own disk (#50); nil for a distro still kept on the shared data.img.
+    /// Optional, so a registry.json from before it still decodes.
+    public var disk: DistroDiskInfo?
 
     public init(id: String, name: String, location: String) {
         self.id = id
