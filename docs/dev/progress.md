@@ -645,3 +645,11 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
   - New e2e `silicon.sh` with 2 slots: first run 45/49. Four test bugs: the install message; Debian still running under its idle timeout, so B couldn't get a slot; a 5 TB resize hits the Mac-volume check before the 4 TB one; a file written after `sync` is lost when the VM dies, as on any disk. That last one also showed the docs overstated crash safety: now only what the distro had written out survives an msld/VM crash. Second run 49/49.
   - Trims reach the NBD server: `--compact` punched the freed 512 MB out of ext4.img (carbon).
   - Existing suites: lithium 27/27 (`--move` now works), carbon 20/20 (compact measured on ext4.img), magnesium 16/16 (`MSL_LEGACY_STORE` keeps covering data.img), helium 40/41 (the known #49 PTY check, same output as on 09-28), boron 55/55.
+- 20:29 fio in Debian on its root filesystem (2 GiB file, `direct=1`, libaio, 10 s), data.img (direct VZ attachment) vs own disk (NBD slot):
+  - 1 MiB read, queue depth 8: 6446 vs 7237 MiB/s
+  - 1 MiB write, queue depth 8: 3269 vs 7253 MiB/s
+  - 4 KiB random read, queue depth 1: 119 vs 74 µs
+  - 4 KiB random read, queue depth 32: 84k vs 126k IOPS
+  - 4 KiB random write, queue depth 1: 68 vs 91 µs
+  - 4 KiB random write, queue depth 32: 133k vs 117k IOPS
+  - 4 KiB random write with `fsync=1`: 191 vs 10.3k IOPS. The own disk's fsync never reaches the SSD, as documented.
