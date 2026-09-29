@@ -654,3 +654,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
   - 4 KiB random write, queue depth 32: 133k vs 117k IOPS
   - 4 KiB random write with `fsync=1`: 191 vs 10.3k IOPS. The own disk's fsync never reaches the SSD, as documented.
 - 20:40 Pushed main (the repo split, progress notes, VM identity) and opened PR #51 from distro-disks (6 commits), which closes #50.
+
+## 2026-09-29 21:01: kernel with KVM
+- 21:01 Kernel `kernel-6.18.15-msl-a1a22bd` (msl-kernel 91c098a) published and pinned: KVM built in, and `uname -r` now shows the release (build-linux.sh passes `LOCALVERSION=-msl-<hash>` from tag.sh and checks `kernelrelease` against the tag). The first CI run, without the suffix, was cancelled. Checked in a Debian distro: `uname -r` 6.18.15-msl-a1a22bd, `/dev/kvm` root:kvm 660, `KVM_GET_API_VERSION` 12, `--status` shows nested virtualization on.
