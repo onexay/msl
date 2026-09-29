@@ -16,8 +16,8 @@ localhostForwarding = true   # default true
 dnsTunneling = true          # default true; false uses vmnet's DNS
 nestedVirtualization = true  # default true; /dev/kvm in the VM (M3 or later, macOS 15)
 vmIdleTimeout = 60000        # ms; VM stops this long after the last distro stops
-defaultVhdSize = 256GB       # size of the shared disk when it's created (default 256GB,
-                             # at most the macOS disk); grow it later with --manage --resize
+defaultVhdSize = 256GB       # size of each new distribution's disk (default 256GB, at
+                             # most the macOS disk); grow one with --manage --resize
 fileViewTransport = unix     # how ~/.msl/distros is served: unix (default, a 0600 socket)
                              # or tcp (a 127.0.0.1 port; weaker on a shared system)
 

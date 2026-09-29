@@ -96,7 +96,7 @@ Tracked as [issues](https://github.com/onexay/msl/issues); planned work is in th
 
 - **x86_64 distros:** not supported yet.
 - **Memory:** returned to macOS only when the VM stops, because Virtualization.framework's balloon doesn't give pages back. `autoMemoryReclaim` has no effect.
-- **Disk:** all distros share one sparse disk, 256 GiB by default (`defaultVhdSize`). `--manage --resize` grows it for all of them; it can't shrink, and `--move` isn't supported. `--compact` and trim on shutdown shrink `data.img` on macOS.
+- **Disk:** each distro has its own sparse `ext4.img` in its install location, 256 GiB by default (`defaultVhdSize`, `--vhd-size`), hot-attached through NBD disk slots (#50). `--manage --resize`, `--move`, `--export --vhd`, `--import --vhd` and `--import-in-place` work as in WSL, with raw ext4 images instead of VHDX. `fsync` inside a distro isn't a durability point: writes are flushed to the SSD when a disk is detached and at shutdown.
 - **`~/.msl/distros`:** available only while the VM runs.
 - **Not available:** GPU, WSLg and GUI apps, WSL 1, mirrored networking.
 - **Signing:** releases aren't notarised yet.

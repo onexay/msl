@@ -104,3 +104,20 @@ pub fn fstrim(path: &str) -> std::io::Result<u64> {
     }
     Ok(r.len)
 }
+
+/// BLKFLSBUF: drop a block device's buffer cache, e.g. after the host switched
+/// the file behind an NBD slot.
+pub fn blkflsbuf(f: &std::fs::File) -> std::io::Result<()> {
+    const BLKFLSBUF: libc::c_ulong = 0x1261; // _IO(0x12, 97)
+    if unsafe { libc::ioctl(std::os::fd::AsRawFd::as_raw_fd(f), BLKFLSBUF as _) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+/// Open a block device exclusively. Fails with EBUSY while anything holds it,
+/// including a mounted filesystem that was lazily detached but is still in use.
+pub fn open_excl(dev: &str) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new().read(true).write(true).custom_flags(libc::O_EXCL | libc::O_CLOEXEC).open(dev)
+}

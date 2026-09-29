@@ -92,7 +92,7 @@ These run containers, not your day-to-day distro, but they are what many macOS t
 - **Memory.** OrbStack, Docker VMM, libkrun-based tools and WSL return memory while the VM runs. msl only returns it when the VM idles out, which is the same Virtualization.framework limit Apple `container`, Lima and ArcBox's VZ backend hit.
 - **GPU and GUI apps.** WSL has WSLg and GPU compute. Podman (libkrun), Lima/Colima (krunkit), UTM 5 and Parallels have Vulkan/3D in Linux guests. msl has neither, and Virtualization.framework offers only 2D virtio-gpu.
 - **Containers.** OrbStack, Docker Desktop, Podman, Rancher and Apple `container` ship a container engine and Kubernetes integration. With msl you install Docker or Podman inside a distro yourself.
-- **Disk.** WSL resizes VHDs, while msl can't grow the store (`--manage --resize` isn't supported yet).
+- **Disk.** Both give each distro its own disk and can move, resize, export and import it; msl's are raw ext4 rather than VHDX, and `fsync` inside a distro isn't durable on msl (Virtualization.framework passes no flushes to hot-attached disks).
 - **Files view.** `~/.msl/distros` works only while the VM runs (there's no auto-start on access; an FSKit version could add it). WSL's `\\wsl.localhost` starts the distro on access.
 - **Networking modes.** WSL has mirrored and `consomme` modes, and Apple `container` gives each VM its own IP. msl has NAT only.
 - **Distro choice.** msl runs what Microsoft's list offers for arm64 (Ubuntu, Debian, Fedora, AlmaLinux, openSUSE, Kali) plus any `.wsl` or tar you import. OrbStack and Lima offer more distros out of the box, and Apple `container machine` takes any OCI image with an init.

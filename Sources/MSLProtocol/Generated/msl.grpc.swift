@@ -212,6 +212,58 @@ public enum Msl_V1_MiniInit: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "AttachDisk" metadata.
+        public enum AttachDisk: Sendable {
+            /// Request type for "AttachDisk".
+            public typealias Input = Msl_V1_AttachDiskRequest
+            /// Response type for "AttachDisk".
+            public typealias Output = Msl_V1_AttachDiskReply
+            /// Descriptor for "AttachDisk".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
+                method: "AttachDisk",
+                type: .unary
+            )
+        }
+        /// Namespace for "DetachDisk" metadata.
+        public enum DetachDisk: Sendable {
+            /// Request type for "DetachDisk".
+            public typealias Input = Msl_V1_DistroRef
+            /// Response type for "DetachDisk".
+            public typealias Output = Msl_V1_Empty
+            /// Descriptor for "DetachDisk".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
+                method: "DetachDisk",
+                type: .unary
+            )
+        }
+        /// Namespace for "MigrateDistro" metadata.
+        public enum MigrateDistro: Sendable {
+            /// Request type for "MigrateDistro".
+            public typealias Input = Msl_V1_DistroRef
+            /// Response type for "MigrateDistro".
+            public typealias Output = Msl_V1_MigrateDistroReply
+            /// Descriptor for "MigrateDistro".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
+                method: "MigrateDistro",
+                type: .unary
+            )
+        }
+        /// Namespace for "DistroConf" metadata.
+        public enum DistroConf: Sendable {
+            /// Request type for "DistroConf".
+            public typealias Input = Msl_V1_DistroRef
+            /// Response type for "DistroConf".
+            public typealias Output = Msl_V1_DistributionConf
+            /// Descriptor for "DistroConf".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
+                method: "DistroConf",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "msl.v1.MiniInit" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Ping.descriptor,
@@ -227,7 +279,11 @@ public enum Msl_V1_MiniInit: Sendable {
             MountDisk.descriptor,
             UnmountDisk.descriptor,
             CompactDisk.descriptor,
-            SetFileView.descriptor
+            SetFileView.descriptor,
+            AttachDisk.descriptor,
+            DetachDisk.descriptor,
+            MigrateDistro.descriptor,
+            DistroConf.descriptor
         ]
     }
 }
@@ -568,6 +624,103 @@ extension Msl_V1_MiniInit {
             deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "AttachDisk" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
+        /// > the slot's block device (found by its virtio serial) as the distro's
+        /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
+        /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_AttachDiskRequest` message.
+        ///   - serializer: A serializer for `Msl_V1_AttachDiskRequest` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_AttachDiskReply` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func attachDisk<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_AttachDiskRequest>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_AttachDiskRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_AttachDiskReply>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_AttachDiskReply>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DetachDisk" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
+        /// > host can rebind the slot to another file.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+        ///   - serializer: A serializer for `Msl_V1_DistroRef` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func detachDisk<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_DistroRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "MigrateDistro" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Copies a distro kept on data.img onto its (attached) own disk, then removes
+        /// > it from data.img.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+        ///   - serializer: A serializer for `Msl_V1_DistroRef` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_MigrateDistroReply` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func migrateDistro<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_DistroRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_MigrateDistroReply>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_MigrateDistroReply>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DistroConf" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > /etc/wsl-distribution.conf of an attached distro (import of a disk image).
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+        ///   - serializer: A serializer for `Msl_V1_DistroRef` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_DistributionConf` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func distroConf<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_DistroRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_DistributionConf>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_DistributionConf>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -1057,6 +1210,147 @@ extension Msl_V1_MiniInit {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "AttachDisk" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
+        /// > the slot's block device (found by its virtio serial) as the distro's
+        /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
+        /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_AttachDiskRequest` message.
+        ///   - serializer: A serializer for `Msl_V1_AttachDiskRequest` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_AttachDiskReply` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func attachDisk<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_AttachDiskRequest>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_AttachDiskRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_AttachDiskReply>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_AttachDiskReply>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Msl_V1_MiniInit.Method.AttachDisk.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DetachDisk" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
+        /// > host can rebind the slot to another file.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+        ///   - serializer: A serializer for `Msl_V1_DistroRef` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func detachDisk<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_DistroRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Msl_V1_MiniInit.Method.DetachDisk.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "MigrateDistro" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Copies a distro kept on data.img onto its (attached) own disk, then removes
+        /// > it from data.img.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+        ///   - serializer: A serializer for `Msl_V1_DistroRef` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_MigrateDistroReply` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func migrateDistro<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_DistroRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_MigrateDistroReply>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_MigrateDistroReply>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Msl_V1_MiniInit.Method.MigrateDistro.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DistroConf" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > /etc/wsl-distribution.conf of an attached distro (import of a disk image).
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+        ///   - serializer: A serializer for `Msl_V1_DistroRef` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_DistributionConf` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func distroConf<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_DistroRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_DistributionConf>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_DistributionConf>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Msl_V1_MiniInit.Method.DistroConf.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -1459,6 +1753,127 @@ extension Msl_V1_MiniInit.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_FileViewRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AttachDisk" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
+    /// > the slot's block device (found by its virtio serial) as the distro's
+    /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
+    /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Msl_V1_AttachDiskRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func attachDisk<Result>(
+        request: GRPCCore.ClientRequest<Msl_V1_AttachDiskRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_AttachDiskReply>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.attachDisk(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_AttachDiskRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_AttachDiskReply>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DetachDisk" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
+    /// > host can rebind the slot to another file.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func detachDisk<Result>(
+        request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.detachDisk(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_DistroRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MigrateDistro" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Copies a distro kept on data.img onto its (attached) own disk, then removes
+    /// > it from data.img.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func migrateDistro<Result>(
+        request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_MigrateDistroReply>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.migrateDistro(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_DistroRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_MigrateDistroReply>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DistroConf" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > /etc/wsl-distribution.conf of an attached distro (import of a disk image).
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Msl_V1_DistroRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func distroConf<Result>(
+        request: GRPCCore.ClientRequest<Msl_V1_DistroRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_DistributionConf>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.distroConf(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_DistroRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_DistributionConf>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1919,6 +2334,143 @@ extension Msl_V1_MiniInit.ClientProtocol {
             metadata: metadata
         )
         return try await self.setFileView(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AttachDisk" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
+    /// > the slot's block device (found by its virtio serial) as the distro's
+    /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
+    /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func attachDisk<Result>(
+        _ message: Msl_V1_AttachDiskRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_AttachDiskReply>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Msl_V1_AttachDiskRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.attachDisk(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DetachDisk" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
+    /// > host can rebind the slot to another file.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func detachDisk<Result>(
+        _ message: Msl_V1_DistroRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Msl_V1_DistroRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.detachDisk(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MigrateDistro" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Copies a distro kept on data.img onto its (attached) own disk, then removes
+    /// > it from data.img.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func migrateDistro<Result>(
+        _ message: Msl_V1_DistroRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_MigrateDistroReply>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Msl_V1_DistroRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.migrateDistro(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DistroConf" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > /etc/wsl-distribution.conf of an attached distro (import of a disk image).
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func distroConf<Result>(
+        _ message: Msl_V1_DistroRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_DistributionConf>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Msl_V1_DistroRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.distroConf(
             request: request,
             options: options,
             onResponse: handleResponse

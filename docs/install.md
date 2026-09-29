@@ -39,7 +39,7 @@ Created on first use, not by the installer:
 
 | What | Where |
 |---|---|
-| Distributions and state | `~/Library/Application Support/msl/`: `data.img` (one sparse disk for all distros, 256 GiB maximum), `registry.json`, `msld.log`, and the sockets `msld.sock` and `connect.sock` |
+| Distributions and state | `~/Library/Application Support/msl/`: `distros/<id>/ext4.img` (one sparse disk per distribution, 256 GiB maximum by default), `data.img` (distributions from earlier versions), `registry.json`, `msld.log`, and the sockets `msld.sock` and `connect.sock` |
 | Distribution files in Finder | `~/.msl/distros/<distro>`: NFS mounts that exist while the VM runs |
 | Downloads | `~/Library/Caches/msl/`: distribution images, and the VS Code Server for your IDE's version |
 | VM settings | `~/.mslconfig`, only if you create it ([Configuration](configuration.md)) |

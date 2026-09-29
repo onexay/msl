@@ -4,6 +4,11 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+- Each new distribution gets its own disk, a sparse `ext4.img` in its install location, like WSL's `ext4.vhdx` ([#50](https://github.com/onexay/msl/issues/50)). Disks are attached to the running VM through 16 NBD disk slots served by msld. `--manage --move`, per-distribution `--manage --resize`, `--export --vhd`, `--import --vhd`, `--import-in-place` and `--install --vhd-size` now work; images are raw ext4, not VHDX. Distributions from earlier versions stay on the shared `data.img` until `--move`. Virtualization.framework passes no flushes to hot-attached disks, so `fsync` inside a distribution isn't a durability point: writes are flushed to the SSD when a disk is detached and at shutdown ([Disk and storage](docs/storage.md#durability)).
+- `[msl2] nestedVirtualization` (default true): `/dev/kvm` in the distributions on an M3 or later.
+- The VM keeps one machine identifier across boots, and its `/etc/machine-id` is that identifier's UUID.
+
 ### Changed
 - The kernel and the VS Code extension moved to their own repositories, [msl-kernel](https://github.com/onexay/msl-kernel) and [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension). msl pins a release of each (`scripts/pin.sh`) and bundles it as before.
 - Kernel `kernel-6.18.15-msl-a1a22bd`: KVM is built in, so `/dev/kvm` works in the distributions with nested virtualization (`KVM_GET_API_VERSION` 12 on an M3 Pro), and `uname -r` shows the release, `6.18.15-msl-a1a22bd`, instead of `6.18.15`.

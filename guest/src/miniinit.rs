@@ -25,6 +25,10 @@ use tonic::{Request, Response, Status};
 const CONTROL_PORT: u32 = 1024;
 const FIRST_AGENT_PORT: u32 = 2000;
 const DATA: &str = "/var/lib/msl";
+/// The distros' own disks (#50): each is mounted at `/run/msl-disks/<id>/rootfs`,
+/// so its filesystem root is the distro's root, as in WSL's ext4.vhdx.
+const DISKS: &str = "/run/msl-disks";
+const SYS_BLOCK: &str = "/sys/block";
 /// NFS export root for ~/.msl/distros: one bind mount of each distro's rootfs, by name.
 const VIEW: &str = "/run/msl-view";
 const ROSETTA_MAGIC: &str = r":rosetta:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00:\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/run/rosetta/rosetta:CF";
@@ -49,56 +53,154 @@ fn running() -> &'static Mutex<HashMap<String, Running>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn distro_dir(id: &str) -> Result<PathBuf, Status> {
+/// Distros being stopped: out of `running()`, but their processes (and mount
+/// namespace) may not be gone yet.
+fn stopping() -> &'static Mutex<HashMap<String, Running>> {
+    static S: OnceLock<Mutex<HashMap<String, Running>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Distros on their own disk that are mounted now: id -> block device (vdX).
+fn attached() -> &'static Mutex<HashMap<String, String>> {
+    static A: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    A.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Serializes attaching and detaching disks with the start of a distro, whose
+/// new mount namespace briefly holds a copy of every mount (so of every other
+/// distro's disk) until it pivots into its own root.
+fn mount_lock() -> &'static Mutex<()> {
+    static L: OnceLock<Mutex<()>> = OnceLock::new();
+    L.get_or_init(|| Mutex::new(()))
+}
+
+fn check_id(id: &str) -> Result<(), Status> {
     // ids are GUIDs chosen by msld; refuse anything path-like.
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err(Status::invalid_argument("bad distro id"));
     }
-    Ok(Path::new(DATA).join("distros").join(id))
+    Ok(())
+}
+
+/// A distro's directory: its own disk's mount point when attached, else its
+/// directory on data.img (distros from before #50).
+fn distro_dir(id: &str) -> Result<PathBuf, Status> {
+    check_id(id)?;
+    if attached().lock().unwrap().contains_key(id) {
+        return Ok(Path::new(DISKS).join(id));
+    }
+    Ok(legacy_dir(id))
+}
+
+fn legacy_dir(id: &str) -> PathBuf {
+    Path::new(DATA).join("distros").join(id)
+}
+
+/// Where an own disk is mounted: the distro's root filesystem.
+fn own_root(id: &str) -> PathBuf {
+    Path::new(DISKS).join(id).join("rootfs")
+}
+
+/// A freshly formatted disk holds only lost+found.
+fn is_empty_root(dir: &Path) -> bool {
+    std::fs::read_dir(dir).map(|d| d.flatten().all(|e| e.file_name() == "lost+found")).unwrap_or(true)
+}
+
+/// Remove everything in `dir` (a mount point) except lost+found.
+fn clear_root(dir: &Path) {
+    if let Ok(d) = std::fs::read_dir(dir) {
+        for e in d.flatten().filter(|e| e.file_name() != "lost+found") {
+            let p = e.path();
+            let _ = if e.file_type().map(|t| t.is_dir()).unwrap_or(false) { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        }
+    }
 }
 
 /// What `grow_data_disk` did at this boot, for PingReply (empty: nothing to do).
 static GROW: OnceLock<String> = OnceLock::new();
 
-/// Size of the ext4 filesystem on `dev` in bytes, from its superblock.
-fn ext4_size(dev: &str) -> std::io::Result<u64> {
-    use std::os::unix::fs::FileExt;
-    let mut sb = [0u8; 1024];
-    std::fs::File::open(dev)?.read_exact_at(&mut sb, 1024)?;
-    let u32at = |o: usize| u32::from_le_bytes(sb[o..o + 4].try_into().unwrap()) as u64;
-    if u16::from_le_bytes([sb[0x38], sb[0x39]]) != 0xEF53 {
-        return Err(std::io::Error::other("no ext4 superblock"));
-    }
-    let hi = if u32at(0x60) & 0x80 != 0 { u32at(0x150) } else { 0 }; // INCOMPAT_64BIT
-    Ok(((hi << 32) | u32at(0x04)) << (10 + u32at(0x18)))
+/// What mini-init needs from an ext4 superblock.
+#[derive(Debug, PartialEq)]
+struct Superblock {
+    size: u64,    // bytes
+    uuid: String, // lowercase, hyphenated
+    clean: bool,  // EXT4_VALID_FS
+    errors: bool, // EXT4_ERROR_FS
 }
 
-/// Grow the data filesystem to fill /dev/vda. `msl --manage --resize` only
-/// makes data.img larger; the formatter's sparse_super2 rules out online
-/// resize, so it happens here, before the mount: e2fsck -f (resize2fs requires
-/// a checked filesystem; it also replays the journal), then resize2fs.
-fn grow_data_disk() {
-    let dev = std::fs::read_to_string("/sys/block/vda/size")
-        .ok()
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .map(|sectors| sectors * 512);
-    let (Some(dev), Ok(fs)) = (dev, ext4_size("/dev/vda")) else { return };
-    if dev < fs + (64 << 20) {
-        return; // same size (or a sliver resize2fs can't use)
+/// Parse the 1024-byte superblock (the bytes at offset 1024 of the device).
+fn parse_superblock(sb: &[u8]) -> std::io::Result<Superblock> {
+    if sb.len() < 1024 || u16::from_le_bytes([sb[0x38], sb[0x39]]) != 0xEF53 {
+        return Err(std::io::Error::other("no ext4 superblock"));
     }
+    let u32at = |o: usize| u32::from_le_bytes(sb[o..o + 4].try_into().unwrap()) as u64;
+    let hi = if u32at(0x60) & 0x80 != 0 { u32at(0x150) } else { 0 }; // INCOMPAT_64BIT
+    let state = u16::from_le_bytes([sb[0x3A], sb[0x3B]]);
+    let hex: String = sb[0x68..0x78].iter().map(|b| format!("{b:02x}")).collect();
+    Ok(Superblock {
+        size: ((hi << 32) | u32at(0x04)) << (10 + u32at(0x18)),
+        uuid: format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32]),
+        clean: state & 1 != 0,
+        errors: state & 2 != 0,
+    })
+}
+
+fn read_superblock(f: &std::fs::File) -> std::io::Result<Superblock> {
+    use std::os::unix::fs::FileExt;
+    let mut sb = [0u8; 1024];
+    f.read_exact_at(&mut sb, 1024)?;
+    parse_superblock(&sb)
+}
+
+/// Size of the ext4 filesystem on `dev` in bytes, from its superblock.
+fn ext4_size(dev: &str) -> std::io::Result<u64> {
+    read_superblock(&std::fs::File::open(dev)?).map(|s| s.size)
+}
+
+/// The virtio block device (vdX) whose serial is `serial`, under `sys_block`.
+fn find_by_serial(sys_block: &Path, serial: &str) -> Option<String> {
+    let mut names: Vec<String> = std::fs::read_dir(sys_block)
+        .ok()?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("vd"))
+        .collect();
+    names.sort();
+    names.into_iter().find(|n| {
+        std::fs::read_to_string(sys_block.join(n).join("serial"))
+            .map(|s| s.trim_end_matches(['\0', '\n', ' ']) == serial)
+            .unwrap_or(false)
+    })
+}
+
+/// Run a tool (e2fsck, resize2fs) after the reaper started, which owns
+/// waitpid: its exit code (-1 if unknown) and combined output.
+fn run_tool(tool: &str, args: &[&str]) -> Result<(i32, String), String> {
+    use std::io::Read;
+    let (mut rd, wr) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
+    let wr2 = wr.try_clone().map_err(|e| format!("pipe: {e}"))?;
+    let mut cmd = Command::new(tool);
+    cmd.args(args).stdin(std::process::Stdio::null()).stdout(wr).stderr(wr2);
+    let pid = cmd.spawn().map_err(|e| format!("{tool}: {e}"))?.id() as i32;
+    drop(cmd); // our copies of the write end, so the read below ends
+    let mut out = Vec::new();
+    let _ = rd.read_to_end(&mut out);
+    let code = reaper::wait(pid, Some(Duration::from_secs(3600))).unwrap_or(-1);
+    Ok((code, String::from_utf8_lossy(&out).into_owned()))
+}
+
+/// Grow the ext4 filesystem on `dev` from `fs` to `target` bytes. Offline only:
+/// the formatter's sparse_super2 rules out online resize. e2fsck -f first
+/// (resize2fs requires a checked filesystem; it also replays the journal).
+/// `run` runs a tool and returns its exit code.
+fn grow_fs(dev: &str, fs: u64, target: u64, run: &dyn Fn(&str, &[&str]) -> Result<i32, String>) -> String {
     let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
     let t0 = Instant::now();
-    let run = |tool: &str, args: &[&str]| -> Result<i32, String> {
-        let out = Command::new(tool).args(args).output().map_err(|e| format!("{tool}: {e}"))?;
-        let code = out.status.code().unwrap_or(-1);
-        let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
-        sys::log(&format!("{tool} {}: exit {code}\n{}", args.join(" "), text.trim()));
-        Ok(code)
-    };
+    let size = format!("{}K", target / 1024);
     // e2fsck: 0 clean, 1 errors fixed; anything else leaves the size alone.
-    let result = match run("/bin/e2fsck", &["-f", "-p", "/dev/vda"]) {
-        Ok(0 | 1) => match run("/bin/resize2fs", &["/dev/vda"]) {
-            Ok(0) => match ext4_size("/dev/vda") {
+    match run("/bin/e2fsck", &["-f", "-p", dev]) {
+        Ok(0 | 1) => match run("/bin/resize2fs", &[dev, &size]) {
+            Ok(0) => match ext4_size(dev) {
                 Ok(new) => format!("grew {:.1} GiB → {:.1} GiB in {:.1} s", gib(fs), gib(new), t0.elapsed().as_secs_f64()),
                 Err(e) => format!("resize2fs finished but the superblock can't be read: {e}"),
             },
@@ -107,7 +209,30 @@ fn grow_data_disk() {
         },
         Ok(c) => format!("e2fsck found problems it didn't fix (exit {c}); not resizing"),
         Err(e) => format!("{e}; size unchanged"),
+    }
+}
+
+/// Grow the data filesystem to fill its disk. `msl --manage --resize` only
+/// makes data.img larger; resizing happens here, before the mount.
+fn grow_data_disk(name: &str) {
+    let dev = format!("/dev/{name}");
+    let size = std::fs::read_to_string(format!("{SYS_BLOCK}/{name}/size"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|sectors| sectors * 512);
+    let (Some(size), Ok(fs)) = (size, ext4_size(&dev)) else { return };
+    if size < fs + (64 << 20) {
+        return; // same size (or a sliver resize2fs can't use)
+    }
+    // Before the reaper starts, so waiting on the tool ourselves is safe.
+    let run = |tool: &str, args: &[&str]| -> Result<i32, String> {
+        let out = Command::new(tool).args(args).output().map_err(|e| format!("{tool}: {e}"))?;
+        let code = out.status.code().unwrap_or(-1);
+        let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+        sys::log(&format!("{tool} {}: exit {code}\n{}", args.join(" "), text.trim()));
+        Ok(code)
     };
+    let result = grow_fs(&dev, fs, size, &run);
     sys::log(&format!("data disk: {result}"));
     let _ = GROW.set(result);
 }
@@ -145,8 +270,10 @@ pub fn main() -> sys::Result<()> {
             sys::log(&format!("virtiofs {tag}: {e}"));
         }
     }
-    grow_data_disk();
-    sys::mount_fs("/dev/vda", DATA, "ext4", MsFlags::MS_NOATIME, None)?;
+    // data.img has the serial "data" (slots for the distros' own disks follow it).
+    let data = find_by_serial(Path::new(SYS_BLOCK), "data").unwrap_or_else(|| "vda".into());
+    grow_data_disk(&data);
+    sys::mount_fs(&format!("/dev/{data}"), DATA, "ext4", MsFlags::MS_NOATIME, None)?;
     sys::mkdir_p(format!("{DATA}/distros"))?;
     if Path::new("/run/rosetta/rosetta").exists() {
         let r = sys::mount_fs("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", MsFlags::empty(), None)
@@ -246,6 +373,18 @@ fn view_state() -> &'static Mutex<HashMap<String, String>> {
     V.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// The view msld asked for (name -> id). Distros whose disk isn't attached are
+/// left out of /run/msl-view until it is.
+fn view_want() -> &'static Mutex<HashMap<String, String>> {
+    static W: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    W.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The requested view without distro `id`.
+fn view_without(id: &str) -> HashMap<String, String> {
+    view_want().lock().unwrap().iter().filter(|(_, v)| *v != id).map(|(k, v)| (k.clone(), v.clone())).collect()
+}
+
 /// Make /run/msl-view contain exactly `want` (name -> id), as bind mounts.
 fn set_view(want: &HashMap<String, String>) {
     let mut cur = view_state().lock().unwrap();
@@ -335,11 +474,17 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     if let Some(r) = running().lock().unwrap().get(&req.id) {
         return Ok(pb::StartDistroReply { agent_port: r.port, systemd: r.systemd, start_seconds: 0.0 });
     }
+    if req.own_disk && !attached().lock().unwrap().contains_key(&req.id) {
+        return Err(Status::failed_precondition("the distribution's disk is not attached"));
+    }
     let dir = distro_dir(&req.id)?;
     let rootfs = dir.join("rootfs");
     if !rootfs.is_dir() {
         return Err(Status::not_found("distribution root filesystem not found"));
     }
+    // Until the distro has pivoted into its root (it reports `systemd` after
+    // that), its mount namespace holds every other distro's disk too.
+    let mut mount_guard = Some(mount_lock().lock().unwrap());
     remove_cgroup_tree(&cgroup_of(&req.id));
     let port = {
         let map = running().lock().unwrap();
@@ -375,7 +520,10 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     loop {
         match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(l) if l.starts_with("pid ") => pid = l[4..].trim().parse().unwrap_or(0),
-            Ok(l) if l.starts_with("systemd ") => systemd = l.ends_with('1'),
+            Ok(l) if l.starts_with("systemd ") => {
+                systemd = l.ends_with('1');
+                mount_guard.take();
+            }
             Ok(l) if l == "ready" => break,
             Ok(l) => return Err(Status::internal(format!("distro init: {l}"))),
             Err(_) => return Err(Status::deadline_exceeded("distro init did not become ready")),
@@ -418,6 +566,7 @@ fn stop_many(ids: &[String]) {
         let mut map = running().lock().unwrap();
         ids.iter().filter_map(|id| map.remove(id).map(|r| (id.clone(), r))).collect()
     };
+    self::stopping().lock().unwrap().extend(stopping.iter().cloned());
     for (id, r) in &stopping {
         if r.systemd {
             unsafe { libc::kill(r.pid, libc::SIGRTMIN() + 4) };
@@ -445,7 +594,169 @@ fn stop_many(ids: &[String]) {
             unsafe { libc::kill(r.pid, libc::SIGKILL) };
             wait_exited(r, Duration::from_secs(10));
         }
+        self::stopping().lock().unwrap().remove(id);
     }
+}
+
+/// Wait for a stop of `id` that another caller started (e.g. the idle monitor).
+fn wait_stopped(id: &str) {
+    let r = stopping().lock().unwrap().get(id).cloned();
+    if let Some(r) = r {
+        wait_exited(&r, STOP_GRACE + Duration::from_secs(15));
+    }
+}
+
+/// Mount a distro's own disk (AttachDisk).
+fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, Status> {
+    check_id(&req.id)?;
+    let _g = mount_lock().lock().unwrap();
+    if running().lock().unwrap().contains_key(&req.id) || stopping().lock().unwrap().contains_key(&req.id) {
+        return Err(Status::failed_precondition("the distribution is running"));
+    }
+    let name = find_by_serial(Path::new(SYS_BLOCK), &req.serial)
+        .ok_or_else(|| Status::not_found(format!("no disk with serial {}", req.serial)))?;
+    let dev = format!("/dev/{name}");
+    {
+        let att = attached().lock().unwrap();
+        if let Some(d) = att.get(&req.id) {
+            return if *d == name {
+                Ok(pb::AttachDiskReply { device: dev, repaired: String::new() })
+            } else {
+                Err(Status::failed_precondition(format!("the distribution's disk is already attached as /dev/{d}")))
+            };
+        }
+        if att.values().any(|d| *d == name) {
+            return Err(Status::failed_precondition(format!("{dev} is in use by another distribution")));
+        }
+    }
+    // The slot may have served another file before: drop its cached blocks.
+    let sb = {
+        let f = sys::open_excl(&dev).map_err(|e| Status::failed_precondition(format!("{dev}: {e}")))?;
+        sys::blkflsbuf(&f).map_err(|e| status(format!("{dev}: {e}")))?;
+        read_superblock(&f).map_err(|e| Status::invalid_argument(format!("{dev}: {e}")))?
+    };
+    if !sb.uuid.eq_ignore_ascii_case(&req.uuid) {
+        return Err(Status::failed_precondition(format!("{dev} holds filesystem {}, not {}", sb.uuid, req.uuid)));
+    }
+    let run = |tool: &str, args: &[&str]| -> Result<i32, String> {
+        let (code, out) = run_tool(tool, args)?;
+        sys::log(&format!("{tool} {}: exit {code}\n{}", args.join(" "), out.trim()));
+        Ok(code)
+    };
+    let mut repaired = Vec::new();
+    if sb.errors || !sb.clean {
+        // e2fsck -p: 0 clean, 1 fixed, 2 fixed (reboot advised: not for us).
+        match run("/bin/e2fsck", &["-p", &dev]) {
+            Ok(0) => repaired.push("checked".to_string()),
+            Ok(c @ (1 | 2)) => repaired.push(format!("e2fsck fixed errors (exit {c})")),
+            Ok(c) => {
+                return Err(Status::failed_precondition(format!(
+                    "e2fsck found errors it can't fix safely (exit {c}); repair the disk image with e2fsck -f"
+                )));
+            }
+            Err(e) => return Err(status(e)),
+        }
+    }
+    if req.size_bytes >= sb.size + (64 << 20) {
+        repaired.push(grow_fs(&dev, sb.size, req.size_bytes, &run));
+    }
+    let dir = own_root(&req.id);
+    sys::mount_fs(&dev, &dir, "ext4", MsFlags::MS_NOATIME, None).map_err(status)?;
+    // Never propagate into (or out of) distro namespaces.
+    if let Err(e) = nix::mount::mount(None::<&str>, &dir, None::<&str>, MsFlags::MS_PRIVATE, None::<&str>) {
+        let _ = nix::mount::umount2(&dir, nix::mount::MntFlags::empty());
+        return Err(status(e));
+    }
+    attached().lock().unwrap().insert(req.id.clone(), name);
+    drop(_g);
+    let want = view_want().lock().unwrap().clone();
+    set_view(&want);
+    sys::log(&format!("disk {dev} attached for {}{}", req.id, if repaired.is_empty() { String::new() } else { format!(" ({})", repaired.join("; ")) }));
+    Ok(pb::AttachDiskReply { device: dev, repaired: repaired.join("; ") })
+}
+
+/// Stop a distro and unmount its own disk (DetachDisk). Returns once nothing in
+/// the VM holds the device, so the host can switch the slot's file.
+fn detach_blocking(id: &str) -> Result<(), Status> {
+    check_id(id)?;
+    stop_blocking(id);
+    wait_stopped(id);
+    let _g = mount_lock().lock().unwrap();
+    let Some(name) = attached().lock().unwrap().get(id).cloned() else { return Ok(()) };
+    set_view(&view_without(id)); // its bind pins the filesystem
+    let dir = own_root(id);
+    nix::unistd::sync();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match nix::mount::umount2(&dir, nix::mount::MntFlags::empty()) {
+            Ok(()) | Err(nix::errno::Errno::EINVAL) => break, // EINVAL: not mounted
+            Err(nix::errno::Errno::EBUSY) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => {
+                drop(_g);
+                set_view(&view_want().lock().unwrap().clone());
+                return Err(Status::failed_precondition(format!("unmount {}: {e}", dir.display())));
+            }
+        }
+    }
+    // The filesystem can outlive the mount (a lazily detached bind still in use,
+    // a distro namespace being set up): wait until the device is free.
+    let dev = format!("/dev/{name}");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let f = loop {
+        match sys::open_excl(&dev) {
+            Ok(f) => break f,
+            Err(e) if e.raw_os_error() == Some(libc::EBUSY) && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => return Err(Status::failed_precondition(format!("{dev} is still in use: {e}"))),
+        }
+    };
+    let _ = f.sync_all();
+    let _ = sys::blkflsbuf(&f);
+    drop(f);
+    let _ = std::fs::remove_dir(&dir);
+    let _ = std::fs::remove_dir(Path::new(DISKS).join(id));
+    attached().lock().unwrap().remove(id);
+    sys::log(&format!("disk {dev} detached from {id}"));
+    Ok(())
+}
+
+/// Copy a distro kept on data.img onto its attached disk, then delete it from
+/// data.img (MigrateDistro).
+fn migrate_blocking(id: &str) -> Result<pb::MigrateDistroReply, Status> {
+    check_id(id)?;
+    stop_blocking(id);
+    wait_stopped(id);
+    let old = legacy_dir(id);
+    let (src, dest) = (old.join("rootfs"), own_root(id));
+    if !attached().lock().unwrap().contains_key(id) {
+        return Err(Status::failed_precondition("the distribution's disk is not attached"));
+    }
+    if !src.is_dir() {
+        return Err(Status::not_found("distribution root filesystem not found on the shared disk"));
+    }
+    if !is_empty_root(&dest) {
+        return Err(Status::already_exists("the distribution's disk is not empty"));
+    }
+    set_view(&view_without(id));
+    // The same tar path as export + import, through a pipe.
+    let (rd, wr) = std::io::pipe().map_err(status)?;
+    let from = src.clone();
+    let packer = std::thread::spawn(move || archive::pack(&from, pb::ExportFormat::Tar, wr));
+    let unpacked = archive::unpack(rd, &dest);
+    let packed = packer.join().unwrap_or_else(|_| Err("tar writer panicked".into()));
+    let res = match (packed, unpacked) {
+        (Ok(_), Ok(n)) => {
+            nix::unistd::sync();
+            std::fs::remove_dir_all(&old).map_err(status)?;
+            nix::unistd::sync();
+            Ok(pb::MigrateDistroReply { entries: n })
+        }
+        (Err(e), _) | (_, Err(e)) => {
+            clear_root(&dest);
+            Err(Status::internal(format!("copy to the distribution's disk: {e}")))
+        }
+    };
+    set_view(&view_want().lock().unwrap().clone());
+    res
 }
 
 fn wait_exited(r: &Running, timeout: Duration) -> bool {
@@ -512,8 +823,11 @@ impl MiniInit for MiniInitService {
 
     async fn import_distro(&self, req: Request<pb::ImportDistroRequest>) -> Result<Response<Self::ImportDistroStream>, Status> {
         use pb::import_distro_event::Event;
-        let dir = distro_dir(&req.into_inner().id)?;
-        if dir.exists() {
+        let id = req.into_inner().id;
+        let dir = distro_dir(&id)?;
+        // An own disk is attached (its mount point exists) before the import.
+        let own = attached().lock().unwrap().contains_key(&id);
+        if if own { !is_empty_root(&dir.join("rootfs")) } else { dir.exists() } {
             return Err(Status::already_exists("distribution directory already exists"));
         }
         let dp = DataPort::bind().map_err(status)?;
@@ -527,7 +841,7 @@ impl MiniInit for MiniInitService {
                 blocking(move || {
                     let (source, _bridge) = crate::framed::receiver(conn).map_err(status)?;
                     let n = archive::unpack(source, &rootfs).map_err(|e| {
-                        let _ = std::fs::remove_dir_all(&d2);
+                        if own { clear_root(&rootfs) } else { let _ = std::fs::remove_dir_all(&d2); }
                         Status::invalid_argument(e)
                     })?;
                     nix::unistd::sync();
@@ -574,14 +888,20 @@ impl MiniInit for MiniInitService {
 
     async fn delete_distro(&self, req: Request<pb::DistroRef>) -> Result<Response<pb::Empty>, Status> {
         let id = req.into_inner().id;
-        let dir = distro_dir(&id)?;
+        check_id(&id)?;
         blocking(move || {
-            stop_blocking(&id);
-            // Drop it from the ~/.msl/distros view first (its bind mount pins the rootfs).
-            let keep: HashMap<String, String> = view_state().lock().unwrap().iter().filter(|(_, v)| **v != id).map(|(k, v)| (k.clone(), v.clone())).collect();
-            set_view(&keep);
-            if dir.exists() {
-                std::fs::remove_dir_all(&dir).map_err(status)?;
+            if attached().lock().unwrap().contains_key(&id) {
+                // Its own disk: unmount it; msld deletes the image.
+                detach_blocking(&id)?;
+            } else {
+                stop_blocking(&id);
+                wait_stopped(&id);
+                // Drop it from the ~/.msl/distros view first (its bind mount pins the rootfs).
+                set_view(&view_without(&id));
+            }
+            let legacy = legacy_dir(&id);
+            if legacy.exists() {
+                std::fs::remove_dir_all(&legacy).map_err(status)?;
             }
             nix::unistd::sync();
             Ok(())
@@ -697,7 +1017,12 @@ impl MiniInit for MiniInitService {
     async fn compact_disk(&self, _: Request<pb::Empty>) -> Result<Response<pb::CompactDiskReply>, Status> {
         let trimmed = blocking(|| {
             nix::unistd::sync();
-            sys::fstrim(DATA).map_err(status)
+            let mut n = sys::fstrim(DATA).map_err(status)?;
+            let ids: Vec<String> = attached().lock().unwrap().keys().cloned().collect();
+            for id in ids {
+                n += sys::fstrim(&own_root(&id).to_string_lossy()).unwrap_or(0);
+            }
+            Ok(n)
         })
         .await?;
         Ok(Response::new(pb::CompactDiskReply { trimmed_bytes: trimmed }))
@@ -706,6 +1031,7 @@ impl MiniInit for MiniInitService {
     async fn set_file_view(&self, req: Request<pb::FileViewRequest>) -> Result<Response<pb::Empty>, Status> {
         let want = req.into_inner().distros;
         blocking(move || {
+            *view_want().lock().unwrap() = want.clone();
             set_view(&want);
             Ok(())
         })
@@ -713,11 +1039,44 @@ impl MiniInit for MiniInitService {
         Ok(Response::new(pb::Empty {}))
     }
 
+    async fn attach_disk(&self, req: Request<pb::AttachDiskRequest>) -> Result<Response<pb::AttachDiskReply>, Status> {
+        let req = req.into_inner();
+        blocking(move || attach_blocking(req)).await.map(Response::new)
+    }
+
+    async fn detach_disk(&self, req: Request<pb::DistroRef>) -> Result<Response<pb::Empty>, Status> {
+        let id = req.into_inner().id;
+        blocking(move || detach_blocking(&id)).await?;
+        Ok(Response::new(pb::Empty {}))
+    }
+
+    async fn migrate_distro(&self, req: Request<pb::DistroRef>) -> Result<Response<pb::MigrateDistroReply>, Status> {
+        let id = req.into_inner().id;
+        blocking(move || migrate_blocking(&id)).await.map(Response::new)
+    }
+
+    async fn distro_conf(&self, req: Request<pb::DistroRef>) -> Result<Response<pb::DistributionConf>, Status> {
+        let rootfs = distro_dir(&req.into_inner().id)?.join("rootfs");
+        if !rootfs.is_dir() {
+            return Err(Status::not_found("distribution root filesystem not found"));
+        }
+        Ok(Response::new(config::distribution_conf(&rootfs.to_string_lossy())))
+    }
+
     async fn shutdown(&self, _: Request<pb::Empty>) -> Result<Response<pb::Empty>, Status> {
         blocking(|| {
             let ids: Vec<String> = running().lock().unwrap().keys().cloned().collect();
             stop_many(&ids);
             nix::unistd::sync();
+            // Own disks: trim, then unmount (ext4 commits the journal and marks
+            // them clean); msld flushes each image when the VM has stopped.
+            let own: Vec<String> = attached().lock().unwrap().keys().cloned().collect();
+            for id in own {
+                let _ = sys::fstrim(&own_root(&id).to_string_lossy());
+                if let Err(e) = detach_blocking(&id) {
+                    sys::log(&format!("disk of {id}: {}", e.message()));
+                }
+            }
             // Keep data.img compact: hand freed blocks back to the Mac.
             let _ = sys::fstrim(DATA);
             // Read-only remount: ext4 commits the journal and marks the filesystem
@@ -750,5 +1109,59 @@ mod tests {
         assert_eq!(parse_machine_id("console=hvc0"), None);
         assert_eq!(parse_machine_id("msl.machine_id=0123"), None);
         assert_eq!(parse_machine_id(&format!("msl.machine_id={}", id.to_uppercase())), None);
+    }
+
+    fn superblock(blocks: u32, log_block: u32, state: u16) -> Vec<u8> {
+        let mut sb = vec![0u8; 1024];
+        sb[0x04..0x08].copy_from_slice(&blocks.to_le_bytes());
+        sb[0x18..0x1C].copy_from_slice(&log_block.to_le_bytes());
+        sb[0x38..0x3A].copy_from_slice(&0xEF53u16.to_le_bytes());
+        sb[0x3A..0x3C].copy_from_slice(&state.to_le_bytes());
+        sb[0x68..0x78].copy_from_slice(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]);
+        sb
+    }
+
+    #[test]
+    fn parses_superblock() {
+        let sb = parse_superblock(&superblock(1 << 20, 2, 1)).unwrap(); // 1 Mi blocks of 4 KiB
+        assert_eq!(sb.size, 4 << 30);
+        assert_eq!(sb.uuid, "12345678-9abc-def0-0123-456789abcdef");
+        assert!(sb.clean && !sb.errors);
+        let dirty = parse_superblock(&superblock(1 << 20, 2, 2)).unwrap();
+        assert!(!dirty.clean && dirty.errors);
+        let mut big = superblock(0, 2, 1);
+        big[0x60] = 0x80; // INCOMPAT_64BIT
+        big[0x150..0x154].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(parse_superblock(&big).unwrap().size, 1u64 << 44); // 2^32 blocks of 4 KiB
+        let mut bad = superblock(1, 2, 1);
+        bad[0x38] = 0;
+        assert!(parse_superblock(&bad).is_err());
+        assert!(parse_superblock(&[0u8; 100]).is_err());
+    }
+
+    #[test]
+    fn finds_disk_by_serial() {
+        let root = std::env::temp_dir().join(format!("msl-sysblock-{}", std::process::id()));
+        for (dev, serial) in [("vda", "data"), ("vdb", "slot0\n"), ("vdc", "slot1\0\0"), ("sda", "slot2")] {
+            std::fs::create_dir_all(root.join(dev)).unwrap();
+            std::fs::write(root.join(dev).join("serial"), serial).unwrap();
+        }
+        std::fs::create_dir_all(root.join("loop0")).unwrap();
+        assert_eq!(find_by_serial(&root, "data").as_deref(), Some("vda"));
+        assert_eq!(find_by_serial(&root, "slot0").as_deref(), Some("vdb"));
+        assert_eq!(find_by_serial(&root, "slot1").as_deref(), Some("vdc"));
+        assert_eq!(find_by_serial(&root, "slot2"), None); // not a virtio disk
+        assert_eq!(find_by_serial(&root, "slot"), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn distro_dirs() {
+        assert!(check_id("../etc").is_err() && check_id("").is_err());
+        let id = "0f8e2a4c-1111-2222-3333-444455556666";
+        assert_eq!(distro_dir(id).unwrap(), Path::new(DATA).join("distros").join(id));
+        attached().lock().unwrap().insert(id.into(), "vdb".into());
+        assert_eq!(distro_dir(id).unwrap(), Path::new(DISKS).join(id));
+        attached().lock().unwrap().remove(id);
     }
 }

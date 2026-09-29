@@ -80,7 +80,18 @@ import Testing
         }
         #expect(i.fromFile == "u.wsl" && i.name == "U2" && i.noLaunch && i.location == "/x")
         guard case .install(let j) = try Arguments.parse(["--install", "Ubuntu"]) else { Issue.record("not install"); return }
-        #expect(j.distribution == "Ubuntu")
+        #expect(j.distribution == "Ubuntu" && j.vhdSize == nil)
+        guard case .install(let k) = try Arguments.parse(["--install", "Debian", "--vhd-size", "64GB"]) else { Issue.record("not install"); return }
+        #expect(k.vhdSize == 64 << 30)
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--install", "Debian", "--vhd-size", "lots"]) }
+    }
+
+    @Test func diskImages() throws {
+        #expect(try Arguments.parse(["--import-in-place", "D", "/x/ext4.img"]) == .importInPlace(distribution: "D", file: "/x/ext4.img"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--import-in-place", "D"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--import-in-place", "D", "f", "extra"]) }
+        #expect(try Arguments.parse(["--export", "D", "d.img", "--vhd"]) == .export(distribution: "D", file: "d.img", format: "vhd"))
+        #expect(try Arguments.parse(["--import", "D", "loc", "d.img", "--vhd"]) == .importTar(distribution: "D", location: "loc", file: "d.img", version: nil, vhd: true))
     }
 }
 
@@ -129,6 +140,50 @@ import Testing
         #expect(Registry(url: url).all.count == 1)  // persisted
         #expect(Registry.isValidName("Ubuntu-24.04_x"))
         #expect(!Registry.isValidName("bad name") && !Registry.isValidName("a/b") && !Registry.isValidName(""))
+    }
+
+    /// A registry.json from before own disks (#50) must still load: a decode
+    /// failure would start from an empty registry and overwrite it.
+    @Test func decodesRegistryWithoutDisks() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("msl-reg-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("""
+            {"defaultId":"a","distros":[{"createdAt":"2026-09-01T10:00:00Z","defaultUid":1000,"id":"a",
+            "location":"/x/a","name":"Debian","oobeCommand":"","oobePending":false,"version":2}]}
+            """.utf8).write(to: url)
+        let r = Registry(url: url)
+        #expect(r.all.count == 1 && r.all[0].disk == nil && r.all[0].defaultUid == 1000)
+        try r.mutate { $0.distros[0].disk = DistroDiskInfo(path: "/x/a/ext4.img", uuid: "u") }
+        #expect(Registry(url: url).all[0].disk == DistroDiskInfo(path: "/x/a/ext4.img", uuid: "u"))
+    }
+}
+
+@Suite struct DistroDiskTests {
+    @Test func sizing() {
+        let gib: UInt64 = 1 << 30
+        #expect(DistroDisk.initialSize(requested: nil, configured: nil, volumeCapacity: 1000 * gib) == 256 * gib)
+        #expect(DistroDisk.initialSize(requested: 20 * gib, configured: 64 * gib, volumeCapacity: 1000 * gib) == 20 * gib)
+        #expect(DistroDisk.initialSize(requested: nil, configured: 64 * gib, volumeCapacity: 1000 * gib) == 64 * gib)
+        #expect(DistroDisk.initialSize(requested: 1 * gib, configured: nil, volumeCapacity: nil) == DataDisk.minimum)
+        #expect(DistroDisk.initialSize(requested: 8 << 40, configured: nil, volumeCapacity: nil) == DistroDisk.slotSize)
+        #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "16GB", volumeCapacity: nil) == .grow(16 * gib))
+        #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "8TB", volumeCapacity: nil) == .refused("A distribution's disk can be at most 4096 GB."))
+        #expect(DistroDisk.slotCount([:]) == 16 && DistroDisk.slotCount(["MSL_DISK_SLOTS": "2"]) == 2)
+        #expect(DistroDisk.slotCount(["MSL_DISK_SLOTS": "0"]) == 16 && DistroDisk.slotCount(["MSL_DISK_SLOTS": "x"]) == 16)
+    }
+
+    @Test func superblock() {
+        var sb = [UInt8](repeating: 0, count: 1024)
+        sb[0x04] = 0x00; sb[0x05] = 0x00; sb[0x06] = 0x10  // 0x100000 blocks
+        sb[0x18] = 2                                       // 4 KiB
+        sb[0x38] = 0x53; sb[0x39] = 0xEF
+        sb[0x3A] = 1
+        for i in 0..<16 { sb[0x68 + i] = UInt8(i * 17) }
+        let p = DistroDisk.parseSuperblock(sb)
+        #expect(p == DistroDisk.Superblock(size: 4 << 30, uuid: "00112233-4455-6677-8899-aabbccddeeff", clean: true))
+        sb[0x38] = 0
+        #expect(DistroDisk.parseSuperblock(sb) == nil)
+        #expect(DistroDisk.parseSuperblock([1, 2, 3]) == nil)
     }
 }
 
@@ -298,14 +353,20 @@ import Testing
         var s = VMStatus(running: true, uptimeSeconds: 5, effective: base, configured: base, configPath: "/Users/u/.mslconfig", configExists: true,
                          disk: DiskStatus(maxBytes: 256 * gib, macUsedBytes: 4 * gib + gib / 2, macFreeBytes: 10 * gib, distroFreeBytes: 250 * gib))
         var text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
-        #expect(text.contains("  Disk:") && text.contains("256 GB max, 4.5 GB used on macOS (data.img)"))
-        #expect(text.contains("macOS free space:") && text.contains("Disk free:"))
+        #expect(text.contains("  Shared disk:") && text.contains("256 GB max, 4.5 GB used on macOS (data.img)"))
+        #expect(text.contains("macOS free space:") && text.contains("Shared disk free:") && !text.contains("Distribution disks"))
         #expect(text.contains("Warning: distributions see 250 GB free, but macOS has only 10 GB free."))
         s.disk?.macFreeBytes = 40 * gib  // less than the distros see, but not low: normal for a sparse disk
         text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
         #expect(!text.contains("Warning:"))
-        s.disk = nil  // before the first VM start
-        #expect(!StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("Disk"))
+        s.disk = nil  // no distro left on data.img
+        #expect(!StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("isk"))
+        s.ownDisks = OwnDisksStatus(count: 2, maxBytes: 512 * gib, macUsedBytes: 3 * gib, macFreeBytes: 100 * gib)
+        text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(text.contains("Distribution disks:") && text.contains("2 disks, 3 GB used on macOS (512 GB max)"))
+        #expect(text.contains("macOS free space:") && !text.contains("Shared disk") && !text.contains("Warning:"))
+        s.ownDisks?.macFreeBytes = 8 * gib
+        #expect(StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("Warning: the distributions' disks can grow by 509 GB, but macOS has only 8 GB free."))
     }
 
     @Test func stoppedShowsNextStart() {

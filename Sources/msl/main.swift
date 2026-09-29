@@ -217,6 +217,11 @@ func openInput(_ file: String) -> Int32 {
     return fd
 }
 
+/// A path as msld needs it: absolute, from this process's cwd, `~` expanded.
+func absolutePath(_ path: String) -> String {
+    URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+}
+
 func openOutput(_ file: String) -> Int32 {
     if file == "-" { return 1 }
     let fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
@@ -307,18 +312,30 @@ case .unregister(let name):
     out(Messages.operationCompleted)
 
 case .export(let name, let file, let format):
-    if format == "vhd" { fail(Messages.notImplemented("--format vhd"), ErrorCode.unsupported) }
+    if format == "vhd" {
+        if file == "-" { fail(Messages.diskImageNotToStdout, ErrorCode.invalidArgument) }
+        out(Messages.exportProgress)
+        expectOK(request(.exportDisk(name: name, path: absolutePath(file))))
+        out(Messages.operationCompleted)
+        exit(0)
+    }
     let fd = openOutput(file)
     if file != "-" { out(Messages.exportProgress) }
     expectOK(request(.export(name: name, format: format ?? "tar"), fds: [fd]))
     if file != "-" { out(Messages.operationCompleted) }
 
 case .importTar(let name, let location, let file, let version, let vhd):
-    if vhd { fail(Messages.notImplemented("--vhd"), ErrorCode.unsupported) }
     if let version, version != 2 { fail(Messages.wsl1NotSupported, ErrorCode.unsupported) }
+    if vhd {
+        if file == "-" { fail(Messages.diskImageNotFromStdin, ErrorCode.invalidArgument) }
+        out(Messages.importProgress)
+        expectOK(request(.importDisk(name: name, location: absolutePath(location), image: absolutePath(file))))
+        out(Messages.operationCompleted)
+        exit(0)
+    }
     let fd = openInput(file)
     out(Messages.importProgress)
-    expectOK(request(.importTar(name: name, location: location), fds: [fd]))
+    expectOK(request(.importTar(name: name, location: absolutePath(location)), fds: [fd]))
     out(Messages.operationCompleted)
 
 case .install(let spec):
@@ -342,7 +359,7 @@ case .install(let spec):
         out(Messages.installing(entry.FriendlyName))
     }
     let fd = openInput(file)
-    let reply = request(.installFromFile(name: name, location: spec.location, sourceDescription: file), fds: [fd])
+    let reply = request(.installFromFile(name: name, location: spec.location.map(absolutePath), sourceDescription: file, vhdSize: spec.vhdSize), fds: [fd])
     expectOK(reply)
     guard case .installed(let name) = reply else { exit(failureExit) }
     out(Messages.distributionInstalled(name))
@@ -365,8 +382,15 @@ case .setVersion(let name, let v):
     if v != 2 { fail(Messages.wsl1NotSupported, ErrorCode.unsupported) }
     out(Messages.operationCompleted)
 
+case .importInPlace(let name, let file):
+    out(Messages.importProgress)
+    expectOK(request(.importInPlace(name: name, image: absolutePath(file))))
+    out(Messages.operationCompleted)
+
 case .manage(let name, let op):
     printConfigWarnings()
+    var op = op
+    if case .move(let dir) = op { op = .move(absolutePath(dir)) }
     expectOK(request(.manage(name: name, op: op)))
     out(Messages.operationCompleted)
 

@@ -31,6 +31,8 @@ public struct InstallSpec: Codable, Equatable, Sendable {
     public var location: String?
     public var noLaunch = false
     public var version: Int?
+    /// `--vhd-size`: size of the distro's disk (default: `[msl2] defaultVhdSize`).
+    public var vhdSize: UInt64?
     public init() {}
 }
 
@@ -70,6 +72,8 @@ public enum CLICommand: Equatable, Sendable {
     case unregister(String)
     case export(distribution: String, file: String, format: String?)
     case importTar(distribution: String, location: String, file: String, version: Int?, vhd: Bool)
+    /// `--import-in-place <Distro> <FileName>`: an ext4 image used where it is.
+    case importInPlace(distribution: String, file: String)
     case install(InstallSpec)
     case setDefaultVersion(Int)
     case setVersion(distribution: String, version: Int)
@@ -228,7 +232,10 @@ public enum Arguments {
                 case "--version": spec.version = try int(value(a), a)
                 case "--distribution", "-d": spec.distribution = try value(a)
                 case "--web-download", "--fixed-vhd", "--legacy", "--no-distribution": break  // no effect on macOS
-                case "--vhd-size": _ = try value(a)
+                case "--vhd-size":
+                    let v = try value(a)
+                    guard let size = MSLConfig.parseSize(v), size > 0 else { throw ArgumentError.invalid(v) }
+                    spec.vhdSize = size
                 case "--enable-wsl1", "--inbox": return .unsupported(a)
                 default:
                     if a.hasPrefix("-") || spec.distribution != nil { throw ArgumentError.invalid(a) }
@@ -320,7 +327,10 @@ public enum Arguments {
             if spec.action != nil && spec.ide == nil { throw ArgumentError.missingValue("--ide") }
             return .manageIDE(spec)
         case "--import-in-place":
-            return .notImplemented(first)
+            let d = try value(first)
+            let f = try value(first)
+            if let a = rest.first { throw ArgumentError.invalid(a) }
+            return .importInPlace(distribution: d, file: f)
         default:
             return .run(try parseRun(args))
         }

@@ -2,6 +2,10 @@
 
 `msl --update` installs the latest release in place and keeps your distributions and settings. This page lists the changes that can break a script or a habit, newest first. The [changelog](project/changelog.md) has everything else.
 
+## Unreleased: each distribution gets its own disk
+
+New distributions get their own disk, `ext4.img` in their install location, instead of a directory on the shared `data.img`. Existing distributions keep working from `data.img`; move one onto its own disk with `msl --manage <distro> --move <folder>`. `--manage --resize` now grows one distribution's disk (it must be stopped) rather than `data.img` for all of them, and `msl --unregister` deletes the distribution's `ext4.img`. `fsync` inside a distribution on its own disk isn't a durability point; see [Disk and storage](storage.md#durability).
+
 ## 0.1.10: reinstall on macOS 26 if you have 0.1.9
 
 msl 0.1.9 was built with an Xcode newer than msl's minimum macOS, and its `msld` doesn't start on macOS 26 (a missing Swift library). If you installed 0.1.9 on macOS 26, reinstall with the one-line installer from [Download](download.md). Your distributions are kept. On macOS 27, `msl --update` is enough.
