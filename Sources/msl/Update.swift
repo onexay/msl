@@ -98,6 +98,7 @@ enum Installation {
             fail("Uninstalling requires write access to \(prefix.path); run 'sudo \(Messages.exe) --uninstall'.", ErrorCode.unsupported)
         }
         ManageIDE.uninstallEverywhere()
+        LaunchAgent.remove(paths: Paths())  // launchd stops msld (SIGTERM: a clean VM shutdown)
         stopService()
         for p in managedPaths { try? FileManager.default.removeItem(at: prefix.appendingPathComponent(p)) }
         stopService()

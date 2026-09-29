@@ -5,6 +5,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ## [Unreleased]
 
 ### Added
+- msl shuts down cleanly when you log out, restart or shut down the Mac ([#52](https://github.com/onexay/msl/issues/52)). Before, the VM died with `msld`: distributions got no warning, and writes not yet synced were lost. `msld` now stops the distributions (5 s grace), unmounts and flushes their disks, and powers the VM off. It runs as a LaunchAgent (`~/Library/LaunchAgents/dev.msl.msld.plist`) that launchd starts on demand when `msl` connects, and gives up to 30 s to do this. `msl --uninstall` removes it.
 - Each new distribution gets its own disk, a sparse `ext4.img` in its install location, like WSL's `ext4.vhdx` ([#50](https://github.com/onexay/msl/issues/50)). Disks are attached to the running VM through 16 NBD disk slots served by msld. `--manage --move`, per-distribution `--manage --resize`, `--export --vhd`, `--import --vhd`, `--import-in-place` and `--install --vhd-size` now work; images are raw ext4, not VHDX. Distributions from earlier versions stay on the shared `data.img` until `--move`. Virtualization.framework passes no flushes to hot-attached disks, so `fsync` inside a distribution isn't a durability point: writes are flushed to the SSD when a disk is detached and at shutdown ([Disk and storage](docs/storage.md#durability)).
 - `[msl2] nestedVirtualization` (default true): `/dev/kvm` in the distributions on an M3 or later.
 - The VM keeps one machine identifier across boots, and its `/etc/machine-id` is that identifier's UUID.

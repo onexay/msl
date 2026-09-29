@@ -31,6 +31,7 @@ Everything msl changes on macOS, and what undoes it:
 |---|---|---|---|
 | msl itself | `<prefix>/bin/msl`, `<prefix>/libexec/msl/msld`, `<prefix>/share/msl/` (kernel, initrd, `msl.vsix`), `<prefix>/share/doc/msl/` | The CLI, the service, the VM images, the VS Code extension | `msl --uninstall` |
 | `PATH` | One line in `~/.zshrc`, `~/.bash_profile`, `~/.config/fish/config.fish` or `~/.profile` | So `msl` runs from any terminal | Remove the line by hand |
+| LaunchAgent | `~/Library/LaunchAgents/dev.msl.msld.plist`, added the first time `msl` runs | launchd starts `msld` when `msl` connects, and lets it shut the VM down cleanly at logout, restart and shutdown | `msl --uninstall` |
 | VS Code extension | Each IDE's extensions folder (VS Code, Insiders, VSCodium, Cursor) | Opens folders inside distros ([VS Code](../README.md#vs-code-and-other-ides)) | `msl --manage-ide --ide all --uninstall`, or `msl --uninstall` |
 | `enable-proposed-api` | Each IDE's `argv.json` (for example `~/.vscode/argv.json`). The first change saves a backup, `argv.json.msl-backup`. | The extension needs VS Code's proposed remote-resolver API | Same as above; the entry is removed and the file restored |
 | Which msl the extension runs | `~/Library/Application Support/msl/cli-path` | So the extension finds msl wherever it's installed | Same as above |
@@ -44,4 +45,4 @@ Created on first use, not by the installer:
 | Downloads | `~/Library/Caches/msl/`: distribution images, and the VS Code Server for your IDE's version |
 | VM settings | `~/.mslconfig`, only if you create it ([Configuration](configuration.md)) |
 
-msl doesn't install a LaunchAgent, a kernel extension or a login item, and it never asks for administrator rights except to install into a system prefix. `msld` starts when you first run `msl`, and stops the VM after `vmIdleTimeout` (60 s by default) with nothing running.
+msl doesn't install a kernel extension or a login item, and it never asks for administrator rights except to install into a system prefix. Its LaunchAgent runs nothing at login: launchd starts `msld` when you first run `msl`, and `msld` stops the VM after `vmIdleTimeout` (60 s by default) with nothing running. At logout, restart or shutdown, launchd gives `msld` up to 30 seconds to stop the distributions and flush their disks. Over SSH with nobody logged in to the Mac, `msl` starts `msld` itself.

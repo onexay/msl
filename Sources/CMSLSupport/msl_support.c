@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "msl_support.h"
+#include <launch.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #define MSL_MAX_FDS 8
 
@@ -43,4 +46,17 @@ ssize_t msl_recv_with_fds(int sock, void *buf, size_t len, int *fds, int *nfds) 
         }
     }
     return n;
+}
+
+int msl_launchd_socket(const char *name) {
+    int *fds = NULL;
+    size_t count = 0;
+    if (launch_activate_socket(name, &fds, &count) != 0 || count == 0) {
+        free(fds);
+        return -1;
+    }
+    int fd = fds[0];
+    for (size_t i = 1; i < count; i++) close(fds[i]);
+    free(fds);
+    return fd;
 }

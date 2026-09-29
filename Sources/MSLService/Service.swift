@@ -65,10 +65,12 @@ public final class Service: @unchecked Sendable {
 
     public func serve() throws -> Never {
         try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
-        let lfd = try listenUnix(paths.socket.path)
+        // Started by launchd (the LaunchAgent, #52): it already listens on msld.sock.
+        let launchd = launchdListener()
+        let lfd = try launchd ?? listenUnix(paths.socket.path)
         _ = executableInode
         handleTermination()
-        log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)")
+        log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)\(launchd != nil ? " (launchd)" : "")")
         serveConnect()
         startIdleMonitor()
         while true {
@@ -294,7 +296,7 @@ public final class Service: @unchecked Sendable {
 
     func bootVM() throws {
         try bootLock.withLock {
-            if terminating { throw ServiceError("msld is shutting down.", code: ErrorCode.vm) }
+            if terminating { throw ServiceError("msld is shutting down (macOS is logging out or restarting, or it was stopped). Try again in a few seconds.", code: ErrorCode.vm) }
             if vm.isRunning { return }
             config = MSLConfig.load()
             for w in config.warnings { log("msl: \(w)") }

@@ -20,6 +20,8 @@
 
 **A distro runs out of space.** Each distro has its own disk, 256 GB by default. Grow it with `msl --terminate <Distro>`, then `msl --manage <Distro> --resize <size>` (for example `512GB`). If `--status` warns that macOS is nearly out of disk space, free up space on macOS first: the disk is sparse, so the distros can't see that macOS has run out.
 
+**"msld is shutting down".** macOS is logging out or restarting, or `msld` was stopped (`launchctl bootout`). It stops the distributions and flushes their disks, which takes a few seconds; run the command again after that. To see whether launchd runs `msld`: `launchctl print gui/$(id -u)/dev.msl.msld`.
+
 **msl uses more memory than the distributions need.** Virtualization.framework doesn't give memory back to macOS while the VM runs, so it returns only when the VM stops, either after `vmIdleTimeout` or with `msl --shutdown`. [#37](https://github.com/onexay/msl/issues/37) explains why.
 
 **A program fails with "page size" errors, or refuses to start.** MSL's kernel uses 16 KiB pages, like the Mac itself, because 4 KiB guest pages hit a Virtualization.framework bug that corrupts guest memory when macOS runs short of memory ([#48](https://github.com/onexay/msl/issues/48)). Current distributions are built for this: every package tested so far runs, including allocators such as jemalloc. A program built on the assumption of 4 KiB pages (for example with `--with-lg-page=12`) fails to start, or fails to map files, on any 16 KiB or 64 KiB Arm Linux. Use your distribution's package or rebuild the program without that assumption. `getconf PAGESIZE` shows 16384.

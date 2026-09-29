@@ -47,7 +47,8 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
 - stdin, stdout and stderr are passed to `msld` as file descriptors over its Unix socket (SCM_RIGHTS), and `msld` splices them to vsock. SIGWINCH and signals are sent as control messages.
 
 **`msld`**
-- A per-user background process, not a launchd service. The first `msl` command that finds none running starts it (detached, logging to `msld.log`) and talks to it over `msld.sock`. It stops the VM after `vmIdleTimeout` and keeps running until logout, or until `msl --update` replaces it.
+- A per-user LaunchAgent (`~/Library/LaunchAgents/dev.msl.msld.plist`, [#52](https://github.com/onexay/msl/issues/52)), socket-activated: launchd holds `msld.sock` and starts msld on the first connection, so it runs only on demand. The first `msl` that finds no msld writes the plist and bootstraps it in `gui/<uid>`. A development build, a test home (`MSL_HOME`), or a session with no GUI login (SSH) starts msld directly instead (detached, logging to `msld.log`). msld stops the VM after `vmIdleTimeout` and keeps running until logout, or until `msl --update` replaces it (launchd then starts the new one).
+- On SIGTERM (logout, restart, shutdown, `launchctl bootout`), msld runs the `--shutdown` path with a 5 s stop grace: the distros stop, their disks are unmounted and flushed (`F_FULLFSYNC`), the VM powers off, and msld exits. The agent's `ExitTimeOut` is 30 s.
 - Stores:
   - Registry (the Lxss equivalent): `~/Library/Application Support/msl/registry.json`, one entry per distro: GUID, name, state, default user, flags.
   - Global config: `~/.mslconfig`, the `.wslconfig` equivalent with the same INI keys and the same size-suffix and bad-file rules.
