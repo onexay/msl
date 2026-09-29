@@ -6,6 +6,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ### Changed
 - The kernel and the VS Code extension moved to their own repositories, [msl-kernel](https://github.com/onexay/msl-kernel) and [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension). msl pins a release of each (`scripts/pin.sh`) and bundles it as before.
+- Kernel `kernel-6.18.15-msl-a1a22bd`: KVM is built in, so `/dev/kvm` works in the distributions with nested virtualization (`KVM_GET_API_VERSION` 12 on an M3 Pro), and `uname -r` shows the release, `6.18.15-msl-a1a22bd`, instead of `6.18.15`.
 
 ## [0.1.11] - 2026-09-28
 
