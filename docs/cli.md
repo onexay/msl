@@ -64,6 +64,9 @@ Arguments for managing Modern Subsystem for Linux:
             --version <Version>
                 Specifies the version to use for the new distribution.
 
+            --vhd-size <MemoryString>
+                Specifies the size of the disk to store the distribution, e.g. 64GB.
+
     --manage-ide [--ide <IDE>] [--install | --uninstall]
         Set up the MSL extension in VS Code or a similar IDE, so it can
         open folders inside distributions. Without options, lists the IDEs
@@ -146,7 +149,10 @@ Arguments for managing distributions in Modern Subsystem for Linux:
 
         Options:
             --format <Format>
-                Specifies the export format. Supported values: tar, tar.gz, tar.xz.
+                Specifies the export format. Supported values: tar, tar.gz, tar.xz, vhd.
+
+            --vhd
+                Export the distribution's disk: a raw ext4 image (not VHDX).
 
     --import <Distro> <InstallLocation> <FileName> [Options]
         Imports the specified tar file as a new distribution.
@@ -155,6 +161,14 @@ Arguments for managing distributions in Modern Subsystem for Linux:
         Options:
             --version <Version>
                 Specifies the version to use for the new distribution.
+
+            --vhd
+                Specifies that the provided file is a raw ext4 disk image, not a tar
+                file. It is copied to ext4.img in the install location.
+
+    --import-in-place <Distro> <FileName>
+        Imports the specified raw ext4 disk image as a new distribution, using
+        it where it is.
 
     --list, -l [Options]
         Lists distributions.
@@ -187,14 +201,16 @@ Arguments for managing distributions in Modern Subsystem for Linux:
                 Return the space freed inside the distribution to macOS.
 
             --move <Location>
-                Not supported; all distributions share one disk.
+                Move the distribution's disk to a new location. A distribution
+                still on the shared disk gets a disk of its own there.
 
             --resize <MemoryString>
-                Grow the disk all distributions share to the specified size, e.g. 512GB.
-                All distributions must be stopped; the disk can't shrink.
+                Grow the distribution's disk to the specified size, e.g. 512GB.
+                The distribution must be stopped; the disk can't shrink. For a
+                distribution on the shared disk, all distributions must be stopped.
 
             --set-sparse, -s <true|false>
-                Accepted for compatibility; the disk is always sparse.
+                Accepted for compatibility; disks are always sparse.
 
     --set-default, -s <Distro>
         Sets the distribution as the default.
@@ -230,7 +246,7 @@ Terminals work as in WSL: a PTY when you're interactive, pipes otherwise; window
 | Command | What it does |
 |---|---|
 | `msl --list --online` (`-l -o`) | Distributions you can install: Microsoft's WSL list, arm64 images. |
-| `msl --install <Distro>` | Downloads and installs a distribution, then runs its first-run setup (creating your user). `--name`, `--location` and `--no-launch` work as in WSL. `--from-file <x.wsl>` installs a local image. `--web-download`, `--vhd-size` and `--fixed-vhd` are accepted and ignored. |
+| `msl --install <Distro>` | Downloads and installs a distribution, then runs its first-run setup (creating your user). `--name`, `--location` and `--no-launch` work as in WSL. `--from-file <x.wsl>` installs a local image. `--vhd-size` sets the size of the distribution's disk. `--web-download` and `--fixed-vhd` are accepted and ignored (disks are always sparse). |
 | `msl -l [-v \| -q \| --running \| --all]` | Installed distributions, their state and WSL version (always 2). |
 | `msl -s <Distro>` | Sets the default distribution. |
 | `msl -t <Distro>` | Stops one distribution. |
@@ -239,10 +255,12 @@ Terminals work as in WSL: a PTY when you're interactive, pipes otherwise; window
 | `msl --export <Distro> <file> [--format tar\|tar.gz\|tar.xz]` | Exports a distribution. Use `-` for stdout. |
 | `msl --import <Distro> <location> <file>` | Imports a tar file as a new distribution. Use `-` for stdin. |
 | `msl --manage <Distro> --set-default-user <user>` | Sets the user that shells run as. |
-| `msl --manage <Distro> --compact` | Frees space in `data.img` after deleting files. |
-| `msl --manage <Distro> --move <location>` | Not supported: every distro lives on the shared disk, so there's no per-distro file to move. |
-| `msl --manage <Distro> --resize <size>` | Grows `data.img`, the disk every distro shares, so it applies to all of them. All distros must be stopped (`msl --shutdown`). msl restarts the VM, which grows the filesystem before mounting it (a few seconds). The disk can't shrink, and can't be larger than the macOS disk. |
-| `msl --manage <Distro> --set-sparse <bool>` | Accepted; the disk is always sparse. |
+| `msl --manage <Distro> --compact` | Returns space freed inside the disks to macOS. |
+| `msl --manage <Distro> --move <location>` | Moves the distribution's `ext4.img` into `<location>`, stopping it first. A distribution still on the shared `data.img` gets its own disk there. |
+| `msl --manage <Distro> --resize <size>` | Grows the distribution's disk; it must be stopped. The VM grows the filesystem before mounting it again (a few seconds). A disk can't shrink, and can't be larger than the macOS disk or 4 TB. For a distribution still on `data.img`, grows `data.img`, and all distros must be stopped (`msl --shutdown`). |
+| `msl --manage <Distro> --set-sparse <bool>` | Accepted; disks are always sparse. |
+| `msl --export <Distro> <file> --vhd` | Copies the distribution's disk to `<file>` (a raw ext4 image, cloned on APFS), stopping it first. |
+| `msl --import <Distro> <location> <file> --vhd` / `msl --import-in-place <Distro> <file>` | Registers a raw ext4 image as a new distribution: copied to `<location>/ext4.img`, or used where it is. |
 | `msl --set-version <Distro> 2`, `msl --set-default-version 2` | Accepted. Version 1 isn't available on macOS. |
 
 ## The VM, updates and msl's own additions
@@ -258,7 +276,7 @@ Terminals work as in WSL: a PTY when you're interactive, pipes otherwise; window
 | `msl --debug-shell` | A root BusyBox shell in the utility VM itself, outside every distro. |
 | `--json` | Machine-readable output for `--list`, `--list --online`, `--status` and `--version` ([JSON output](json.md)). |
 
-Not available on macOS, as in WSL without the matching Windows feature: `--system`, `--enable-wsl1`, `--inbox`, and WSL 1. `--import-in-place` is planned.
+Not available on macOS, as in WSL without the matching Windows feature: `--system`, `--enable-wsl1`, `--inbox`, and WSL 1. Disk images are raw ext4, not VHDX: convert with `qemu-img convert`.
 
 ## Inside a distribution
 

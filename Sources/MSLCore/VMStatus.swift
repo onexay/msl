@@ -24,7 +24,7 @@ public struct VMSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// data.img: the disk every distro shares.
+/// data.img: the shared disk of the distros from before #50.
 public struct DiskStatus: Codable, Equatable, Sendable {
     public var maxBytes: UInt64          // apparent size of data.img
     public var macUsedBytes: UInt64      // what it occupies on the Mac (sparse)
@@ -37,6 +37,18 @@ public struct DiskStatus: Codable, Equatable, Sendable {
     }
 }
 
+/// The distros' own disks (#50), added up.
+public struct OwnDisksStatus: Codable, Equatable, Sendable {
+    public var count: Int
+    public var maxBytes: UInt64       // apparent sizes
+    public var macUsedBytes: UInt64   // what they occupy on the Mac (sparse)
+    public var macFreeBytes: UInt64?  // free space on the Mac volume holding msl's folder
+
+    public init(count: Int, maxBytes: UInt64, macUsedBytes: UInt64, macFreeBytes: UInt64?) {
+        self.count = count; self.maxBytes = maxBytes; self.macUsedBytes = macUsedBytes; self.macFreeBytes = macFreeBytes
+    }
+}
+
 public struct VMStatus: Codable, Sendable {
     public var running: Bool
     public var uptimeSeconds: Double?
@@ -46,13 +58,16 @@ public struct VMStatus: Codable, Sendable {
     public var configured: VMSettings
     public var configPath: String
     public var configExists: Bool
-    /// nil until data.img exists (it's created at the first VM start).
+    /// data.img, while some distro is still kept on it (nil otherwise).
     public var disk: DiskStatus?
+    /// The distros' own disks (nil when there are none).
+    public var ownDisks: OwnDisksStatus?
 
-    public init(running: Bool, uptimeSeconds: Double?, effective: VMSettings?, configured: VMSettings, configPath: String, configExists: Bool, disk: DiskStatus? = nil) {
+    public init(running: Bool, uptimeSeconds: Double?, effective: VMSettings?, configured: VMSettings, configPath: String, configExists: Bool,
+                disk: DiskStatus? = nil, ownDisks: OwnDisksStatus? = nil) {
         self.running = running; self.uptimeSeconds = uptimeSeconds; self.effective = effective
         self.configured = configured; self.configPath = configPath; self.configExists = configExists
-        self.disk = disk
+        self.disk = disk; self.ownDisks = ownDisks
     }
 }
 
@@ -78,7 +93,7 @@ public enum StatusFormat {
             ("VM idle timeout", timeout(shown.vmIdleTimeoutMs)),
             ("Distribution idle timeout", timeout(shown.instanceIdleTimeoutMs)),
             ("Settings file", s.configExists ? path : "\(path) (not present; defaults)"),
-        ] + diskRows(s.disk)
+        ] + diskRows(s.disk, s.ownDisks)
         let width = rows.map(\.0.count).max()! + 1
         for (k, v) in rows { lines.append("  " + (k + ":").padding(toLength: width + 1, withPad: " ", startingAt: 0) + v) }
 
@@ -87,6 +102,10 @@ public enum StatusFormat {
         if let d = s.disk, let inVM = d.distroFreeBytes, let mac = d.macFreeBytes, inVM > mac, mac < lowMacSpace {
             lines.append("")
             lines.append("Warning: distributions see \(bytes(inVM)) free, but macOS has only \(bytes(mac)) free.")
+            lines.append("Writes fail in the distributions once the macOS disk is full; free up space on macOS.")
+        } else if let o = s.ownDisks, let mac = o.macFreeBytes, o.maxBytes - min(o.macUsedBytes, o.maxBytes) > mac, mac < lowMacSpace {
+            lines.append("")
+            lines.append("Warning: the distributions' disks can grow by \(bytes(o.maxBytes - min(o.macUsedBytes, o.maxBytes))), but macOS has only \(bytes(mac)) free.")
             lines.append("Writes fail in the distributions once the macOS disk is full; free up space on macOS.")
         }
         if let e = s.effective {
@@ -102,11 +121,17 @@ public enum StatusFormat {
 
     public static let lowMacSpace: UInt64 = 16 << 30
 
-    static func diskRows(_ d: DiskStatus?) -> [(String, String)] {
-        guard let d else { return [] }
-        var rows = [("Disk", "\(bytes(d.maxBytes)) max, \(bytes(d.macUsedBytes)) used on macOS (data.img)")]
-        if let f = d.distroFreeBytes { rows.append(("Disk free", bytes(f))) }
-        if let f = d.macFreeBytes { rows.append(("macOS free space", bytes(f))) }
+    static func diskRows(_ d: DiskStatus?, _ own: OwnDisksStatus? = nil) -> [(String, String)] {
+        var rows: [(String, String)] = []
+        if let own {
+            let n = own.count == 1 ? "1 disk" : "\(own.count) disks"
+            rows.append(("Distribution disks", "\(n), \(bytes(own.macUsedBytes)) used on macOS (\(bytes(own.maxBytes)) max)"))
+        }
+        if let d {
+            rows.append(("Shared disk", "\(bytes(d.maxBytes)) max, \(bytes(d.macUsedBytes)) used on macOS (data.img)"))
+            if let f = d.distroFreeBytes { rows.append(("Shared disk free", bytes(f))) }
+        }
+        if let f = d?.macFreeBytes ?? own?.macFreeBytes { rows.append(("macOS free space", bytes(f))) }
         return rows
     }
 

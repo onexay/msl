@@ -1,6 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Magnesium end-to-end test: data.img sizing and growth (#3).
+# Magnesium end-to-end test: data.img sizing and growth (#3), for distros kept
+# on the shared data.img (from before #50; MSL_LEGACY_STORE puts new ones there).
 # [msl2] defaultVhdSize for a new disk, --status disk rows, and
 # --manage --resize (refused while distros run, grow only, up to the Mac's
 # capacity; the data survives and the distros see the new size).
@@ -9,7 +10,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
 export MSL_HOME=$(mktemp -d /tmp/msl-magnesium.XXXXXX)
-export MSL_CONFIG=$MSL_HOME/cfg MSL_VIEW_DIR=$MSL_HOME/view
+export MSL_CONFIG=$MSL_HOME/cfg MSL_VIEW_DIR=$MSL_HOME/view MSL_LEGACY_STORE=1
 printf '[msl2]\ndefaultVhdSize = 8GB\n' > "$MSL_CONFIG"
 D=Debian
 pass=0; fails=0
@@ -24,7 +25,7 @@ check "defaultVhdSize: data.img is about 8 GiB" "8.1" "$(stat -f %z "$MSL_HOME/d
 check "distro sees about 8 GiB" "8" "$(gib)"
 sum=$($MSL -d $D -u root -e sh -c 'dd if=/dev/urandom of=/root/marker bs=1M count=64 status=none && sha256sum /root/marker')
 check "--status shows the disk" "8.1 GB max" "$($MSL --status)"
-check "--status shows free space in the VM" "Disk free:" "$($MSL --status)"
+check "--status shows free space in the VM" "Shared disk free:" "$($MSL --status)"
 
 check "resize refused while a distro runs" "must all be stopped" "$($MSL -d $D -e sh -c "sleep 30" & sleep 3; $MSL --manage $D --resize 16GB 2>&1)"
 $MSL --shutdown

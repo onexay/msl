@@ -122,6 +122,9 @@ public enum Messages {
                     --version <Version>
                         Specifies the version to use for the new distribution.
 
+                    --vhd-size <MemoryString>
+                        Specifies the size of the disk to store the distribution, e.g. 64GB.
+
             --manage-ide [--ide <IDE>] [--install | --uninstall]
                 Set up the MSL extension in VS Code or a similar IDE, so it can
                 open folders inside distributions. Without options, lists the IDEs
@@ -204,7 +207,10 @@ public enum Messages {
 
                 Options:
                     --format <Format>
-                        Specifies the export format. Supported values: tar, tar.gz, tar.xz.
+                        Specifies the export format. Supported values: tar, tar.gz, tar.xz, vhd.
+
+                    --vhd
+                        Export the distribution's disk: a raw ext4 image (not VHDX).
 
             --import <Distro> <InstallLocation> <FileName> [Options]
                 Imports the specified tar file as a new distribution.
@@ -213,6 +219,14 @@ public enum Messages {
                 Options:
                     --version <Version>
                         Specifies the version to use for the new distribution.
+
+                    --vhd
+                        Specifies that the provided file is a raw ext4 disk image, not a tar
+                        file. It is copied to ext4.img in the install location.
+
+            --import-in-place <Distro> <FileName>
+                Imports the specified raw ext4 disk image as a new distribution, using
+                it where it is.
 
             --list, -l [Options]
                 Lists distributions.
@@ -245,14 +259,16 @@ public enum Messages {
                         Return the space freed inside the distribution to macOS.
 
                     --move <Location>
-                        Not supported; all distributions share one disk.
+                        Move the distribution's disk to a new location. A distribution
+                        still on the shared disk gets a disk of its own there.
 
                     --resize <MemoryString>
-                        Grow the disk all distributions share to the specified size, e.g. 512GB.
-                        All distributions must be stopped; the disk can't shrink.
+                        Grow the distribution's disk to the specified size, e.g. 512GB.
+                        The distribution must be stopped; the disk can't shrink. For a
+                        distribution on the shared disk, all distributions must be stopped.
 
                     --set-sparse, -s <true|false>
-                        Accepted for compatibility; the disk is always sparse.
+                        Accepted for compatibility; disks are always sparse.
 
             --set-default, -s <Distro>
                 Sets the distribution as the default.

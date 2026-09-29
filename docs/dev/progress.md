@@ -638,3 +638,10 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
   - `--import --vhd` (copied into `<location>/ext4.img`) and `--import-in-place` (used where it is): the superblock is checked on the Mac, then the guest attaches it and reads wsl-distribution.conf (`DistroConf`).
   - The Finder view follows attachment: the Mac mounts only distros on data.img or with their disk attached; msld unmounts a distro before detaching its disk and resyncs after changes.
   - Smoke test: moving an own disk (relative path) and migrating a data.img distro kept marker files; 8 → 12 GB resize showed 12G in the distro, and shrinking was refused; export → `--import --vhd` and `--import-in-place` both ran with the data intact; errors for an image already in use, a missing file and `--vhd` to stdout; unregistering all four left no images or folders.
+- 20:23 Phase 5 (status, docs, tests).
+  - `msl --status`: a "Distribution disks" row (count, used on macOS, max) and data.img rows ("Shared disk") only while a distro is still on it, plus a low-space warning for own disks.
+  - Help text for `--vhd-size`, `--export/--import --vhd`, `--import-in-place`, `--move`, `--resize`, `--set-sparse`.
+  - docs: storage.md rewritten, including durability; cli, architecture, configuration, troubleshooting, index, install, comparison, upgrading, README, CHANGELOG.
+  - New e2e `silicon.sh` with 2 slots: first run 45/49. Four test bugs: the install message; Debian still running under its idle timeout, so B couldn't get a slot; a 5 TB resize hits the Mac-volume check before the 4 TB one; a file written after `sync` is lost when the VM dies, as on any disk. That last one also showed the docs overstated crash safety: now only what the distro had written out survives an msld/VM crash. Second run 49/49.
+  - Trims reach the NBD server: `--compact` punched the freed 512 MB out of ext4.img (carbon).
+  - Existing suites: lithium 27/27 (`--move` now works), carbon 20/20 (compact measured on ext4.img), magnesium 16/16 (`MSL_LEGACY_STORE` keeps covering data.img), helium 40/41 (the known #49 PTY check, same output as on 09-28), boron 55/55.

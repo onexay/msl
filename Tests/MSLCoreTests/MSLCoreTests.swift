@@ -353,14 +353,20 @@ import Testing
         var s = VMStatus(running: true, uptimeSeconds: 5, effective: base, configured: base, configPath: "/Users/u/.mslconfig", configExists: true,
                          disk: DiskStatus(maxBytes: 256 * gib, macUsedBytes: 4 * gib + gib / 2, macFreeBytes: 10 * gib, distroFreeBytes: 250 * gib))
         var text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
-        #expect(text.contains("  Disk:") && text.contains("256 GB max, 4.5 GB used on macOS (data.img)"))
-        #expect(text.contains("macOS free space:") && text.contains("Disk free:"))
+        #expect(text.contains("  Shared disk:") && text.contains("256 GB max, 4.5 GB used on macOS (data.img)"))
+        #expect(text.contains("macOS free space:") && text.contains("Shared disk free:") && !text.contains("Distribution disks"))
         #expect(text.contains("Warning: distributions see 250 GB free, but macOS has only 10 GB free."))
         s.disk?.macFreeBytes = 40 * gib  // less than the distros see, but not low: normal for a sparse disk
         text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
         #expect(!text.contains("Warning:"))
-        s.disk = nil  // before the first VM start
-        #expect(!StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("Disk"))
+        s.disk = nil  // no distro left on data.img
+        #expect(!StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("isk"))
+        s.ownDisks = OwnDisksStatus(count: 2, maxBytes: 512 * gib, macUsedBytes: 3 * gib, macFreeBytes: 100 * gib)
+        text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(text.contains("Distribution disks:") && text.contains("2 disks, 3 GB used on macOS (512 GB max)"))
+        #expect(text.contains("macOS free space:") && !text.contains("Shared disk") && !text.contains("Warning:"))
+        s.ownDisks?.macFreeBytes = 8 * gib
+        #expect(StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("Warning: the distributions' disks can grow by 509 GB, but macOS has only 8 GB free."))
     }
 
     @Test func stoppedShowsNextStart() {

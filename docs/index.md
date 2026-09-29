@@ -34,7 +34,7 @@ $ ls ~/.msl/distros/Ubuntu/home   # the distro's files from macOS (also in Finde
 
 - x86_64 distributions aren't supported yet.
 - Memory goes back to macOS only when the VM stops. `autoMemoryReclaim` has no effect.
-- All distributions share one disk. It can grow but not shrink, and `--manage --move` isn't supported. See [Disk and storage](storage.md).
+- Each distribution has its own sparse disk, `ext4.img` (raw ext4, not VHDX). A disk can grow but not shrink, and `fsync` inside a distribution isn't a durability point. See [Disk and storage](storage.md).
 - `~/.msl/distros` is available only while the VM runs.
 - There's no GPU, WSLg or GUI app support, no WSL 1 and no mirrored networking.
 - Releases aren't notarised yet.

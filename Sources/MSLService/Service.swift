@@ -152,7 +152,7 @@ public final class Service: @unchecked Sendable {
                                   configured: VMHost.resolve(now),
                                   configPath: url.path,
                                   configExists: FileManager.default.fileExists(atPath: url.path),
-                                  disk: diskStatus(running: booted != nil))
+                                  disk: diskStatus(running: booted != nil), ownDisks: ownDisksStatus())
             return .status(distros: summaries(), vm: status)
         case .versionInfo:
             return .versionInfo(kernel: (try? Resources.locate().kernelVersion) ?? "unknown")
@@ -362,7 +362,17 @@ public final class Service: @unchecked Sendable {
 
     // MARK: manage
 
+    /// The distros' own disks, added up (nil when there are none).
+    func ownDisksStatus() -> OwnDisksStatus? {
+        let sizes = registry.all.compactMap { $0.disk.flatMap { DiskImage.sizes(URL(fileURLWithPath: $0.path)) } }
+        guard !sizes.isEmpty else { return nil }
+        return OwnDisksStatus(count: sizes.count, maxBytes: sizes.reduce(0) { $0 + $1.max }, macUsedBytes: sizes.reduce(0) { $0 + $1.used },
+                              macFreeBytes: VMHost.volumeAvailable(paths.root))
+    }
+
+    /// data.img, while some distro is still kept on it.
     func diskStatus(running: Bool) -> DiskStatus? {
+        guard registry.all.contains(where: { $0.disk == nil }) else { return nil }
         let url = paths.dataDisk
         guard let v = try? url.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey]), let size = v.fileSize else { return nil }
         var inVM: UInt64?

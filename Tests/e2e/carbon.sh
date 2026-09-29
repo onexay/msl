@@ -45,7 +45,9 @@ check "invalid mount name" "cannot be empty" "$($MSL --mount $IMG --name ../x)"
 $MSL --unmount >/dev/null 2>&1
 
 # --manage --compact / --resize
-used() { du -k $MSL_HOME/data.img | awk '{print int($1/1024)}'; }
+# Debian's own disk (#50): trims inside the distro punch holes in its ext4.img.
+img=$(python3 -c "import json,sys; print([d['disk']['path'] for d in json.load(open(sys.argv[1]))['distros'] if d['name']=='Debian'][0])" $MSL_HOME/registry.json)
+used() { du -k "$img" | awk '{print int($1/1024)}'; }
 $MSL -d Debian -u root -e sh -c 'head -c 536870912 /dev/urandom > /big && sync && rm /big && sync'
 before=$(used)
 check "--manage --compact" "The operation completed successfully." "$($MSL --manage Debian --compact)"

@@ -49,7 +49,9 @@ check "--manage --set-default-user root" "The operation completed successfully."
 check "default user is now root" "root" "$($MSL whoami)"
 $MSL --manage Debian --set-default-user "$(id -un)" >/dev/null
 check "--manage unknown user" "User not found." "$($MSL --manage Debian --set-default-user nobody-here)"
-check "--manage --move refused honestly" "can't be moved" "$($MSL --manage Debian --move $WORK/elsewhere)"
+check "--manage --move" "The operation completed successfully." "$($MSL --manage Debian --move $WORK/elsewhere)"
+check "--move: ext4.img is in the new folder" "ext4.img" "$(ls $WORK/elsewhere)"
+check "--move: the distro runs from there" "0" "$($MSL -e true; echo $?)"
 check "--manage --resize can't shrink" "can only grow" "$($MSL --manage Debian --resize 10GB)"
 
 # wsl.conf: boot.command, automount.root, generateResolvConf
