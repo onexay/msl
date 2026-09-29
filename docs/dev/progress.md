@@ -653,3 +653,4 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
   - 4 KiB random write, queue depth 1: 68 vs 91 µs
   - 4 KiB random write, queue depth 32: 133k vs 117k IOPS
   - 4 KiB random write with `fsync=1`: 191 vs 10.3k IOPS. The own disk's fsync never reaches the SSD, as documented.
+- 20:40 Pushed main (the repo split, progress notes, VM identity) and opened PR #51 from distro-disks (6 commits), which closes #50.
