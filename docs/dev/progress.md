@@ -667,3 +667,4 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-29 23:12: release 0.2.0
 - 23:12 Version 0.2.0 (minor: per-distro disks, LaunchAgent and clean shutdown, nested virtualization, the KVM kernel; `--resize` and `fsync` behaviour change). Publishing after CI only, as decided: no full e2e run against the release build this time (silicon, phosphorus, lithium, carbon, magnesium, helium and boron passed on dev builds today). Unsigned, like 0.1.11 (no release key on this Mac).
+- 23:35 Released [v0.2.0](https://github.com/onexay/msl/releases/tag/v0.2.0) (Latest, unsigned): package from CI run 36607685165 (Xcode 26.6) at cb90aad, kernel `kernel-6.18.15-msl-a1a22bd`. The update channel (`releases/latest/download/update.json`) serves 0.2.0. msl-docs release and upgrade notes updated (msl-docs #5) and deployed.
