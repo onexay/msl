@@ -34,7 +34,7 @@ $ build/bin/msl --help
 | `extensions/vscode/` | the pinned [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension) release and `fetch.sh` |
 | `scripts/` | build, initrd, packaging, publishing, pinning, licence and GPL-source tools; `install.sh` is at the root |
 | `Tests/` | `MSLCoreTests` (swift-testing) and `e2e/` suites driving a real `msl` |
-| `docs/` | documentation; start at the [index](docs/readme.md): [architecture](docs/architecture.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/third_party_notices.md) |
+| `docs/` | developer notes; start at the [index](docs/readme.md): [architecture](docs/architecture.md), [comparison](docs/comparison.md), [third-party notices](docs/third_party_notices.md). User documentation is in [msl-docs](https://github.com/onexay/msl-docs) |
 | `docs/dev/` | development log (`progress.md`) |
 
 ## Test
@@ -60,7 +60,7 @@ CI runs the unit tests and lints. It can't run the e2e suites, because hosted ru
 - **Guest code** (`guest/`) is a static musl binary running as PID 1 and as each distro's init. Avoid dependencies that need libc features musl lacks, and never block the reaper.
 - **Host ↔ guest protocol:** change `proto/msl/v1/msl.proto`, then run `scripts/gen-proto.sh` and commit the generated Swift.
 - **Dependencies:** after changing `guest/Cargo.lock` or `Package.resolved`, run `scripts/gen-licenses.sh` and commit `docs/licenses/`. New dependencies must be under a licence compatible with Apache-2.0.
-- **Docs:** update `README.md` and `docs/` in the same pull request as the behaviour change, and add a line to `CHANGELOG.md` under *Unreleased*. Documentation files at the root are UPPERCASE (`SECURITY.md`); files under `docs/` are lowercase snake_case (`getting_started.md`). `scripts/check-links.py` checks relative links and headings, and `swift test` checks that `docs/cli.md` matches `msl --help`; CI runs both. The documentation website is [msl-docs](https://github.com/onexay/msl-docs), the authoritative user documentation: open a pull request there for every user-visible change as well.
+- **Docs:** user-visible changes need a pull request in [msl-docs](https://github.com/onexay/msl-docs), the documentation site (https://onexay.github.io/msl-docs/), and a line in `CHANGELOG.md` under *Unreleased* here. Keep `README.md` and the developer notes in `docs/` (architecture, design) in step in the same pull request as the change. Documentation files at the root are UPPERCASE (`SECURITY.md`); files under `docs/` are lowercase snake_case. `scripts/check-links.py` checks relative links and headings; CI runs it.
 
 ## Commits and pull requests
 
