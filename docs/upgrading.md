@@ -1,6 +1,6 @@
 # Upgrading
 
-`msl --update` installs the latest release in place and keeps your distributions and settings. This page lists the changes that can break a script or a habit, newest first. The [changelog](project/changelog.md) has everything else.
+`msl --update` installs the latest release in place and keeps your distributions and settings. This page lists the changes that can break a script or a habit, newest first. The [changelog](../CHANGELOG.md) has everything else.
 
 ## Unreleased: each distribution gets its own disk
 

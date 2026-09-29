@@ -657,3 +657,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-29 21:01: kernel with KVM
 - 21:01 Kernel `kernel-6.18.15-msl-a1a22bd` (msl-kernel 91c098a) published and pinned: KVM built in, and `uname -r` now shows the release (build-linux.sh passes `LOCALVERSION=-msl-<hash>` from tag.sh and checks `kernelrelease` against the tag). The first CI run, without the suffix, was cancelled. Checked in a Debian distro: `uname -r` 6.18.15-msl-a1a22bd, `/dev/kvm` root:kvm 660, `KVM_GET_API_VERSION` 12, `--status` shows nested virtualization on.
+
+## 2026-09-29 21:51: MkDocs removed; msl-docs is the only documentation site
+- 21:51 Removed `mkdocs.yml`, `docs_theme/`, `scripts/docs_hooks.py`, `.github/workflows/docs.yml`, `docs/requirements.txt`, `docs/css/`, the site-only `docs/assets/`, `docs/img/`, `docs/project/` and `docs/index.md`, and `site/`. GitHub Pages was already off (`has_pages` false, no gh-pages branch); the `github-pages` environment is deleted. CONTRIBUTING points at msl-docs for user documentation. Mistake: `rm -rf site` also deleted the untracked, git-excluded Hugo drafts in `site/` (hugo.yaml, go.mod, content/, static/), the local draft from before msl-docs was written; there is no backup or snapshot, so they are gone.
