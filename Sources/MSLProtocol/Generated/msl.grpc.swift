@@ -124,7 +124,7 @@ public enum Msl_V1_MiniInit: Sendable {
         /// Namespace for "Shutdown" metadata.
         public enum Shutdown: Sendable {
             /// Request type for "Shutdown".
-            public typealias Input = Msl_V1_Empty
+            public typealias Input = Msl_V1_ShutdownRequest
             /// Response type for "Shutdown".
             public typealias Output = Msl_V1_Empty
             /// Descriptor for "Shutdown".
@@ -466,11 +466,11 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops all distros, syncs and powers the VM off.
+        /// > Stops all distros, unmounts their disks, syncs and powers the VM off.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Msl_V1_Empty` message.
-        ///   - serializer: A serializer for `Msl_V1_Empty` messages.
+        ///   - request: A request containing a single `Msl_V1_ShutdownRequest` message.
+        ///   - serializer: A serializer for `Msl_V1_ShutdownRequest` messages.
         ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response and returns its result to
@@ -478,8 +478,8 @@ extension Msl_V1_MiniInit {
         ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func shutdown<Result>(
-            request: GRPCCore.ClientRequest<Msl_V1_Empty>,
-            serializer: some GRPCCore.MessageSerializer<Msl_V1_Empty>,
+            request: GRPCCore.ClientRequest<Msl_V1_ShutdownRequest>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_ShutdownRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result
@@ -976,11 +976,11 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops all distros, syncs and powers the VM off.
+        /// > Stops all distros, unmounts their disks, syncs and powers the VM off.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Msl_V1_Empty` message.
-        ///   - serializer: A serializer for `Msl_V1_Empty` messages.
+        ///   - request: A request containing a single `Msl_V1_ShutdownRequest` message.
+        ///   - serializer: A serializer for `Msl_V1_ShutdownRequest` messages.
         ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response and returns its result to
@@ -988,8 +988,8 @@ extension Msl_V1_MiniInit {
         ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func shutdown<Result>(
-            request: GRPCCore.ClientRequest<Msl_V1_Empty>,
-            serializer: some GRPCCore.MessageSerializer<Msl_V1_Empty>,
+            request: GRPCCore.ClientRequest<Msl_V1_ShutdownRequest>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_ShutdownRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
             options: GRPCCore.CallOptions = .defaults,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
@@ -1558,17 +1558,17 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Stops all distros, syncs and powers the VM off.
+    /// > Stops all distros, unmounts their disks, syncs and powers the VM off.
     ///
     /// - Parameters:
-    ///   - request: A request containing a single `Msl_V1_Empty` message.
+    ///   - request: A request containing a single `Msl_V1_ShutdownRequest` message.
     ///   - options: Options to apply to this RPC.
     ///   - handleResponse: A closure which handles the response and returns its result to
     ///       the caller. Returning from the closure will cancel the RPC if it hasn't
     ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func shutdown<Result>(
-        request: GRPCCore.ClientRequest<Msl_V1_Empty>,
+        request: GRPCCore.ClientRequest<Msl_V1_ShutdownRequest>,
         options: GRPCCore.CallOptions = .defaults,
         onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
             try response.message
@@ -1576,7 +1576,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ) async throws -> Result where Result: Sendable {
         try await self.shutdown(
             request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_Empty>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_ShutdownRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_Empty>(),
             options: options,
             onResponse: handleResponse
@@ -2112,7 +2112,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Stops all distros, syncs and powers the VM off.
+    /// > Stops all distros, unmounts their disks, syncs and powers the VM off.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -2123,14 +2123,14 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func shutdown<Result>(
-        _ message: Msl_V1_Empty,
+        _ message: Msl_V1_ShutdownRequest,
         metadata: GRPCCore.Metadata = [:],
         options: GRPCCore.CallOptions = .defaults,
         onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
             try response.message
         }
     ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Msl_V1_Empty>(
+        let request = GRPCCore.ClientRequest<Msl_V1_ShutdownRequest>(
             message: message,
             metadata: metadata
         )

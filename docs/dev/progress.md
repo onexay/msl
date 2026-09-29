@@ -657,3 +657,6 @@ Newest entries at the bottom. Times are local (IST). Entries before 01:10 were b
 
 ## 2026-09-29 21:01: kernel with KVM
 - 21:01 Kernel `kernel-6.18.15-msl-a1a22bd` (msl-kernel 91c098a) published and pinned: KVM built in, and `uname -r` now shows the release (build-linux.sh passes `LOCALVERSION=-msl-<hash>` from tag.sh and checks `kernelrelease` against the tag). The first CI run, without the suffix, was cancelled. Checked in a Debian distro: `uname -r` 6.18.15-msl-a1a22bd, `/dev/kvm` root:kvm 660, `KVM_GET_API_VERSION` 12, `--status` shows nested virtualization on.
+
+## 2026-09-29 21:29: graceful shutdown and a LaunchAgent (#52), branch graceful-shutdown
+- 21:29 msld had no SIGTERM handler: at logout, restart or shutdown the VM died with it. It now handles SIGTERM/SIGINT by running the `--shutdown` path with a 5 s stop grace (`MiniInit.Shutdown` takes `grace_ms`; 0 keeps 10 s) and then exits; no VM boot starts once it is terminating. Check: a file written without `sync` survived `kill -TERM` of msld (exited in 2 s; systemd in Debian shut down cleanly, the disk was unmounted clean).

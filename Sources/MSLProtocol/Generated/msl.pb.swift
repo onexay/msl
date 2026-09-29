@@ -171,6 +171,20 @@ public nonisolated struct Msl_V1_MigrateDistroReply: Sendable {
   public init() {}
 }
 
+public nonisolated struct Msl_V1_ShutdownRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// How long distros get to stop before they're killed; 0 = the default (10 s).
+  /// msld passes less when macOS is shutting down (#52).
+  public var graceMs: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Msl_V1_FileViewRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -859,6 +873,36 @@ nonisolated extension Msl_V1_MigrateDistroReply: SwiftProtobuf.Message, SwiftPro
 
   public static func ==(lhs: Msl_V1_MigrateDistroReply, rhs: Msl_V1_MigrateDistroReply) -> Bool {
     if lhs.entries != rhs.entries {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Msl_V1_ShutdownRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ShutdownRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}grace_ms\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.graceMs) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.graceMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.graceMs, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Msl_V1_ShutdownRequest, rhs: Msl_V1_ShutdownRequest) -> Bool {
+    if lhs.graceMs != rhs.graceMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

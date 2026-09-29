@@ -554,14 +554,14 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
 const STOP_GRACE: Duration = Duration::from_secs(10);
 
 fn stop_blocking(id: &str) {
-    stop_many(&[id.to_string()]);
+    stop_many(&[id.to_string()], STOP_GRACE);
 }
 
 /// Stop distros cleanly, all at once: a systemd distro gets SIGRTMIN+4 (systemd
 /// powers off, so services and journald flush and close their files); any
 /// other distro gets SIGTERM for every process in its cgroup. Whatever is still
-/// running after STOP_GRACE is killed with its pid namespace.
-fn stop_many(ids: &[String]) {
+/// running after `grace` is killed with its pid namespace.
+fn stop_many(ids: &[String], grace: Duration) {
     let stopping: Vec<(String, Running)> = {
         let mut map = running().lock().unwrap();
         ids.iter().filter_map(|id| map.remove(id).map(|r| (id.clone(), r))).collect()
@@ -576,7 +576,7 @@ fn stop_many(ids: &[String]) {
             }
         }
     }
-    let deadline = Instant::now() + STOP_GRACE;
+    let deadline = Instant::now() + grace;
     for (id, r) in &stopping {
         if !r.systemd {
             // Without systemd, msl's own init never exits by itself: wait for
@@ -589,7 +589,7 @@ fn stop_many(ids: &[String]) {
             }
         }
         if !wait_exited(r, deadline.saturating_duration_since(Instant::now())) {
-            sys::log(&format!("distro {id} did not stop within {}s; killing it", STOP_GRACE.as_secs()));
+            sys::log(&format!("distro {id} did not stop within {:.1}s; killing it", grace.as_secs_f64()));
             // Killing the pidns init tears down the whole namespace.
             unsafe { libc::kill(r.pid, libc::SIGKILL) };
             wait_exited(r, Duration::from_secs(10));
@@ -1063,10 +1063,14 @@ impl MiniInit for MiniInitService {
         Ok(Response::new(config::distribution_conf(&rootfs.to_string_lossy())))
     }
 
-    async fn shutdown(&self, _: Request<pb::Empty>) -> Result<Response<pb::Empty>, Status> {
-        blocking(|| {
+    async fn shutdown(&self, req: Request<pb::ShutdownRequest>) -> Result<Response<pb::Empty>, Status> {
+        let grace = match req.into_inner().grace_ms {
+            0 => STOP_GRACE,
+            ms => Duration::from_millis(ms as u64),
+        };
+        blocking(move || {
             let ids: Vec<String> = running().lock().unwrap().keys().cloned().collect();
-            stop_many(&ids);
+            stop_many(&ids, grace);
             nix::unistd::sync();
             // Own disks: trim, then unmount (ext4 commits the journal and marks
             // them clean); msld flushes each image when the VM has stopped.
