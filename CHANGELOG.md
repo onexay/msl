@@ -6,7 +6,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ### Added
 - msl shuts down cleanly when you log out, restart or shut down the Mac ([#52](https://github.com/onexay/msl/issues/52)). Before, the VM died with `msld`: distributions got no warning, and writes not yet synced were lost. `msld` now stops the distributions (5 s grace), unmounts and flushes their disks, and powers the VM off. It runs as a LaunchAgent (`~/Library/LaunchAgents/dev.msl.msld.plist`) that launchd starts on demand when `msl` connects, and gives up to 30 s to do this. `msl --uninstall` removes it.
-- Each new distribution gets its own disk, a sparse `ext4.img` in its install location, like WSL's `ext4.vhdx` ([#50](https://github.com/onexay/msl/issues/50)). Disks are attached to the running VM through 16 NBD disk slots served by msld. `--manage --move`, per-distribution `--manage --resize`, `--export --vhd`, `--import --vhd`, `--import-in-place` and `--install --vhd-size` now work; images are raw ext4, not VHDX. Distributions from earlier versions stay on the shared `data.img` until `--move`. Virtualization.framework passes no flushes to hot-attached disks, so `fsync` inside a distribution isn't a durability point: writes are flushed to the SSD when a disk is detached and at shutdown ([Disk and storage](docs/storage.md#durability)).
+- Each new distribution gets its own disk, a sparse `ext4.img` in its install location, like WSL's `ext4.vhdx` ([#50](https://github.com/onexay/msl/issues/50)). Disks are attached to the running VM through 16 NBD disk slots served by msld. `--manage --move`, per-distribution `--manage --resize`, `--export --vhd`, `--import --vhd`, `--import-in-place` and `--install --vhd-size` now work; images are raw ext4, not VHDX. Distributions from earlier versions stay on the shared `data.img` until `--move`. Virtualization.framework passes no flushes to hot-attached disks, so `fsync` inside a distribution isn't a durability point: writes are flushed to the SSD when a disk is detached and at shutdown ([Disk and storage](https://onexay.github.io/msl-docs/docs/how-to/disk-space/#durability)).
 - `[msl2] nestedVirtualization` (default true): `/dev/kvm` in the distributions on an M3 or later.
 - The VM keeps one machine identifier across boots, and its `/etc/machine-id` is that identifier's UUID.
 
@@ -17,7 +17,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ## [0.1.11] - 2026-09-28
 
 ### Fixed
-- The VM no longer crashes when macOS runs short of memory. With the 4 KiB-page kernel, every distribution could crash within seconds once macOS started compressing or swapping the VM's memory, and a crash in the middle of a write could damage the data disk ([#48](https://github.com/onexay/msl/issues/48)). The cause is Virtualization.framework's handling of 4 KiB guest pages on the Mac's 16 KiB pages. MSL's kernel now uses 16 KiB pages, like the Mac (`getconf PAGESIZE` is 16384). Ubuntu 22.04 and 26.04, Debian 13, Fedora 44, AlmaLinux 9 and Kali were tested: every binary and library loads, and systemd and package managers work. Programs built to assume 4 KiB pages don't run; see [Troubleshooting](docs/troubleshooting.md).
+- The VM no longer crashes when macOS runs short of memory. With the 4 KiB-page kernel, every distribution could crash within seconds once macOS started compressing or swapping the VM's memory, and a crash in the middle of a write could damage the data disk ([#48](https://github.com/onexay/msl/issues/48)). The cause is Virtualization.framework's handling of 4 KiB guest pages on the Mac's 16 KiB pages. MSL's kernel now uses 16 KiB pages, like the Mac (`getconf PAGESIZE` is 16384). Ubuntu 22.04 and 26.04, Debian 13, Fedora 44, AlmaLinux 9 and Kali were tested: every binary and library loads, and systemd and package managers work. Programs built to assume 4 KiB pages don't run; see [Troubleshooting](https://onexay.github.io/msl-docs/docs/troubleshooting/).
 - `msl --install` no longer hangs at the first setup prompt when its input is `/dev/tty`, as when `install.sh` runs it. On macOS `/dev/tty` means the calling process's controlling terminal, and msld has none. msl now passes msld the real terminal device instead.
 
 ## [0.1.10] - 2026-09-26
@@ -77,10 +77,10 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - Releases no longer include a `.pkg`. `install.sh` is the way to install msl, and the only one that sets up IDEs.
 - The VS Code extension has its own releases, `vscode-<version>`, like the kernel. Each msl release bundles the published one. The first is [`vscode-0.1.0`](https://github.com/onexay/msl/releases/tag/vscode-0.1.0).
 - Distro files on the Mac moved from `~/MSL/<distro>` to `~/.msl/distros/<distro>`, so they no longer add a visible folder to your home directory. Each distro still appears in Finder › Locations with its logo. On start, msld unmounts any old `~/MSL` mounts and removes `~/MSL` if it's empty. `MSL_VIEW_DIR` still overrides the location.
-- The README covers installing and the basics. The command reference, installer details and WSL compatibility table moved to [`docs/`](docs/readme.md), which adds a [Getting started](docs/getting_started.md) walkthrough and a [Troubleshooting](docs/troubleshooting.md) page.
+- The README covers installing and the basics. The command reference, installer details and WSL compatibility table moved to [`docs/`](docs/readme.md), which adds a [Getting started](https://onexay.github.io/msl-docs/docs/install/install/) walkthrough and a [Troubleshooting](https://onexay.github.io/msl-docs/docs/troubleshooting/) page.
 
 ### Fixed
-- `msl --help` now lists every command msl accepts, adding `--debug-shell`, `--mount`/`--unmount`, `--update`, `--uninstall`, `--manage`, `--set-version`, `--set-default-version` and `--list --online`. [docs/cli.md](docs/cli.md) includes the full help text.
+- `msl --help` now lists every command msl accepts, adding `--debug-shell`, `--mount`/`--unmount`, `--update`, `--uninstall`, `--manage`, `--set-version`, `--set-default-version` and `--list --online`. [docs/cli.md](https://onexay.github.io/msl-docs/docs/overview/basic-commands/) includes the full help text.
 - The VS Code extension no longer hands back a dead server. After a VM restart it used to trust a pidfile that a new, unrelated process could now match, because pids start over. It also didn't notice a server that was still running but auto-shutting down and refusing connections. It now requires the server's own command line and a successful connection, and starts only one server when a window's connections resolve at the same time.
 - The VS Code extension works with distros that have no `curl` or `wget`, such as stock Debian. It downloads the VS Code Server on the Mac, caches it for every distro, and pipes it in.
 - VS Code tunnels (forwarded ports) no longer cut off a download when the local client reads slowly: the tunnel now applies backpressure and ends cleanly instead of dropping queued data.
@@ -95,7 +95,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ## [0.1.3] - 2026-09-25
 
 ### Added
-- `--json` for the query commands (`--list` and its variants, `--list --online`, `--status`, `--version`). Errors go to stderr as JSON, with wsl.exe's exit codes. See [docs/json.md](docs/json.md).
+- `--json` for the query commands (`--list` and its variants, `--list --online`, `--status`, `--version`). Errors go to stderr as JSON, with wsl.exe's exit codes. See [docs/json.md](https://onexay.github.io/msl-docs/docs/how-to/json-output/).
 
 ## [0.1.2] - 2026-09-24
 

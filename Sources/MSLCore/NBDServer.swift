@@ -16,7 +16,7 @@ import Foundation
 /// acknowledged once it's in the macOS page cache, and FLUSH/FUA run
 /// F_FULLFSYNC. VZ presents NBD disks as write-through and never sends FLUSH or
 /// FUA, so the server also runs F_FULLFSYNC whenever a slot is unbound; a
-/// macOS crash or power loss can still lose recent writes (docs/storage.md).
+/// macOS crash or power loss can still lose recent writes (https://onexay.github.io/msl-docs/docs/how-to/disk-space/#durability).
 ///
 /// An unbound slot reads as zeros and fails writes with EIO. Requests are
 /// served concurrently and answered out of order, as NBD allows.
