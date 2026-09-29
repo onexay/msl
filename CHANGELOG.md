@@ -4,6 +4,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
 ### Added
 - msl shuts down cleanly when you log out, restart or shut down the Mac ([#52](https://github.com/onexay/msl/issues/52)). Before, the VM died with `msld`: distributions got no warning, and writes not yet synced were lost. `msld` now stops the distributions (5 s grace), unmounts and flushes their disks, and powers the VM off. It runs as a LaunchAgent (`~/Library/LaunchAgents/dev.msl.msld.plist`) that launchd starts on demand when `msl` connects, and gives up to 30 s to do this. `msl --uninstall` removes it.
 - Each new distribution gets its own disk, a sparse `ext4.img` in its install location, like WSL's `ext4.vhdx` ([#50](https://github.com/onexay/msl/issues/50)). Disks are attached to the running VM through 16 NBD disk slots served by msld. `--manage --move`, per-distribution `--manage --resize`, `--export --vhd`, `--import --vhd`, `--import-in-place` and `--install --vhd-size` now work; images are raw ext4, not VHDX. Distributions from earlier versions stay on the shared `data.img` until `--move`. Virtualization.framework passes no flushes to hot-attached disks, so `fsync` inside a distribution isn't a durability point: writes are flushed to the SSD when a disk is detached and at shutdown ([Disk and storage](https://onexay.github.io/msl-docs/docs/how-to/disk-space/#durability)).
@@ -11,6 +13,7 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 - The VM keeps one machine identifier across boots, and its `/etc/machine-id` is that identifier's UUID.
 
 ### Changed
+- The documentation is now the MSL documentation site, https://onexay.github.io/msl-docs/ ([source](https://github.com/onexay/msl-docs)). msl no longer builds a site of its own, and its `docs/` folder holds the developer notes.
 - The kernel and the VS Code extension moved to their own repositories, [msl-kernel](https://github.com/onexay/msl-kernel) and [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension). msl pins a release of each (`scripts/pin.sh`) and bundles it as before.
 - Kernel `kernel-6.18.15-msl-a1a22bd`: KVM is built in, so `/dev/kvm` works in the distributions with nested virtualization (`KVM_GET_API_VERSION` 12 on an M3 Pro), and `uname -r` shows the release, `6.18.15-msl-a1a22bd`, instead of `6.18.15`.
 
@@ -126,7 +129,8 @@ First release. (0.1.0 was withdrawn before announcement; 0.1.1 replaces it.)
 - `kernel/fetch.sh` works without the GitHub CLI.
 - Licensed under Apache-2.0. msl stands for **Modern Subsystem for Linux**.
 
-[Unreleased]: https://github.com/onexay/msl/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/onexay/msl/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/onexay/msl/compare/v0.1.11...v0.2.0
 [0.1.11]: https://github.com/onexay/msl/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/onexay/msl/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/onexay/msl/compare/v0.1.8...v0.1.9

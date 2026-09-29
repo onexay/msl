@@ -2,7 +2,7 @@
 /// Build identity. `scripts/package.sh` stamps the release version and update
 /// channel; `scripts/build.sh` stamps the commit.
 public enum MSLBuild {
-    public static let version = "0.1.11"
+    public static let version = "0.2.0"
     /// Short git hash of the build (".dirty" with uncommitted changes); empty for a plain `swift build`.
     public static let commit = ""
     /// What `msl --version` shows: semver build metadata, e.g. "0.1.7+3af5916".
