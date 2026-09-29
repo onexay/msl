@@ -36,10 +36,10 @@ public enum Request: Codable, Sendable {
     case unregister(name: String)
     /// fd[0] = output file (or stdout)
     case export(name: String, format: String)
-    /// fd[0] = input file (or stdin)
-    case importTar(name: String, location: String)
+    /// fd[0] = input file (or stdin). `location` is absolute; `vhdSize` sizes the new disk.
+    case importTar(name: String, location: String, vhdSize: UInt64? = nil)
     /// fd[0] = input file
-    case installFromFile(name: String?, location: String?, sourceDescription: String)
+    case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil)
     case manage(name: String, op: ManageOp)
     /// fds = [stdin, stdout, stderr]
     case run(RunRequest)

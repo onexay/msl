@@ -31,6 +31,8 @@ public struct InstallSpec: Codable, Equatable, Sendable {
     public var location: String?
     public var noLaunch = false
     public var version: Int?
+    /// `--vhd-size`: size of the distro's disk (default: `[msl2] defaultVhdSize`).
+    public var vhdSize: UInt64?
     public init() {}
 }
 
@@ -228,7 +230,10 @@ public enum Arguments {
                 case "--version": spec.version = try int(value(a), a)
                 case "--distribution", "-d": spec.distribution = try value(a)
                 case "--web-download", "--fixed-vhd", "--legacy", "--no-distribution": break  // no effect on macOS
-                case "--vhd-size": _ = try value(a)
+                case "--vhd-size":
+                    let v = try value(a)
+                    guard let size = MSLConfig.parseSize(v), size > 0 else { throw ArgumentError.invalid(v) }
+                    spec.vhdSize = size
                 case "--enable-wsl1", "--inbox": return .unsupported(a)
                 default:
                     if a.hasPrefix("-") || spec.distribution != nil { throw ArgumentError.invalid(a) }

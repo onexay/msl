@@ -37,6 +37,8 @@ public final class Service: @unchecked Sendable {
     private let diskLock = NSLock()
     private(set) lazy var forwarder = PortForwarder(vm: vm, guest: guest)
     private(set) lazy var files = FileView(vm: vm, paths: paths, registry: registry, guest: guest)
+    /// The distros' own disks (#50) and their NBD slots.
+    private(set) lazy var ownDisks = DistroDisks(vm: vm, guest: guest, runningIds: { [weak self] in self?.runningIds() ?? [] })
 
     public init(paths: Paths = Paths()) {
         self.paths = paths
@@ -45,6 +47,7 @@ public final class Service: @unchecked Sendable {
         guest = GuestClients(vm: vm)
         vm.onStop = { [weak self] in
             self?.diskLock.withLock { self?.disks.removeAll() }
+            self?.ownDisks.reset()
             self?.forwarder.stopAll()
             self?.files.shutdown()
             self?.guest.reset()
@@ -166,25 +169,27 @@ public final class Service: @unchecked Sendable {
             let d = try find(name)
             files.unmount(name: d.name)  // before the guest drops its export
             try bootVM()
+            try ownDisks.detach(d)
             let mini = try guest.miniInit
             _ = try blocking { try await mini.deleteDistro(.with { $0.id = d.id }) }
             try registry.mutate { $0.distros.removeAll { $0.id == d.id } }
             files.syncLinks()
+            if let disk = d.disk { removeDisk(disk, location: d.location) }  // as WSL deletes ext4.vhdx
             return .ok
         case .export(let name, let format):
             let d = try find(name)
             try export(d, format: format, to: fds[0])
             return .ok
-        case .importTar(let name, let location):
+        case .importTar(let name, let location, let vhdSize):
             guard Registry.isValidName(name) else {
                 throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
             }
             guard registry.find(name: name) == nil else {
                 throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
             }
-            _ = try importDistro(name: name, location: location, from: fds[0])
+            _ = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0])
             return .ok
-        case .installFromFile(let name, let location, _):
+        case .installFromFile(let name, let location, _, let vhdSize):
             if let name {
                 guard Registry.isValidName(name) else {
                     throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
@@ -193,7 +198,7 @@ public final class Service: @unchecked Sendable {
                     throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
                 }
             }
-            let rec = try importDistro(name: name, location: location, from: fds[0])
+            let rec = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0])
             return .installed(name: rec.name)
         case .mount(let m):
             return try mount(m)
@@ -240,6 +245,7 @@ public final class Service: @unchecked Sendable {
                 throw ServiceError("msld was updated on disk while running and can no longer start the virtual machine.\nRun 'msl --shutdown' to restart it.", code: ErrorCode.vm)
             }
             try guest.waitForMiniInit(timeout: 15)
+            ownDisks.attachAll(registry.all)
             if config.localhostForwarding { forwarder.start() }
             if config.dnsTunneling { vm.listen(port: DNSProxy.vsockPort) { DNSProxy.handle($0) } }
             files.start(transport: config.fileViewTransport)
@@ -400,9 +406,27 @@ public final class Service: @unchecked Sendable {
 
     // MARK: import / export
 
-    func importDistro(name: String?, location: String?, from input: Int32) throws -> DistroRecord {
+    /// Import a rootfs tar as a new distro on its own disk: `<location>/ext4.img`
+    /// (the location defaults to msl's `distros/<id>`). With MSL_LEGACY_STORE
+    /// set (tests), it goes to the shared data.img instead, as before #50.
+    func importDistro(name: String?, location: String?, vhdSize: UInt64?, from input: Int32) throws -> DistroRecord {
         try bootVM()
         let id = UUID().uuidString.lowercased()
+        let folder = URL(fileURLWithPath: location ?? paths.root.appendingPathComponent("distros/\(id)").path).standardizedFileURL
+        var rec = DistroRecord(id: id, name: name ?? "", location: folder.path)
+        if ProcessInfo.processInfo.environment["MSL_LEGACY_STORE"] == nil {
+            rec.disk = try createDisk(in: folder, vhdSize: vhdSize)
+        }
+        // Undo everything if the import doesn't end up registered.
+        var registered = false
+        defer {
+            if !registered {
+                if rec.disk != nil { try? ownDisks.detach(rec) }
+                if let mini = try? guest.miniInit { _ = try? blocking { try await mini.deleteDistro(.with { $0.id = id }) } }
+                if let disk = rec.disk { removeDisk(disk, location: rec.location) }
+            }
+        }
+        try ownDisks.ensureAttached(rec)
         let mini = try guest.miniInit
         let vm = self.vm
         let done: Msl_V1_ImportDistroDone
@@ -430,26 +454,61 @@ public final class Service: @unchecked Sendable {
         } catch let e as RPCError {
             throw ServiceError(Messages.importFailed + "\n\(e.message)", code: ErrorCode.importFailed)
         }
+        try register(&rec, name: name, conf: done.distributionConf)
+        registered = true
+        log("imported \(rec.name) (\(id)): \(done.entries) entries\(rec.disk.map { " on \($0.path)" } ?? "")")
+        return rec
+    }
 
-        let conf = done.distributionConf
-        let finalName = name ?? (conf.oobeDefaultName.isEmpty ? nil : conf.oobeDefaultName)
-        func discard() { _ = try? blocking { try await mini.deleteDistro(.with { $0.id = id }) } }
-        guard let finalName else {
-            discard()
+    /// Name the new distro (from the request or its wsl-distribution.conf) and add it to the registry.
+    func register(_ rec: inout DistroRecord, name: String?, conf: Msl_V1_DistributionConf) throws {
+        guard let finalName = name ?? (conf.oobeDefaultName.isEmpty ? nil : conf.oobeDefaultName) else {
             throw ServiceError(Messages.distributionNameNeeded, code: ErrorCode.nameNeeded)
         }
-        guard registry.find(name: finalName) == nil else {
-            discard()
-            throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
-        }
-        var rec = DistroRecord(id: id, name: finalName, location: location ?? paths.root.appendingPathComponent("distros/\(id)").path)
+        rec.name = finalName
         rec.oobeCommand = conf.oobeCommand
         rec.oobeDefaultUid = conf.hasOobeDefaultUid ? conf.oobeDefaultUid : nil
         rec.oobePending = !conf.oobeCommand.isEmpty
-        try registry.mutate { $0.distros.append(rec) }
+        let new = rec
+        try registry.mutate {
+            guard !$0.distros.contains(where: { $0.name.caseInsensitiveCompare(finalName) == .orderedSame }) else {
+                throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
+            }
+            $0.distros.append(new)
+        }
         files.syncLinks()
-        log("imported \(finalName) (\(id)): \(done.entries) entries")
-        return rec
+    }
+
+    /// A new, empty own disk: `<folder>/ext4.img`.
+    func createDisk(in folder: URL, vhdSize: UInt64?) throws -> DistroDiskInfo {
+        let image = folder.appendingPathComponent(DistroDisk.fileName)
+        guard !FileManager.default.fileExists(atPath: image.path) else {
+            throw ServiceError("A distribution's disk already exists at \(image.path).\nChoose another location.", code: ErrorCode.alreadyExists)
+        }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let size = DistroDisk.initialSize(requested: vhdSize, configured: config.defaultVhdSize, volumeCapacity: VMHost.volumeCapacity(folder))
+            let disk = try DiskImage.create(at: image, size: size)
+            log("created disk \(image.path) (\(StatusFormat.bytes(size)))")
+            return disk
+        } catch {
+            try? FileManager.default.removeItem(at: image)
+            throw ServiceError("Failed to create the distribution's disk at \(image.path).\n\(error.localizedDescription)", code: ErrorCode.service)
+        }
+    }
+
+    /// Delete an own disk, and its folder if nothing else is left in it.
+    func removeDisk(_ disk: DistroDiskInfo, location: String) {
+        do {
+            try FileManager.default.removeItem(atPath: disk.path)
+            log("deleted disk \(disk.path)")
+        } catch {
+            log("could not delete disk \(disk.path): \(error.localizedDescription)")
+        }
+        let folder = URL(fileURLWithPath: location)
+        if (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
+            try? FileManager.default.removeItem(at: folder)
+        }
     }
 
     func export(_ d: DistroRecord, format: String, to output: Int32) throws {
@@ -461,6 +520,7 @@ public final class Service: @unchecked Sendable {
         default: throw ServiceError(Messages.unsupportedOnMacOS("--format \(format)"), code: ErrorCode.unsupported)
         }
         try bootVM()
+        try ownDisks.ensureAttached(d)
         let mini = try guest.miniInit
         let vm = self.vm
         _ = try blocking {
@@ -501,11 +561,13 @@ public final class Service: @unchecked Sendable {
 
     func startDistro(_ d: DistroRecord) throws -> Msl_V1_Agent.Client<Transport> {
         try bootVM()
+        try ownDisks.ensureAttached(d)
         let mini = try guest.miniInit
         let host = ProcessInfo.processInfo.hostName.components(separatedBy: ".").first ?? "msl"
         let dns = config.dnsTunneling
+        let own = d.disk != nil
         let reply = try blocking {
-            try await mini.startDistro(.with { $0.id = d.id; $0.name = d.name; $0.hostname = host; $0.dnsTunneling = dns })
+            try await mini.startDistro(.with { $0.id = d.id; $0.name = d.name; $0.hostname = host; $0.dnsTunneling = dns; $0.ownDisk = own })
         }
         return try guest.agent(port: reply.agentPort)
     }

@@ -217,6 +217,11 @@ func openInput(_ file: String) -> Int32 {
     return fd
 }
 
+/// A path as msld needs it: absolute, from this process's cwd, `~` expanded.
+func absolutePath(_ path: String) -> String {
+    URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+}
+
 func openOutput(_ file: String) -> Int32 {
     if file == "-" { return 1 }
     let fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
@@ -318,7 +323,7 @@ case .importTar(let name, let location, let file, let version, let vhd):
     if let version, version != 2 { fail(Messages.wsl1NotSupported, ErrorCode.unsupported) }
     let fd = openInput(file)
     out(Messages.importProgress)
-    expectOK(request(.importTar(name: name, location: location), fds: [fd]))
+    expectOK(request(.importTar(name: name, location: absolutePath(location)), fds: [fd]))
     out(Messages.operationCompleted)
 
 case .install(let spec):
@@ -342,7 +347,7 @@ case .install(let spec):
         out(Messages.installing(entry.FriendlyName))
     }
     let fd = openInput(file)
-    let reply = request(.installFromFile(name: name, location: spec.location, sourceDescription: file), fds: [fd])
+    let reply = request(.installFromFile(name: name, location: spec.location.map(absolutePath), sourceDescription: file, vhdSize: spec.vhdSize), fds: [fd])
     expectOK(reply)
     guard case .installed(let name) = reply else { exit(failureExit) }
     out(Messages.distributionInstalled(name))
