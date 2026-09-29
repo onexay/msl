@@ -61,7 +61,9 @@ enum TTY {
 func connect() -> IPCConnection {
     let paths = Paths()
     if let c = try? IPCConnection.connect(path: paths.socket.path) { return c }
-    startDaemon(paths)
+    if !(LaunchAgent.wanted && LaunchAgent.install(msld: msldPath(), paths: paths)) {
+        startDaemon(paths)
+    }
     let deadline = Date().addingTimeInterval(10)
     while Date() < deadline {
         if let c = try? IPCConnection.connect(path: paths.socket.path) { return c }
@@ -80,14 +82,18 @@ let selfExecutable: URL = {
     return URL(fileURLWithPath: path).resolvingSymlinksInPath()
 }()
 
-/// Start msld (next to this binary) detached, logging to msld.log.
+/// msld next to this binary: build/bin/{msl,msld}, or an installed
+/// <prefix>/bin/msl + <prefix>/libexec/msl/msld.
+func msldPath() -> String {
+    let dir = selfExecutable.deletingLastPathComponent()
+    return [dir.appendingPathComponent("msld"), dir.appendingPathComponent("../libexec/msl/msld").standardizedFileURL]
+        .map(\.path).first { FileManager.default.isExecutableFile(atPath: $0) } ?? dir.appendingPathComponent("msld").path
+}
+
+/// Start msld detached, logging to msld.log (when it isn't a LaunchAgent).
 func startDaemon(_ paths: Paths) {
     try? FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
-    let exe = selfExecutable
-    let dir = exe.deletingLastPathComponent()
-    // build/bin/{msl,msld}, or an installed <prefix>/bin/msl + <prefix>/libexec/msl/msld
-    let msld = [dir.appendingPathComponent("msld"), dir.appendingPathComponent("../libexec/msl/msld").standardizedFileURL]
-        .map(\.path).first { FileManager.default.isExecutableFile(atPath: $0) } ?? dir.appendingPathComponent("msld").path
+    let msld = msldPath()
     var attr = posix_spawnattr_t(nil as OpaquePointer?)
     posix_spawnattr_init(&attr)
     posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID))

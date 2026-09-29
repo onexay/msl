@@ -12,4 +12,8 @@ ssize_t msl_send_with_fds(int sock, const void *buf, size_t len, const int *fds,
 /// `*nfds`), and `*nfds` is updated to the count received.
 ssize_t msl_recv_with_fds(int sock, void *buf, size_t len, int *fds, int *nfds);
 
+/// The first socket launchd opened for this job's `Sockets` entry `name`
+/// (launch_activate_socket); -1 when not started by launchd with one.
+int msl_launchd_socket(const char *name);
+
 #endif

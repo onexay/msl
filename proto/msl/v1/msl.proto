@@ -39,8 +39,8 @@ service MiniInit {
   // Lists distros whose namespaces are running.
   rpc ListRunning(Empty) returns (ListRunningReply);
 
-  // Stops all distros, syncs and powers the VM off.
-  rpc Shutdown(Empty) returns (Empty);
+  // Stops all distros, unmounts their disks, syncs and powers the VM off.
+  rpc Shutdown(ShutdownRequest) returns (Empty);
 
   // TCP ports listening on the (shared) loopback/any address, for localhost
   // forwarding. Sends the full set now and again on every change.
@@ -91,6 +91,12 @@ message AttachDiskReply {
 
 message MigrateDistroReply {
   uint64 entries = 1;
+}
+
+message ShutdownRequest {
+  // How long distros get to stop before they're killed; 0 = the default (10 s).
+  // msld passes less when macOS is shutting down (#52).
+  uint32 grace_ms = 1;
 }
 
 message FileViewRequest {

@@ -32,6 +32,10 @@ public final class Service: @unchecked Sendable {
     /// Settings read at the last VM boot (like WSL, .mslconfig applies on the next start).
     private(set) var config = MSLConfig()
     let idle = IdleTracker()
+    /// Set on SIGTERM/SIGINT (logout, restart, shutdown, launchctl bootout, #52):
+    /// the VM is going down for good, so nothing may start it again.
+    private var terminating = false
+    private var signalSources: [DispatchSourceSignal] = []
     /// `msl --mount`: disk path -> (USB device, mount name). Cleared when the VM stops.
     private var disks: [String: (device: AnyObject, name: String)] = [:]
     private let diskLock = NSLock()
@@ -61,9 +65,12 @@ public final class Service: @unchecked Sendable {
 
     public func serve() throws -> Never {
         try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
-        let lfd = try listenUnix(paths.socket.path)
+        // Started by launchd (the LaunchAgent, #52): it already listens on msld.sock.
+        let launchd = launchdListener()
+        let lfd = try launchd ?? listenUnix(paths.socket.path)
         _ = executableInode
-        log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)")
+        handleTermination()
+        log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)\(launchd != nil ? " (launchd)" : "")")
         serveConnect()
         startIdleMonitor()
         while true {
@@ -105,6 +112,34 @@ public final class Service: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// macOS sends SIGTERM at logout, restart and shutdown (and launchd waits
+    /// ExitTimeOut for its jobs before SIGKILL): stop the distros quickly, unmount
+    /// and flush their disks, then exit. Without this, the VM dies with msld.
+    func handleTermination() {
+        for sig in [SIGTERM, SIGINT] {
+            signal(sig, SIG_IGN)
+            let src = DispatchSource.makeSignalSource(signal: sig, queue: .global())
+            src.setEventHandler { [weak self] in self?.terminate(sig == SIGTERM ? "SIGTERM" : "SIGINT") }
+            src.resume()
+            signalSources.append(src)
+        }
+    }
+
+    static let terminationGraceMs: UInt32 = 5000
+
+    func terminate(_ why: String) {
+        // Under bootLock: waits for a boot in progress, and no boot starts after.
+        let first = bootLock.withLock { () -> Bool in
+            defer { terminating = true }
+            return !terminating
+        }
+        guard first else { return }
+        log("\(why): shutting down")
+        shutdown(force: false, graceMs: Self.terminationGraceMs)
+        log("\(why): stopped; exiting")
+        exit(0)
     }
 
     func runningIds() -> [String] {
@@ -261,6 +296,7 @@ public final class Service: @unchecked Sendable {
 
     func bootVM() throws {
         try bootLock.withLock {
+            if terminating { throw ServiceError("msld is shutting down (macOS is logging out or restarting, or it was stopped). Try again in a few seconds.", code: ErrorCode.vm) }
             if vm.isRunning { return }
             config = MSLConfig.load()
             for w in config.warnings { log("msl: \(w)") }
@@ -289,10 +325,11 @@ public final class Service: @unchecked Sendable {
         }
     }
 
-    func shutdown(force: Bool) {
+    /// `graceMs`: how long distros get to stop (0: the guest's default, 10 s).
+    func shutdown(force: Bool, graceMs: UInt32 = 0) {
         guard vm.isRunning else { return }
         files.shutdown()  // unmount while the server is still up
-        if !force, let mini = try? guest.miniInit, (try? blocking({ try await mini.shutdown(Msl_V1_Empty()) })) != nil,
+        if !force, let mini = try? guest.miniInit, (try? blocking({ try await mini.shutdown(.with { $0.graceMs = graceMs }) })) != nil,
            vm.waitForStop(timeout: 10) {
             return
         }
