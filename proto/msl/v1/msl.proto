@@ -60,6 +60,37 @@ service MiniInit {
   // The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
   // rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
   rpc SetFileView(FileViewRequest) returns (Empty);
+
+  // A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
+  // the slot's block device (found by its virtio serial) as the distro's
+  // directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
+  // clean, and grows it offline to `size_bytes`. The distro must be stopped.
+  rpc AttachDisk(AttachDiskRequest) returns (AttachDiskReply);
+  // Stops the distro, unmounts its disk and flushes the slot's buffers, so the
+  // host can rebind the slot to another file.
+  rpc DetachDisk(DistroRef) returns (Empty);
+  // Copies a distro kept on data.img onto its (attached) own disk, then removes
+  // it from data.img.
+  rpc MigrateDistro(DistroRef) returns (MigrateDistroReply);
+  // /etc/wsl-distribution.conf of an attached distro (import of a disk image).
+  rpc DistroConf(DistroRef) returns (DistributionConf);
+}
+
+message AttachDiskRequest {
+  string id = 1;
+  string serial = 2;       // virtio-blk serial of the slot, e.g. "slot3"
+  string uuid = 3;         // expected ext4 UUID (lowercase, hyphenated)
+  uint64 size_bytes = 4;   // size of the image file: grow the filesystem to it
+}
+
+message AttachDiskReply {
+  string device = 1;       // e.g. /dev/vdc
+  // What was done before mounting (e2fsck, growth); empty when nothing.
+  string repaired = 2;
+}
+
+message MigrateDistroReply {
+  uint64 entries = 1;
 }
 
 message FileViewRequest {
@@ -165,6 +196,8 @@ message StartDistroRequest {
   // DNS tunneling ([msl2] dnsTunneling): resolv.conf points at the guest stub
   // (10.255.255.254), which relays queries to the Mac's resolver over vsock.
   bool dns_tunneling = 4;
+  // The distro lives on its own disk, which must be attached (AttachDisk).
+  bool own_disk = 5;
 }
 
 message StartDistroReply {
