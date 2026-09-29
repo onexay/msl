@@ -52,6 +52,11 @@ public final class Service: @unchecked Sendable {
             self?.files.shutdown()
             self?.guest.reset()
         }
+        files.isViewable = { [weak self] d in d.disk == nil || self?.ownDisks.slot(of: d.id) != nil }
+        ownDisks.beforeDetach = { [weak self] id in
+            if let d = self?.registry.find(id: id) { self?.files.unmount(name: d.name) }
+        }
+        ownDisks.onChange = { [weak self] in self?.files.syncLinks() }
     }
 
     public func serve() throws -> Never {
@@ -200,6 +205,17 @@ public final class Service: @unchecked Sendable {
             }
             let rec = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0])
             return .installed(name: rec.name)
+        case .exportDisk(let name, let path):
+            try exportDisk(try find(name), to: URL(fileURLWithPath: path))
+            return .ok
+        case .importDisk(let name, let location, let image):
+            try checkNewName(name)
+            _ = try importImage(name: name, image: URL(fileURLWithPath: image), copyTo: URL(fileURLWithPath: location))
+            return .ok
+        case .importInPlace(let name, let image):
+            try checkNewName(name)
+            _ = try importImage(name: name, image: URL(fileURLWithPath: image), copyTo: nil)
+            return .ok
         case .mount(let m):
             return try mount(m)
         case .unmount(let disk):
@@ -226,6 +242,15 @@ public final class Service: @unchecked Sendable {
     }
 
     // MARK: helpers
+
+    func checkNewName(_ name: String) throws {
+        guard Registry.isValidName(name) else {
+            throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
+        }
+        guard registry.find(name: name) == nil else {
+            throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
+        }
+    }
 
     func find(_ name: String) throws -> DistroRecord {
         guard let d = registry.find(name: name) else {
@@ -388,14 +413,16 @@ public final class Service: @unchecked Sendable {
             let reply = try blocking { try await agent.lookupUser(.with { $0.name = user }) }
             guard reply.found else { throw ServiceError(Messages.userNotFound, code: ErrorCode.userNotFound) }
             try registry.update(id: d.id) { $0.defaultUid = reply.uid }
-        case .move:
-            // All distros are directories on the shared data disk, so there's no
-            // per-distro file to move. Refuse rather than pretend.
-            throw ServiceError("Failed to move distribution.\nAll distributions share one disk, so a single distribution can't be moved.", code: ErrorCode.unsupported)
+        case .move(let dir):
+            try move(d, to: URL(fileURLWithPath: dir).standardizedFileURL)
         case .setSparse:
-            break  // the data disk is always sparse
+            break  // disks are always sparse
         case .resize(let requested):
-            try resizeDataDisk(requested)
+            if d.disk == nil {
+                try resizeDataDisk(requested)
+            } else {
+                try resizeDisk(d, requested)
+            }
         case .compact:
             try bootVM()
             let mini = try guest.miniInit

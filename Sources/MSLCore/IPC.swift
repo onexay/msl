@@ -41,6 +41,12 @@ public enum Request: Codable, Sendable {
     /// fd[0] = input file
     case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil)
     case manage(name: String, op: ManageOp)
+    /// `--export --vhd`: a copy of the distro's disk image at `path` (absolute).
+    case exportDisk(name: String, path: String)
+    /// `--import --vhd`: an ext4 image copied into `<location>/ext4.img`.
+    case importDisk(name: String, location: String, image: String)
+    /// `--import-in-place`: an ext4 image used where it is.
+    case importInPlace(name: String, image: String)
     /// fds = [stdin, stdout, stderr]
     case run(RunRequest)
     /// A root shell in the utility VM itself; fds = [stdin, stdout, stderr]

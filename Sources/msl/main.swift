@@ -312,15 +312,27 @@ case .unregister(let name):
     out(Messages.operationCompleted)
 
 case .export(let name, let file, let format):
-    if format == "vhd" { fail(Messages.notImplemented("--format vhd"), ErrorCode.unsupported) }
+    if format == "vhd" {
+        if file == "-" { fail(Messages.diskImageNotToStdout, ErrorCode.invalidArgument) }
+        out(Messages.exportProgress)
+        expectOK(request(.exportDisk(name: name, path: absolutePath(file))))
+        out(Messages.operationCompleted)
+        exit(0)
+    }
     let fd = openOutput(file)
     if file != "-" { out(Messages.exportProgress) }
     expectOK(request(.export(name: name, format: format ?? "tar"), fds: [fd]))
     if file != "-" { out(Messages.operationCompleted) }
 
 case .importTar(let name, let location, let file, let version, let vhd):
-    if vhd { fail(Messages.notImplemented("--vhd"), ErrorCode.unsupported) }
     if let version, version != 2 { fail(Messages.wsl1NotSupported, ErrorCode.unsupported) }
+    if vhd {
+        if file == "-" { fail(Messages.diskImageNotFromStdin, ErrorCode.invalidArgument) }
+        out(Messages.importProgress)
+        expectOK(request(.importDisk(name: name, location: absolutePath(location), image: absolutePath(file))))
+        out(Messages.operationCompleted)
+        exit(0)
+    }
     let fd = openInput(file)
     out(Messages.importProgress)
     expectOK(request(.importTar(name: name, location: absolutePath(location)), fds: [fd]))
@@ -370,8 +382,15 @@ case .setVersion(let name, let v):
     if v != 2 { fail(Messages.wsl1NotSupported, ErrorCode.unsupported) }
     out(Messages.operationCompleted)
 
+case .importInPlace(let name, let file):
+    out(Messages.importProgress)
+    expectOK(request(.importInPlace(name: name, image: absolutePath(file))))
+    out(Messages.operationCompleted)
+
 case .manage(let name, let op):
     printConfigWarnings()
+    var op = op
+    if case .move(let dir) = op { op = .move(absolutePath(dir)) }
     expectOK(request(.manage(name: name, op: op)))
     out(Messages.operationCompleted)
 

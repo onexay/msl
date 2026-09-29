@@ -80,7 +80,18 @@ import Testing
         }
         #expect(i.fromFile == "u.wsl" && i.name == "U2" && i.noLaunch && i.location == "/x")
         guard case .install(let j) = try Arguments.parse(["--install", "Ubuntu"]) else { Issue.record("not install"); return }
-        #expect(j.distribution == "Ubuntu")
+        #expect(j.distribution == "Ubuntu" && j.vhdSize == nil)
+        guard case .install(let k) = try Arguments.parse(["--install", "Debian", "--vhd-size", "64GB"]) else { Issue.record("not install"); return }
+        #expect(k.vhdSize == 64 << 30)
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--install", "Debian", "--vhd-size", "lots"]) }
+    }
+
+    @Test func diskImages() throws {
+        #expect(try Arguments.parse(["--import-in-place", "D", "/x/ext4.img"]) == .importInPlace(distribution: "D", file: "/x/ext4.img"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--import-in-place", "D"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--import-in-place", "D", "f", "extra"]) }
+        #expect(try Arguments.parse(["--export", "D", "d.img", "--vhd"]) == .export(distribution: "D", file: "d.img", format: "vhd"))
+        #expect(try Arguments.parse(["--import", "D", "loc", "d.img", "--vhd"]) == .importTar(distribution: "D", location: "loc", file: "d.img", version: nil, vhd: true))
     }
 }
 

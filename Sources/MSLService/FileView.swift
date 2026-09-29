@@ -29,6 +29,11 @@ final class FileView: @unchecked Sendable {
     /// > 0 while msld runs mount_nfs: the only time a MOUNT call is accepted.
     private var mounting = 0
     private let owner = getuid()
+    /// Serializes syncLinks (it runs from several threads).
+    private let syncLock = NSLock()
+    /// Whether a distro's files can be served now: a distro on its own disk
+    /// only while that disk is attached (#50). Set by Service.
+    var isViewable: (DistroRecord) -> Bool = { _ in true }
 
     init(vm: VMHost, paths: Paths, registry: Registry, guest: GuestClients) {
         self.vm = vm
@@ -98,9 +103,14 @@ final class FileView: @unchecked Sendable {
     /// Bring guest view and Mac mounts in line with the registry. Call on
     /// start and after every registry change.
     func syncLinks() {
+        syncLock.lock()
+        defer { syncLock.unlock() }
         guard vm.isRunning, let mini = try? guest.miniInit, let ep = lock.withLock({ endpoint }) else { return }
-        let map = Dictionary(registry.all.map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })
-        _ = try? blocking { try await mini.setFileView(.with { $0.distros = map }) }
+        // The guest gets every distro (it adds one when its disk is attached);
+        // the Mac mounts only those it can serve now.
+        let all = Dictionary(registry.all.map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })
+        _ = try? blocking { try await mini.setFileView(.with { $0.distros = all }) }
+        let map = Dictionary(registry.all.filter(isViewable).map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })
 
         let fm = FileManager.default
         try? fm.createDirectory(at: Self.viewDir, withIntermediateDirectories: true)

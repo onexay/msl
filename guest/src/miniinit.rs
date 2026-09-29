@@ -25,7 +25,8 @@ use tonic::{Request, Response, Status};
 const CONTROL_PORT: u32 = 1024;
 const FIRST_AGENT_PORT: u32 = 2000;
 const DATA: &str = "/var/lib/msl";
-/// Mount points of the distros' own disks (#50): `/run/msl-disks/<id>`.
+/// The distros' own disks (#50): each is mounted at `/run/msl-disks/<id>/rootfs`,
+/// so its filesystem root is the distro's root, as in WSL's ext4.vhdx.
 const DISKS: &str = "/run/msl-disks";
 const SYS_BLOCK: &str = "/sys/block";
 /// NFS export root for ~/.msl/distros: one bind mount of each distro's rootfs, by name.
@@ -93,6 +94,26 @@ fn distro_dir(id: &str) -> Result<PathBuf, Status> {
 
 fn legacy_dir(id: &str) -> PathBuf {
     Path::new(DATA).join("distros").join(id)
+}
+
+/// Where an own disk is mounted: the distro's root filesystem.
+fn own_root(id: &str) -> PathBuf {
+    Path::new(DISKS).join(id).join("rootfs")
+}
+
+/// A freshly formatted disk holds only lost+found.
+fn is_empty_root(dir: &Path) -> bool {
+    std::fs::read_dir(dir).map(|d| d.flatten().all(|e| e.file_name() == "lost+found")).unwrap_or(true)
+}
+
+/// Remove everything in `dir` (a mount point) except lost+found.
+fn clear_root(dir: &Path) {
+    if let Ok(d) = std::fs::read_dir(dir) {
+        for e in d.flatten().filter(|e| e.file_name() != "lost+found") {
+            let p = e.path();
+            let _ = if e.file_type().map(|t| t.is_dir()).unwrap_or(false) { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        }
+    }
 }
 
 /// What `grow_data_disk` did at this boot, for PingReply (empty: nothing to do).
@@ -639,7 +660,7 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
     if req.size_bytes >= sb.size + (64 << 20) {
         repaired.push(grow_fs(&dev, sb.size, req.size_bytes, &run));
     }
-    let dir = Path::new(DISKS).join(&req.id);
+    let dir = own_root(&req.id);
     sys::mount_fs(&dev, &dir, "ext4", MsFlags::MS_NOATIME, None).map_err(status)?;
     // Never propagate into (or out of) distro namespaces.
     if let Err(e) = nix::mount::mount(None::<&str>, &dir, None::<&str>, MsFlags::MS_PRIVATE, None::<&str>) {
@@ -663,7 +684,7 @@ fn detach_blocking(id: &str) -> Result<(), Status> {
     let _g = mount_lock().lock().unwrap();
     let Some(name) = attached().lock().unwrap().get(id).cloned() else { return Ok(()) };
     set_view(&view_without(id)); // its bind pins the filesystem
-    let dir = Path::new(DISKS).join(id);
+    let dir = own_root(id);
     nix::unistd::sync();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -692,6 +713,7 @@ fn detach_blocking(id: &str) -> Result<(), Status> {
     let _ = sys::blkflsbuf(&f);
     drop(f);
     let _ = std::fs::remove_dir(&dir);
+    let _ = std::fs::remove_dir(Path::new(DISKS).join(id));
     attached().lock().unwrap().remove(id);
     sys::log(&format!("disk {dev} detached from {id}"));
     Ok(())
@@ -704,14 +726,14 @@ fn migrate_blocking(id: &str) -> Result<pb::MigrateDistroReply, Status> {
     stop_blocking(id);
     wait_stopped(id);
     let old = legacy_dir(id);
-    let (src, dest) = (old.join("rootfs"), Path::new(DISKS).join(id).join("rootfs"));
+    let (src, dest) = (old.join("rootfs"), own_root(id));
     if !attached().lock().unwrap().contains_key(id) {
         return Err(Status::failed_precondition("the distribution's disk is not attached"));
     }
     if !src.is_dir() {
         return Err(Status::not_found("distribution root filesystem not found on the shared disk"));
     }
-    if dest.exists() {
+    if !is_empty_root(&dest) {
         return Err(Status::already_exists("the distribution's disk is not empty"));
     }
     set_view(&view_without(id));
@@ -729,7 +751,7 @@ fn migrate_blocking(id: &str) -> Result<pb::MigrateDistroReply, Status> {
             Ok(pb::MigrateDistroReply { entries: n })
         }
         (Err(e), _) | (_, Err(e)) => {
-            let _ = std::fs::remove_dir_all(&dest);
+            clear_root(&dest);
             Err(Status::internal(format!("copy to the distribution's disk: {e}")))
         }
     };
@@ -805,7 +827,7 @@ impl MiniInit for MiniInitService {
         let dir = distro_dir(&id)?;
         // An own disk is attached (its mount point exists) before the import.
         let own = attached().lock().unwrap().contains_key(&id);
-        if dir.join("rootfs").exists() || (!own && dir.exists()) {
+        if if own { !is_empty_root(&dir.join("rootfs")) } else { dir.exists() } {
             return Err(Status::already_exists("distribution directory already exists"));
         }
         let dp = DataPort::bind().map_err(status)?;
@@ -819,7 +841,7 @@ impl MiniInit for MiniInitService {
                 blocking(move || {
                     let (source, _bridge) = crate::framed::receiver(conn).map_err(status)?;
                     let n = archive::unpack(source, &rootfs).map_err(|e| {
-                        let _ = std::fs::remove_dir_all(if own { rootfs.as_path() } else { d2.as_path() });
+                        if own { clear_root(&rootfs) } else { let _ = std::fs::remove_dir_all(&d2); }
                         Status::invalid_argument(e)
                     })?;
                     nix::unistd::sync();
@@ -998,7 +1020,7 @@ impl MiniInit for MiniInitService {
             let mut n = sys::fstrim(DATA).map_err(status)?;
             let ids: Vec<String> = attached().lock().unwrap().keys().cloned().collect();
             for id in ids {
-                n += sys::fstrim(&format!("{DISKS}/{id}")).unwrap_or(0);
+                n += sys::fstrim(&own_root(&id).to_string_lossy()).unwrap_or(0);
             }
             Ok(n)
         })
@@ -1050,7 +1072,7 @@ impl MiniInit for MiniInitService {
             // them clean); msld flushes each image when the VM has stopped.
             let own: Vec<String> = attached().lock().unwrap().keys().cloned().collect();
             for id in own {
-                let _ = sys::fstrim(&format!("{DISKS}/{id}"));
+                let _ = sys::fstrim(&own_root(&id).to_string_lossy());
                 if let Err(e) = detach_blocking(&id) {
                     sys::log(&format!("disk of {id}: {}", e.message()));
                 }

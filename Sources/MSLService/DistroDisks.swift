@@ -17,6 +17,15 @@ final class DistroDisks: @unchecked Sendable {
     private let lock = NSLock()
     private var slots: [String: Int] = [:]      // distro id -> slot
     private var lastUse: [String: Date] = [:]
+    /// Called (with the distro id) before a disk is detached: unmount its files on the Mac.
+    var beforeDetach: (String) -> Void = { _ in }
+    /// Called after disks were attached or detached (on another thread): resync the file view.
+    var onChange: () -> Void = {}
+
+    private func changed() {
+        let f = onChange
+        DispatchQueue.global().async { f() }
+    }
 
     init(vm: VMHost, guest: GuestClients, runningIds: @escaping () -> [String]) {
         self.vm = vm
@@ -38,17 +47,21 @@ final class DistroDisks: @unchecked Sendable {
     func attachAll(_ distros: [DistroRecord]) {
         let count = vm.diskSlots?.slotCount ?? 0
         for d in distros.filter({ $0.disk != nil }).prefix(count) {
-            do { try ensureAttached(d) } catch { log("disk of \(d.name): \(Self.describe(error))") }
+            do { try ensureAttached(d, notify: false) } catch { log("disk of \(d.name): \(Self.describe(error))") }
         }
     }
 
     /// Make sure `d`'s disk is mounted in the VM (no-op for a distro on data.img).
-    func ensureAttached(_ d: DistroRecord) throws {
-        guard let disk = d.disk else { return }
-        try lock.withLock {
+    /// Returns what the guest repaired or grew first, if anything.
+    @discardableResult
+    func ensureAttached(_ d: DistroRecord, notify: Bool = true) throws -> String {
+        guard let disk = d.disk else { return "" }
+        var attachedNow = false
+        defer { if attachedNow && notify { changed() } }
+        return try lock.withLock {
             if slots[d.id] != nil {
                 lastUse[d.id] = Date()
-                return
+                return ""
             }
             guard let server = vm.diskSlots else {
                 throw ServiceError("The virtual machine isn't running.", code: ErrorCode.vm)
@@ -60,6 +73,7 @@ final class DistroDisks: @unchecked Sendable {
             }
             let size = UInt64(lseek(fd, 0, SEEK_END))
             try server.bind(slot: slot, fd: fd)
+            let repaired: String
             do {
                 let mini = try guest.miniInit
                 let reply = try blocking {
@@ -70,23 +84,29 @@ final class DistroDisks: @unchecked Sendable {
                         $0.sizeBytes = size
                     })
                 }
-                if !reply.repaired.isEmpty { log("disk of \(d.name): \(reply.repaired)") }
+                repaired = reply.repaired
+                if !repaired.isEmpty { log("disk of \(d.name): \(repaired)") }
             } catch {
                 server.unbind(slot: slot)
                 throw ServiceError("Failed to attach the disk of '\(d.name)'.\n\(Self.describe(error))", code: ErrorCode.service)
             }
             slots[d.id] = slot
             lastUse[d.id] = Date()
+            attachedNow = true
+            return repaired
         }
     }
 
     /// Stop `d` and release its disk: unmounted in the VM, flushed to the Mac.
     func detach(_ d: DistroRecord) throws {
+        let was = slot(of: d.id) != nil
+        defer { if was { changed() } }
         try lock.withLock { try detachLocked(id: d.id, name: d.name) }
     }
 
     private func detachLocked(id: String, name: String) throws {
         guard let slot = slots[id] else { return }
+        beforeDetach(id)
         do {
             let mini = try guest.miniInit
             _ = try blocking { try await mini.detachDisk(.with { $0.id = id }) }

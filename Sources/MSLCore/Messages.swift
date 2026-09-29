@@ -27,6 +27,8 @@ public enum Messages {
     public static let operationCompleted = "The operation completed successfully."
     public static let exportProgress = "Export in progress, this may take a few minutes."
     public static let importProgress = "Import in progress, this may take a few minutes."
+    public static let diskImageNotToStdout = "A disk image can't be written to standard output; give a file name."
+    public static let diskImageNotFromStdin = "A disk image can't be read from standard input; give a file name."
     public static let importFailed = "Importing the distribution failed."
     public static let unregistering = "Unregistering."
     public static func installing(_ what: String) -> String { "Installing: \(what)" }

@@ -72,6 +72,8 @@ public enum CLICommand: Equatable, Sendable {
     case unregister(String)
     case export(distribution: String, file: String, format: String?)
     case importTar(distribution: String, location: String, file: String, version: Int?, vhd: Bool)
+    /// `--import-in-place <Distro> <FileName>`: an ext4 image used where it is.
+    case importInPlace(distribution: String, file: String)
     case install(InstallSpec)
     case setDefaultVersion(Int)
     case setVersion(distribution: String, version: Int)
@@ -325,7 +327,10 @@ public enum Arguments {
             if spec.action != nil && spec.ide == nil { throw ArgumentError.missingValue("--ide") }
             return .manageIDE(spec)
         case "--import-in-place":
-            return .notImplemented(first)
+            let d = try value(first)
+            let f = try value(first)
+            if let a = rest.first { throw ArgumentError.invalid(a) }
+            return .importInPlace(distribution: d, file: f)
         default:
             return .run(try parseRun(args))
         }
