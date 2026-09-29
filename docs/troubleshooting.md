@@ -26,7 +26,7 @@
 
 **A distribution is x86_64-only.** Not supported yet: `msl --list --online` leaves these distributions out, and `msl --install` refuses them. See [Compatibility with WSL distributions](wsl_compatibility.md).
 
-**VS Code can't connect.** See the troubleshooting section of the [extension's README](../extensions/vscode/README.md).
+**VS Code can't connect.** See [VS Code › Troubleshooting](vscode.md#troubleshooting).
 
 ## Reporting a bug
 

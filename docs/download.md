@@ -41,7 +41,7 @@ Then quit and reopen the IDE (⌘Q).
 
 The extension isn't on the Visual Studio Marketplace, because it uses VS Code's proposed remote-resolver API. Each version is a GitHub release named `vscode-<version>`. To install it by hand:
 
-1. Download `msl-<version>.vsix` from the newest [extension release](https://github.com/onexay/msl/releases?q=vscode).
+1. Download `msl-<version>.vsix` from the newest [extension release](https://github.com/onexay/msl-vscode-extension/releases).
 2. Install it:
 
     ```console

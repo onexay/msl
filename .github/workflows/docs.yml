@@ -5,9 +5,9 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "*.md", "extensions/vscode/README.md", "extensions/vscode/release.tag", "kernel/release.tag", "mkdocs.yml", "scripts/docs_hooks.py", ".github/workflows/docs.yml"]
+    paths: ["docs/**", "*.md", "extensions/vscode/release.tag", "kernel/release.tag", "mkdocs.yml", "scripts/docs_hooks.py", ".github/workflows/docs.yml"]
   pull_request:
-    paths: ["docs/**", "*.md", "extensions/vscode/README.md", "mkdocs.yml", "scripts/docs_hooks.py", ".github/workflows/docs.yml"]
+    paths: ["docs/**", "*.md", "mkdocs.yml", "scripts/docs_hooks.py", ".github/workflows/docs.yml"]
   workflow_dispatch:
 permissions:
   contents: read

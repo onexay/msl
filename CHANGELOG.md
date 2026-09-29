@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+- The kernel and the VS Code extension moved to their own repositories, [msl-kernel](https://github.com/onexay/msl-kernel) and [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension). msl pins a release of each (`scripts/pin.sh`) and bundles it as before.
+
 ## [0.1.11] - 2026-09-28
 
 ### Fixed

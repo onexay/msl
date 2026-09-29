@@ -24,7 +24,6 @@ PAGES = {
     "CHANGELOG.md": "project/changelog.md",
     "CONTRIBUTING.md": "project/contributing.md",
     "SECURITY.md": "internals/security.md",
-    "extensions/vscode/README.md": "vscode.md",
     "docs/readme.md": "index.md",
 }
 # Sections of README.md that moved to their own page.

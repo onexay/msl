@@ -87,5 +87,5 @@ jobs:
         run: scripts/check-links.py
       - name: shellcheck
         run: |
-          shellcheck -S warning install.sh scripts/*.sh kernel/*.sh
+          shellcheck -S warning install.sh scripts/*.sh kernel/*.sh extensions/vscode/*.sh
           shellcheck -S error Tests/e2e/*.sh

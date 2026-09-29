@@ -5,7 +5,8 @@
 # forwarder), its allowlist and permission checks, and idle-timeout sessions.
 # Uses a throwaway MSL_HOME, so it has its own msld and connect.sock.
 #   Tests/e2e/sodium.sh [path/to/msl]
-# The extension itself is checked by hand: see extensions/vscode/README.md.
+# The extension itself is checked by hand: see the README in
+# github.com/onexay/msl-vscode-extension.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MSL=${1:-$ROOT/build/bin/msl}
@@ -101,11 +102,6 @@ wait
 sleep 4
 check "connect: distro stops after the pipe closes" "Stopped" "$($MSL -l -v | grep $D)"
 check "connect: starts a stopped distro" "Running" "$(client $D unix=$SOCKDIR/missing.sock >/dev/null; $MSL -l -v | grep $D)"
-
-# Extension builds (only when its dev dependencies are installed)
-if [ -d "$ROOT/extensions/vscode/node_modules" ]; then
-  check "extension compiles" "ok" "$(cd "$ROOT/extensions/vscode" && npx tsc -p . && echo ok)"
-fi
 
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 $MSL --shutdown --force >/dev/null 2>&1

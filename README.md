@@ -67,7 +67,7 @@ $ msl --manage-ide --ide all --uninstall
 
 Then quit and reopen the IDE (⌘Q). In the command palette, run **MSL: Connect to Distro**, or use `code --folder-uri vscode-remote://msl+<distro>/home/<user>`. The first connection to a distro installs the VS Code Server that matches your IDE's version. It's downloaded on macOS and cached, so the distro needs no `curl` or `wget`.
 
-More: [extensions/vscode/README.md](extensions/vscode/README.md), including troubleshooting.
+More: [VS Code](docs/vscode.md), including troubleshooting.
 
 ## How it works
 

@@ -18,6 +18,8 @@ TAG=v$VERSION
 NAME=msl-$VERSION-macos-arm64.tar.gz
 KTAG=$(cat kernel/release.tag)
 XTAG=$(cat extensions/vscode/release.tag)
+KREPO=${MSL_KERNEL_REPO:-onexay/msl-kernel}
+XREPO=${MSL_VSCODE_REPO:-onexay/msl-vscode-extension}
 
 # The tree must already be at this version (scripts/set-version.sh).
 scripts/check-version.sh >/dev/null
@@ -51,10 +53,10 @@ PKG=dist/ci/unpacked && rm -rf "$PKG" && mkdir -p "$PKG"
 tar -xzf "dist/$NAME" -C "$PKG" "msl-$VERSION/share/msl/Image" "msl-$VERSION/share/msl/msl.vsix" "msl-$VERSION/share/msl/kernel.version"
 KSUM=$(awk '$2=="Image"{print $1}' kernel/release.sha256)
 [ "$(shasum -a 256 "$PKG/msl-$VERSION/share/msl/Image" | cut -d' ' -f1)" = "$KSUM" ] \
-  || { echo "the packaged kernel is not $KTAG (run kernel/publish.sh, commit, and let CI rebuild)" >&2; exit 1; }
+  || { echo "the packaged kernel is not $KTAG (pin it with scripts/pin.sh kernel, commit, and let CI rebuild)" >&2; exit 1; }
 XSUM=$(cut -d' ' -f1 extensions/vscode/release.sha256)
 [ "$(shasum -a 256 "$PKG/msl-$VERSION/share/msl/msl.vsix" | cut -d' ' -f1)" = "$XSUM" ] \
-  || { echo "the packaged msl.vsix is not $XTAG (run extensions/vscode/publish.sh)" >&2; exit 1; }
+  || { echo "the packaged msl.vsix is not $XTAG (pin it with scripts/pin.sh vscode, commit, and let CI rebuild)" >&2; exit 1; }
 
 # Sign the checksum with the release key (see SECURITY.md) when it's available.
 SIG=
@@ -78,11 +80,11 @@ Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an 
 
 | | |
 |---|---|
-| Kernel | Linux $(cat "$PKG/msl-$VERSION/share/msl/kernel.version"), release [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG) |
-| VS Code extension | release [\`$XTAG\`](https://github.com/$REPO/releases/tag/$XTAG), installed by \`msl --manage-ide\` |
+| Kernel | Linux $(cat "$PKG/msl-$VERSION/share/msl/kernel.version"), release [\`$KTAG\`](https://github.com/$KREPO/releases/tag/$KTAG) |
+| VS Code extension | release [\`$XTAG\`](https://github.com/$XREPO/releases/tag/$XTAG), installed by \`msl --manage-ide\` |
 | Commit | $(git rev-parse --short HEAD) |
 | Requires | Apple silicon, macOS 26 or later |
-| GPL sources | BusyBox and e2fsprogs: the attached Debian source packages \`busybox_*\` and \`e2fsprogs_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$REPO/releases/tag/$KTAG). |
+| GPL sources | BusyBox and e2fsprogs: the attached Debian source packages \`busybox_*\` and \`e2fsprogs_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$KREPO/releases/tag/$KTAG). |
 | Built by | CI run [$RUN](https://github.com/$REPO/actions/runs/$RUN), $(grep ^Xcode dist/ci/build-info.txt) |
 | Signing | ad-hoc (not notarised); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |
 

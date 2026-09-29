@@ -1,6 +1,6 @@
 # Contributing to msl
 
-Thanks for helping. msl aims to behave exactly like `wsl.exe` on macOS, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. Planned work is in the [milestones](https://github.com/onexay/msl/milestones) and [issues](https://github.com/onexay/msl/issues).
+Thanks for helping. msl aims to behave exactly like `wsl.exe` on macOS, so the best contributions are the ones that close a gap with WSL, or fix a place where msl behaves differently. The kernel and the VS Code extension have their own repositories, [msl-kernel](https://github.com/onexay/msl-kernel) and [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension); msl pins a release of each. Planned work is in the [milestones](https://github.com/onexay/msl/milestones) and [issues](https://github.com/onexay/msl/issues).
 
 ## Before you start
 
@@ -14,8 +14,7 @@ Thanks for helping. msl aims to behave exactly like `wsl.exe` on macOS, so the b
 You need macOS 26 or later on Apple silicon, plus:
 - Xcode 27 (Swift 6.4);
 - Rust 1.98 (`rustup`) with the `aarch64-unknown-linux-musl` target (`guest/rust-toolchain.toml` pins it);
-- `protoc`;
-- to rebuild the kernel: Apple's `container`.
+- `protoc`.
 
 ```console
 $ scripts/build.sh            # guest + initrd + msl/msld → build/ (downloads the kernel release)
@@ -31,8 +30,9 @@ $ build/bin/msl --help
 | `Sources/MSLCore` | parser, messages, registry, `.mslconfig`, IPC |
 | `guest/` | `msl-guest`: VM init, per-distro init and agent, NFS server, DNS stub |
 | `proto/msl/v1/msl.proto` | host ↔ guest gRPC protocol |
-| `kernel/` | kernel config (Apple's + `msl.fragment`), build, fetch and publish scripts |
-| `scripts/` | build, initrd, packaging, publishing, licence and GPL-source tools; `install.sh` is at the root |
+| `kernel/` | the pinned [msl-kernel](https://github.com/onexay/msl-kernel) release (`release.tag`, `release.sha256`) and `fetch.sh` |
+| `extensions/vscode/` | the pinned [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension) release and `fetch.sh` |
+| `scripts/` | build, initrd, packaging, publishing, pinning, licence and GPL-source tools; `install.sh` is at the root |
 | `Tests/` | `MSLCoreTests` (swift-testing) and `e2e/` suites driving a real `msl` |
 | `docs/` | documentation; start at the [index](docs/readme.md): [architecture](docs/architecture.md), [comparison](docs/comparison.md), design notes, [third-party notices](docs/third_party_notices.md) |
 | `docs/dev/` | development log (`progress.md`) |
@@ -70,9 +70,9 @@ CI runs the unit tests and lints. It can't run the e2e suites, because hosted ru
 
 ## Kernel
 
-`scripts/build.sh` downloads the prebuilt kernel from the GitHub release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`). `kernel/build.sh` rebuilds it from source with Apple's `container`, for local testing. Both it and CI run `kernel/build-linux.sh`.
+The kernel's config, build and release scripts are in [msl-kernel](https://github.com/onexay/msl-kernel). `scripts/build.sh` downloads the release named in `kernel/release.tag` (`kernel/fetch.sh`, via `gh` or `curl`, checked against `kernel/release.sha256`) into `kernel/out`, and fetches again when `kernel/out/tag` isn't the pinned one. To try a local kernel build: `MSL_KERNEL_OUT=<msl-kernel>/out scripts/build.sh`.
 
-Kernel tags come from their inputs: `kernel/tag.sh` prints `kernel-<linux>-msl-<hash>`, where the hash covers the Linux version, `kernel/base.config` and `kernel/msl.fragment`. After a config change, push it: CI's *Kernel* workflow builds it on `ubuntu-24.04-arm` and uploads an artifact named after the tag. Then run `kernel/publish.sh`, which downloads that artifact, publishes it under the tag, and updates `kernel/release.tag` and `kernel/release.sha256` (commit both). `kernel/out/tag` records which kernel is in `kernel/out`; `scripts/build.sh` fetches again when it's neither the published one nor a build of the current config.
+To move msl to a new kernel release: `scripts/pin.sh kernel <tag>`, which writes `kernel/release.tag` and `kernel/release.sha256` from the release and checks the download. Commit both.
 
 `scripts/build.sh` stamps the commit into `MSLBuild.commit`, so `msl --version` shows `x.y.z+<hash>`.
 
@@ -80,10 +80,11 @@ The initramfs also carries static `e2fsck` and `resize2fs` (`guest/vendor/`), wh
 
 ## VS Code extension
 
-`scripts/build.sh` bundles `extensions/vscode` as `build/share/msl/msl.vsix`. For `package.json`'s version, it uses a local build (`cd extensions/vscode && npm run package`, which writes `dist/msl-<version>.vsix`) if there is one. Otherwise it downloads the release named in `extensions/vscode/release.tag` (`fetch.sh`, checked against `release.sha256`). Building msl therefore needs Node only when you're changing the extension.
+The extension's source is in [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension). `scripts/build.sh` bundles the release named in `extensions/vscode/release.tag` (`fetch.sh`, checked against `release.sha256`) as `build/share/msl/msl.vsix`, so building msl needs no Node. To bundle a local build instead: `MSL_VSIX=<msl-vscode-extension>/dist/msl-<version>.vsix scripts/build.sh`. To move msl to a new extension release: `scripts/pin.sh vscode vscode-<version>`, then commit the pin.
 
 ## Releases
 
 - **msl** ships as `v<version>` releases. The Latest one is what `install.sh` and `msl --update` use. Set the version with `scripts/set-version.sh <version>` (the root `VERSION` file is the source of truth), move the *Unreleased* changelog entries under it, commit and push, wait for CI to pass, then run `scripts/publish.sh <version>`. CI's *Release package* job builds the release (tarball + `.sha256`, `update.json`) with the Xcode that matches msl's minimum macOS, 26: a newer Xcode's Swift runtime links libraries that macOS 26 lacks, so a package built on a newer Mac doesn't start there (0.1.9 didn't). `publish.sh` never builds: it downloads that job's artifact for HEAD, checks that it's from this commit and Xcode 26 and that it bundles the published kernel and extension, signs the checksum when `MSL_GPG_KEY` is set, attaches the BusyBox and e2fsprogs source, and takes the notes from `CHANGELOG.md`. `scripts/package.sh <version>` builds the same files locally, for testing only.
-- **The kernel** has its own releases, `kernel-<linux version>-msl-<config hash>`, published only when it changes, with `kernel/publish.sh` (see [Kernel](#kernel)). They are never marked Latest. Each msl release's notes name the kernel it bundles.
-- **The VS Code extension** has its own releases, `vscode-<version>`, published with `extensions/vscode/publish.sh` when it changes. Bump `"version"` in `package.json`, push, and wait for CI's *VS Code extension* workflow, which builds the `.vsix` as artifact `vscode-<version>`. `publish.sh` publishes that artifact, after checking that it was built from an `extensions/vscode` identical to HEAD's. Then commit the updated `release.tag` and `release.sha256`. They are never marked Latest. `scripts/publish.sh` refuses to publish an msl release whose bundled `.vsix` isn't the published one.
+- **The kernel** is released from [msl-kernel](https://github.com/onexay/msl-kernel) as `kernel-<linux version>-msl-<config hash>`; its README describes how. Each msl release's notes name the kernel it bundles.
+- **The VS Code extension** is released from [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension) as `vscode-<version>`.
+- `scripts/publish.sh` refuses to publish an msl release whose bundled kernel or `.vsix` isn't the pinned one (see [Kernel](#kernel) and [VS Code extension](#vs-code-extension)).

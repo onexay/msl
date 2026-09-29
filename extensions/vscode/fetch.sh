@@ -1,13 +1,14 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # Download the published MSL VS Code extension (the release named in
-# release.tag) instead of building it, and verify it against release.sha256.
-# scripts/build.sh uses it, like kernel/fetch.sh, so building msl needs no Node.
+# release.tag, from github.com/onexay/msl-vscode-extension) and verify it
+# against release.sha256. scripts/pin.sh sets both. scripts/build.sh uses it,
+# like kernel/fetch.sh, so building msl needs no Node.
 # Output: extensions/vscode/dist/msl-<version>.vsix
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 TAG=${VSCODE_EXT_TAG:-$(cat "$HERE/release.tag")}
-REPO=${MSL_REPO:-onexay/msl}
+REPO=${MSL_VSCODE_REPO:-onexay/msl-vscode-extension}
 FILE=msl-${TAG#vscode-}.vsix
 mkdir -p "$HERE/dist"
 if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
