@@ -132,7 +132,7 @@ public enum JSONOutput {
             ["memoryBytes": "\(v.memoryBytes)", "processors": "\(v.processors)", "kernel": v.kernel,
              "kernelCommandLine": v.kernelCommandLine, "localhostForwarding": "\(v.localhostForwarding)",
              "dnsTunneling": "\(v.dnsTunneling)", "vmIdleTimeoutMs": "\(v.vmIdleTimeoutMs)",
-             "instanceIdleTimeoutMs": "\(v.instanceIdleTimeoutMs)"]
+             "instanceIdleTimeoutMs": "\(v.instanceIdleTimeoutMs)", "nestedVirtualization": "\(v.nestedVirtualization)"]
         }
         let x = fields(a), y = fields(b)
         return x.keys.sorted().compactMap { k in

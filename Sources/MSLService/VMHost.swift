@@ -82,7 +82,8 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         return VMSettings(memoryBytes: memory, processors: cpus, kernel: kernel,
                           kernelCommandLine: [baseCommandLine, cfg.kernelCommandLine].filter { !$0.isEmpty }.joined(separator: " "),
                           localhostForwarding: cfg.localhostForwarding, dnsTunneling: cfg.dnsTunneling,
-                          vmIdleTimeoutMs: cfg.vmIdleTimeoutMs, instanceIdleTimeoutMs: cfg.instanceIdleTimeoutMs)
+                          vmIdleTimeoutMs: cfg.vmIdleTimeoutMs, instanceIdleTimeoutMs: cfg.instanceIdleTimeoutMs,
+                          nestedVirtualization: cfg.nestedVirtualization && VZGenericPlatformConfiguration.isNestedVirtualizationSupported)
     }
 
     /// Settings and start time of the running VM (nil when stopped).
@@ -129,6 +130,29 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         log("created data disk \(url.path) (\(StatusFormat.bytes(size)))")
     }
 
+    /// The persisted machine identifier, created at the first start. A new one
+    /// replaces a file VZ can't read.
+    func machineIdentifier() throws -> VZGenericMachineIdentifier {
+        let url = paths.machineIdentifier
+        if let data = try? Data(contentsOf: url), let id = VZGenericMachineIdentifier(dataRepresentation: data) { return id }
+        let id = VZGenericMachineIdentifier()
+        try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
+        try id.dataRepresentation.write(to: url, options: .atomic)
+        log("created machine identifier \(url.path)")
+        return id
+    }
+
+    /// `msl.machine_id=<32 hex>`: the identifier's UUID, which mini-init writes to
+    /// /etc/machine-id. VZ keeps it in dataRepresentation, a plist {UUID: 16 bytes}.
+    static func machineIDArgument(_ id: VZGenericMachineIdentifier) -> String? {
+        guard let plist = try? PropertyListSerialization.propertyList(from: id.dataRepresentation, format: nil) as? [String: Any],
+              let uuid = plist["UUID"] as? Data, uuid.count == 16 else {
+            log("machine identifier: no UUID in its data representation")
+            return nil
+        }
+        return "msl.machine_id=" + uuid.map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Total capacity of the Mac volume holding `url`.
     static func volumeCapacity(_ url: URL) -> UInt64? {
         (try? url.resourceValues(forKeys: [.volumeTotalCapacityKey]).volumeTotalCapacity).flatMap { $0.map(UInt64.init) }
@@ -158,8 +182,13 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         let c = VZVirtualMachineConfiguration()
         let boot = VZLinuxBootLoader(kernelURL: res.kernel)
         boot.initialRamdiskURL = res.initrd
-        boot.commandLine = s.kernelCommandLine
+        let machineID = try machineIdentifier()
+        boot.commandLine = s.kernelCommandLine + (Self.machineIDArgument(machineID).map { " " + $0 } ?? "")
         c.bootLoader = boot
+        let platform = VZGenericPlatformConfiguration()
+        platform.machineIdentifier = machineID
+        platform.isNestedVirtualizationEnabled = s.nestedVirtualization
+        c.platform = platform
         c.cpuCount = s.processors
         c.memorySize = s.memoryBytes
 
@@ -366,3 +395,4 @@ final class ListenerDelegate: NSObject, VZVirtioSocketListenerDelegate, @uncheck
         return true
     }
 }
+

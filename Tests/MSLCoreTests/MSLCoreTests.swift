@@ -160,6 +160,7 @@ import Testing
             vmIdleTimeout=-1
             memory2 = x
             processors=abc
+            nestedVirtualization=false
             [general]
             instanceIdleTimeout=5000
             """, path: "t")
@@ -167,6 +168,7 @@ import Testing
         #expect(c.processors == 4)
         #expect(c.vmIdleTimeoutMs == -1)
         #expect(c.instanceIdleTimeoutMs == 5000)
+        #expect(!c.nestedVirtualization && MSLConfig().nestedVirtualization)
         #expect(c.warnings == ["Invalid integer 'abc' for .mslconfig entry 'msl2.processors' in t:6"])
         let w = MSLConfig.parse("[wsl2]\nprocessors = 2\nmemory = lots\n", path: "w")  // .wslconfig section name
         #expect(w.processors == 2)
@@ -278,6 +280,7 @@ import Testing
         var next = base
         next.memoryBytes = 4 << 30
         next.dnsTunneling = false
+        next.nestedVirtualization = true
         let s = VMStatus(running: true, uptimeSeconds: 125, effective: base, configured: next, configPath: "/Users/u/.mslconfig", configExists: true)
         let text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
         #expect(text.hasPrefix("Default Distribution: Ubuntu\nDefault Version: 2\n"))
@@ -287,6 +290,7 @@ import Testing
         #expect(row("Distribution idle timeout") == "never")
         #expect(text.contains("Pending changes in ~/.mslconfig (applied after 'msl --shutdown'):"))
         #expect(text.contains("Memory: 8 GB → 4 GB") && text.contains("DNS tunneling: on → off"))
+        #expect(row("Nested virtualization") == "off" && text.contains("Nested virtualization: off → on"))
     }
 
     @Test func diskRowsAndLowMacSpace() {

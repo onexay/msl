@@ -16,6 +16,8 @@ public struct Paths: Sendable {
 
     public var registry: URL { root.appendingPathComponent("registry.json") }
     public var dataDisk: URL { root.appendingPathComponent("data.img") }
+    /// The utility VM's VZGenericMachineIdentifier, so it keeps one identity across boots.
+    public var machineIdentifier: URL { root.appendingPathComponent("machine-identifier") }
     public var socket: URL { root.appendingPathComponent("msld.sock") }
     /// Byte streams into distros (VS Code managed pipes); see Connect.swift.
     public var connectSocket: URL { root.appendingPathComponent("connect.sock") }

@@ -11,12 +11,16 @@ public struct VMSettings: Codable, Equatable, Sendable {
     public var dnsTunneling: Bool
     public var vmIdleTimeoutMs: Int
     public var instanceIdleTimeoutMs: Int
+    /// On only when configured and the Mac supports it (M3 or later).
+    public var nestedVirtualization: Bool
 
     public init(memoryBytes: UInt64, processors: Int, kernel: String, kernelCommandLine: String,
-                localhostForwarding: Bool, dnsTunneling: Bool, vmIdleTimeoutMs: Int, instanceIdleTimeoutMs: Int) {
+                localhostForwarding: Bool, dnsTunneling: Bool, vmIdleTimeoutMs: Int, instanceIdleTimeoutMs: Int,
+                nestedVirtualization: Bool = false) {
         self.memoryBytes = memoryBytes; self.processors = processors; self.kernel = kernel
         self.kernelCommandLine = kernelCommandLine; self.localhostForwarding = localhostForwarding
         self.dnsTunneling = dnsTunneling; self.vmIdleTimeoutMs = vmIdleTimeoutMs; self.instanceIdleTimeoutMs = instanceIdleTimeoutMs
+        self.nestedVirtualization = nestedVirtualization
     }
 }
 
@@ -70,6 +74,7 @@ public enum StatusFormat {
             ("Kernel command line", shown.kernelCommandLine),
             ("Localhost forwarding", onOff(shown.localhostForwarding)),
             ("DNS tunneling", onOff(shown.dnsTunneling)),
+            ("Nested virtualization", onOff(shown.nestedVirtualization)),
             ("VM idle timeout", timeout(shown.vmIdleTimeoutMs)),
             ("Distribution idle timeout", timeout(shown.instanceIdleTimeoutMs)),
             ("Settings file", s.configExists ? path : "\(path) (not present; defaults)"),
@@ -114,6 +119,7 @@ public enum StatusFormat {
         add("Kernel command line", a.kernelCommandLine, b.kernelCommandLine)
         add("Localhost forwarding", onOff(a.localhostForwarding), onOff(b.localhostForwarding))
         add("DNS tunneling", onOff(a.dnsTunneling), onOff(b.dnsTunneling))
+        add("Nested virtualization", onOff(a.nestedVirtualization), onOff(b.nestedVirtualization))
         add("VM idle timeout", timeout(a.vmIdleTimeoutMs), timeout(b.vmIdleTimeoutMs))
         add("Distribution idle timeout", timeout(a.instanceIdleTimeoutMs), timeout(b.instanceIdleTimeoutMs))
         return out

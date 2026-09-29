@@ -112,6 +112,23 @@ fn grow_data_disk() {
     let _ = GROW.set(result);
 }
 
+/// /etc/machine-id from `msl.machine_id=` (the VM's VZGenericMachineIdentifier
+/// UUID, 32 lowercase hex digits), so the utility VM keeps one ID across boots.
+fn write_machine_id() {
+    let cmdline = std::fs::read_to_string("/proc/cmdline").unwrap_or_default();
+    let Some(id) = parse_machine_id(&cmdline) else { return };
+    if let Err(e) = std::fs::write("/etc/machine-id", format!("{id}\n")) {
+        sys::log(&format!("machine-id: {e}"));
+    }
+}
+
+fn parse_machine_id(cmdline: &str) -> Option<&str> {
+    cmdline
+        .split_whitespace()
+        .find_map(|a| a.strip_prefix("msl.machine_id="))
+        .filter(|id| id.len() == 32 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+}
+
 pub fn main() -> sys::Result<()> {
     if std::env::var_os("MSL_STAGE").is_none() {
         return stage1();
@@ -119,6 +136,7 @@ pub fn main() -> sys::Result<()> {
     let t0 = Instant::now();
     base_mounts()?;
     let _ = nix::unistd::sethostname("msl");
+    write_machine_id();
     if let Err(e) = sys::link_up("lo") {
         sys::log(&format!("lo: {e}"));
     }
@@ -718,5 +736,19 @@ impl MiniInit for MiniInitService {
             let _ = nix::sys::reboot::reboot(nix::sys::reboot::RebootMode::RB_POWER_OFF);
         });
         Ok(Response::new(pb::Empty {}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_machine_id() {
+        let id = "0123456789abcdef0123456789abcdef";
+        assert_eq!(parse_machine_id(&format!("console=hvc0 msl.machine_id={id} quiet\n")), Some(id));
+        assert_eq!(parse_machine_id("console=hvc0"), None);
+        assert_eq!(parse_machine_id("msl.machine_id=0123"), None);
+        assert_eq!(parse_machine_id(&format!("msl.machine_id={}", id.to_uppercase())), None);
     }
 }

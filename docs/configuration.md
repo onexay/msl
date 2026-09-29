@@ -14,6 +14,7 @@ kernel = ~/kernels/Image     # custom kernel
 kernelCommandLine = quiet
 localhostForwarding = true   # default true
 dnsTunneling = true          # default true; false uses vmnet's DNS
+nestedVirtualization = true  # default true; /dev/kvm in the VM (M3 or later, macOS 15)
 vmIdleTimeout = 60000        # ms; VM stops this long after the last distro stops
 defaultVhdSize = 256GB       # size of the shared disk when it's created (default 256GB,
                              # at most the macOS disk); grow it later with --manage --resize
@@ -27,7 +28,7 @@ instanceIdleTimeout = 15000  # ms; an idle distro stops after this
 autoMemoryReclaim = dropCache  # accepted for compatibility; no effect on macOS
 ```
 
-Changes apply at the next VM start. `msl --status` shows the effective settings (memory, processors, kernel, kernel command line, localhost forwarding, DNS tunneling, idle timeouts, settings file, running/uptime) and lists any `.mslconfig` changes still pending until `msl --shutdown`.
+Changes apply at the next VM start. `msl --status` shows the effective settings (memory, processors, kernel, kernel command line, localhost forwarding, DNS tunneling, nested virtualization, idle timeouts, settings file, running/uptime) and lists any `.mslconfig` changes still pending until `msl --shutdown`.
 
 ## Per distro: `/etc/msl.conf`
 

@@ -13,6 +13,8 @@ public struct MSLConfig: Equatable, Sendable {
     public var kernelCommandLine: String = ""
     public var localhostForwarding = true
     public var dnsTunneling = true
+    /// Nested virtualization (/dev/kvm in the guest). Needs an M3 or later and macOS 15.
+    public var nestedVirtualization = true
     public var vmIdleTimeoutMs: Int = 60_000
     public var defaultVhdSize: UInt64?       // size of a new data.img (default: see DataDisk)
     /// How msld serves ~/.msl/distros to macOS's NFS client. `unix` (default): a
@@ -75,6 +77,8 @@ public struct MSLConfig: Equatable, Sendable {
                 if let b = parseBool(value) { c.localhostForwarding = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "msl2.dnstunneling":
                 if let b = parseBool(value) { c.dnsTunneling = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
+            case "msl2.nestedvirtualization":
+                if let b = parseBool(value) { c.nestedVirtualization = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "msl2.defaultvhdsize":
                 if let v = parseSize(value), v >= DataDisk.minimum { c.defaultVhdSize = v } else { c.warnings.append("Invalid size '\(value)' for .mslconfig entry '\(entry)' in \(at) (minimum 4GB)") }
             case "msl2.fileviewtransport":

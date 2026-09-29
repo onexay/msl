@@ -76,6 +76,7 @@ Other commands, such as install, terminate and shutdown, don't take `--json`: th
       "kernelCommandLine": "console=hvc0 ip=dhcp net.ifnames=0 loglevel=4",
       "localhostForwarding": true,
       "memoryBytes": 19327352832,
+      "nestedVirtualization": true,
       "processors": 12,
       "vmIdleTimeoutMs": 60000
     },
