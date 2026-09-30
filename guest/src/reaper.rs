@@ -3,11 +3,14 @@
 //!
 //! Exactly one thread calls `waitpid(-1)`. Everyone else asks the reaper for a
 //! child's exit status by pid; nothing else may wait on children (so never use
-//! `Child::wait` or `tokio::process`).
+//! `Child::wait` or `tokio::process`). With no children, the thread sleeps
+//! until the next SIGCHLD: a new child can also be an orphan reparented to us,
+//! which nothing else announces.
 
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::Pid;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -28,14 +31,49 @@ fn state() -> &'static State {
     S.get_or_init(|| State { inner: Mutex::new(Inner::default()), cv: Condvar::new() })
 }
 
+/// An eventfd the SIGCHLD handler bumps (-1 until installed).
+static SIGCHLD_FD: AtomicI32 = AtomicI32::new(-1);
+
+extern "C" fn on_sigchld(_: libc::c_int) {
+    // Async-signal-safe: one write, errno preserved.
+    unsafe {
+        let errno = *libc::__errno_location();
+        let one: u64 = 1;
+        libc::write(SIGCHLD_FD.load(Ordering::Relaxed), &one as *const u64 as *const libc::c_void, 8);
+        *libc::__errno_location() = errno;
+    }
+}
+
+/// Install the SIGCHLD handler (once) and return its eventfd.
+fn sigchld_fd() -> libc::c_int {
+    static INIT: OnceLock<libc::c_int> = OnceLock::new();
+    *INIT.get_or_init(|| unsafe {
+        let fd = libc::eventfd(0, libc::EFD_CLOEXEC);
+        assert!(fd >= 0, "eventfd: {}", std::io::Error::last_os_error());
+        SIGCHLD_FD.store(fd, Ordering::Relaxed);
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = on_sigchld as usize;
+        sa.sa_flags = libc::SA_RESTART | libc::SA_NOCLDSTOP;
+        libc::sigemptyset(&mut sa.sa_mask);
+        libc::sigaction(libc::SIGCHLD, &sa, std::ptr::null_mut());
+        fd
+    })
+}
+
 /// Run forever on the calling thread.
 pub fn run() -> ! {
+    let fd = sigchld_fd();
     loop {
         match waitpid(Pid::from_raw(-1), None) {
             Ok(WaitStatus::Exited(pid, code)) => record(pid.as_raw(), code),
             Ok(WaitStatus::Signaled(pid, sig, _)) => record(pid.as_raw(), 128 + sig as i32),
             Ok(_) => {}
-            Err(nix::errno::Errno::ECHILD) => std::thread::sleep(Duration::from_millis(50)),
+            Err(nix::errno::Errno::ECHILD) => {
+                // No children: sleep until one exits (a SIGCHLD since the last
+                // read counts too, so none is missed between waitpid and here).
+                let mut n: u64 = 0;
+                unsafe { libc::read(fd, &mut n as *mut u64 as *mut libc::c_void, 8) };
+            }
             Err(_) => {}
         }
     }

@@ -72,9 +72,7 @@ final class FileView: @unchecked Sendable {
         }
         Thread.detachNewThread { [vm, weak self] in
             defer { close(lfd) }
-            while !flag.isSet {
-                var p = pollfd(fd: lfd, events: Int16(POLLIN), revents: 0)
-                if poll(&p, 1, 200) <= 0 { continue }
+            while flag.waitReadable(lfd) {
                 let c = accept(lfd, nil, nil)
                 if c < 0 { continue }
                 guard let self, let v = try? vm.connect(port: PortForwarder.guestForwarderPort) else { close(c); continue }

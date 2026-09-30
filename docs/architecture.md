@@ -85,7 +85,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
   - A distro is created by `fork` (or `clone3`) with `CLONE_NEWNS|NEWPID|NEWUTS|NEWCGROUP`. The child sets mount propagation (private, except the shared `/mnt/msl`), does `pivot_root` and then continues as `msl-init`. User processes are spawned with `Command::pre_exec` for setsid, controlling tty, credentials and supplementary groups (read from the distro's own `/etc/group`).
   - **Only async-signal-safe calls** are allowed between `fork` and `exec`. Fork before starting the tokio runtime, or from a dedicated spawn path that doesn't allocate.
   - **systemd distros:** `msl-init` forks. The parent execs `/sbin/init` (systemd becomes PID 1 of the namespace) and the child stays as the agent, re-parented to systemd. Without systemd, `msl-init` is PID 1 itself.
-  - **Reaping:** a single SIGCHLD handler (`tokio::signal`) calls `waitid`/`waitpid(-1)` and hands exit statuses to waiters by PID. Nothing else waits on children. The agent sets `PR_SET_CHILD_SUBREAPER` when it isn't PID 1.
+  - **Reaping:** a single reaper thread blocks in `waitpid(-1)` and hands exit statuses to waiters by PID; with no children it sleeps on an eventfd that a SIGCHLD handler bumps (a new child can be an orphan reparented to it). Nothing else waits on children. The agent sets `PR_SET_CHILD_SUBREAPER` when it isn't PID 1.
   - Sessions are tokio tasks inside `msl-init`, not separate relay processes. The only processes are the user's own.
 - **`msl-mini-init`** (PID 1):
   - mounts the base filesystems and the data disk (`/var/lib/msl/distros/<guid>/rootfs`);

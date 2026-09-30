@@ -3,19 +3,14 @@ import Foundation
 
 /// Byte copying between file descriptors on dedicated threads.
 enum Pump {
-    /// Copy `from` -> `to` until EOF/error; then `onDone`. With `stop`, polls so
-    /// the copy can be abandoned (used for a client stdin that may never EOF).
+    /// Copy `from` -> `to` until EOF/error; then `onDone`. With `stop`, the copy
+    /// can be abandoned (used for a client stdin that may never EOF).
     @discardableResult
     static func copy(from: Int32, to: Int32, stop: StopFlag? = nil, shutdownWrite: Bool = true, onDone: (() -> Void)? = nil) -> Thread {
         let t = Thread {
             var buf = [UInt8](repeating: 0, count: 64 * 1024)
             outer: while true {
-                if let stop {
-                    var p = pollfd(fd: from, events: Int16(POLLIN), revents: 0)
-                    let r = poll(&p, 1, 100)
-                    if stop.isSet { break }
-                    if r == 0 || (r < 0 && errno == EINTR) { continue }
-                }
+                if let stop, !stop.waitReadable(from) { break }
                 let n = read(from, &buf, buf.count)
                 if n < 0 && errno == EINTR { continue }
                 if n <= 0 { break }
@@ -47,11 +42,42 @@ enum Pump {
     }
 }
 
+/// A one-way flag that blocked readers wake up for: setting it closes the write
+/// end of a pipe, so its read end polls readable for good.
 final class StopFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
+    private var fds: [Int32] = [-1, -1]
+
+    init() {
+        if pipe(&fds) == 0 {
+            fds.forEach { _ = fcntl($0, F_SETFD, FD_CLOEXEC) }
+        }
+    }
+
+    deinit {
+        fds.filter { $0 >= 0 }.forEach { close($0) }
+    }
+
     var isSet: Bool { lock.withLock { value } }
-    func set() { lock.withLock { value = true } }
+
+    func set() {
+        lock.withLock {
+            guard !value else { return }
+            value = true
+            if fds[1] >= 0 { close(fds[1]); fds[1] = -1 }
+        }
+    }
+
+    /// Block until `fd` is readable (true) or the flag is set (false), without a timeout.
+    func waitReadable(_ fd: Int32) -> Bool {
+        var p = [pollfd(fd: fd, events: Int16(POLLIN), revents: 0), pollfd(fd: fds[0], events: Int16(POLLIN), revents: 0)]
+        while true {
+            let r = poll(&p, 2, -1)
+            if isSet { return false }
+            if r > 0 || errno != EINTR { return true }  // an error: the caller's read or accept reports it
+        }
+    }
 }
 
 /// Run async work from a (non-cooperative) thread and wait for it.

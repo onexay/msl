@@ -35,7 +35,7 @@ final class FramedBridge: @unchecked Sendable {
     private var closed = false
 
     /// - localIn: read and send to the guest (nil: send eof at once). With
-    ///   `stop`, reads poll so the sender can be abandoned (e.g. a client stdin).
+    ///   `stop`, the sender can be abandoned (e.g. a client stdin).
     /// - localOut: receives the guest's bytes. At the guest's eof it is
     ///   `shutdown(SHUT_WR)` if `shutdownOnEOF` (sockets).
     /// - ownsLocal: close localIn/localOut when finished.
@@ -52,12 +52,7 @@ final class FramedBridge: @unchecked Sendable {
             if let input = localIn {
                 var buf = [UInt8](repeating: 0, count: Self.maxFrame)
                 outer: while true {
-                    if let stop {
-                        var p = pollfd(fd: input, events: Int16(POLLIN), revents: 0)
-                        let r = poll(&p, 1, 100)
-                        if stop.isSet { break }
-                        if r == 0 || (r < 0 && errno == EINTR) { continue }
-                    }
+                    if let stop, !stop.waitReadable(input) { break }
                     let n = buf.withUnsafeMutableBytes { read(input, $0.baseAddress!, $0.count) }
                     if n < 0 && errno == EINTR { continue }
                     if n <= 0 { break }

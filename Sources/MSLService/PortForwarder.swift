@@ -74,9 +74,7 @@ final class PortForwarder: @unchecked Sendable {
     private func acceptLoop(_ lfd: Int32, port: UInt16, stop: StopFlag) {
         Thread.detachNewThread { [self] in
             defer { close(lfd) }
-            while !stop.isSet {
-                var p = pollfd(fd: lfd, events: Int16(POLLIN), revents: 0)
-                if poll(&p, 1, 200) <= 0 { continue }
+            while stop.waitReadable(lfd) {
                 let c = accept(lfd, nil, nil)
                 if c < 0 { continue }
                 var one: Int32 = 1
