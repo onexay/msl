@@ -165,11 +165,12 @@ import Testing
         #expect(DistroDisk.initialSize(requested: 20 * gib, configured: 64 * gib, volumeCapacity: 1000 * gib) == 20 * gib)
         #expect(DistroDisk.initialSize(requested: nil, configured: 64 * gib, volumeCapacity: 1000 * gib) == 64 * gib)
         #expect(DistroDisk.initialSize(requested: 1 * gib, configured: nil, volumeCapacity: nil) == DataDisk.minimum)
-        #expect(DistroDisk.initialSize(requested: 8 << 40, configured: nil, volumeCapacity: nil) == DistroDisk.slotSize)
+        #expect(DistroDisk.initialSize(requested: 8 << 40, configured: nil, volumeCapacity: nil) == 8 << 40)
         #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "16GB", volumeCapacity: nil) == .grow(16 * gib))
-        #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "8TB", volumeCapacity: nil) == .refused("A distribution's disk can be at most 4096 GB."))
-        #expect(DistroDisk.slotCount([:]) == 16 && DistroDisk.slotCount(["MSL_DISK_SLOTS": "2"]) == 2)
-        #expect(DistroDisk.slotCount(["MSL_DISK_SLOTS": "0"]) == 16 && DistroDisk.slotCount(["MSL_DISK_SLOTS": "x"]) == 16)
+        #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "8TB", volumeCapacity: nil) == .grow(8 << 40))
+        #expect(DistroDisk.bootDiskLimit([:]) == 19 && DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "1"]) == 1)
+        #expect(DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "0"]) == 0 && DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "20"]) == 19)
+        #expect(DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "x"]) == 19)
     }
 
     @Test func superblock() {

@@ -2,34 +2,30 @@
 import Foundation
 
 /// A distro's own disk (#50): a sparse ext4 image, `ext4.img` in the distro's
-/// location folder (WSL's ext4.vhdx), attached through an NBD slot (NBDServer).
+/// location folder (WSL's ext4.vhdx). The disks of registered distros are
+/// attached to the VM as virtio-blk when it boots; one that appears while the
+/// VM runs is mounted in the guest through a loop device over the Mac share.
 public enum DistroDisk {
     public static let fileName = "ext4.img"
-    /// What each slot advertises. A slot's size can't change while the VM runs,
-    /// so every slot is as large as any disk may grow.
-    public static let slotSize: UInt64 = 4 << 40
-    public static let defaultSlots = 16
+    /// Distro disks attached at boot. VZ refuses to start a VM with MSL's other
+    /// devices and more than 20 virtio-blk disks (data.img + 19), macOS 27.0.
+    public static let maxBootDisks = 19
 
-    /// Slots in the VM: 16, or `MSL_DISK_SLOTS` (1-32, for tests).
-    public static func slotCount(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Int {
-        guard let v = env["MSL_DISK_SLOTS"].flatMap(Int.init), (1...32).contains(v) else { return defaultSlots }
+    /// Boot disks: 19, or `MSL_BOOT_DISKS` (0-19, for tests of the loop path).
+    public static func bootDiskLimit(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Int {
+        guard let v = env["MSL_BOOT_DISKS"].flatMap(Int.init), (0...maxBootDisks).contains(v) else { return maxBootDisks }
         return v
     }
 
     /// Size of a new disk: `--vhd-size` if given, else `[msl2] defaultVhdSize`,
-    /// else 256 GiB capped at the Mac volume (DataDisk's rules), never more than a slot.
+    /// else 256 GiB capped at the Mac volume (DataDisk's rules).
     public static func initialSize(requested: UInt64?, configured: UInt64?, volumeCapacity: UInt64?) -> UInt64 {
-        let size = DataDisk.initialSize(configured: requested ?? configured, volumeCapacity: volumeCapacity)
-        return min(size, slotSize)
+        DataDisk.initialSize(configured: requested ?? configured, volumeCapacity: volumeCapacity)
     }
 
-    /// `msl --manage <distro> --resize <size>`: grow only, up to the Mac volume and the slot size.
+    /// `msl --manage <distro> --resize <size>`: grow only, up to the Mac volume.
     public static func checkGrow(current: UInt64, requested: String, volumeCapacity: UInt64?) -> DataDisk.GrowCheck {
-        let check = DataDisk.checkGrow(current: current, requested: requested, volumeCapacity: volumeCapacity)
-        if case .grow(let size) = check, size > slotSize {
-            return .refused("A distribution's disk can be at most \(StatusFormat.bytes(slotSize)).")
-        }
-        return check
+        DataDisk.checkGrow(current: current, requested: requested, volumeCapacity: volumeCapacity)
     }
 
     /// The ext4 superblock fields msld needs (the guest checks the same ones).
@@ -72,7 +68,7 @@ public enum DistroDisk {
 public struct DistroDiskInfo: Codable, Equatable, Sendable {
     /// The image, normally `<location>/ext4.img`; for `--import-in-place`, wherever it was.
     public var path: String
-    /// Its ext4 UUID: the guest mounts it only if the slot holds this filesystem.
+    /// Its ext4 UUID: the guest mounts it only if the device holds this filesystem.
     public var uuid: String
 
     public init(path: String, uuid: String) {

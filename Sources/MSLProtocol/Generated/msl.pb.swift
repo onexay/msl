@@ -129,7 +129,7 @@ public nonisolated struct Msl_V1_AttachDiskRequest: Sendable {
 
   public var id: String = String()
 
-  /// virtio-blk serial of the slot, e.g. "slot3"
+  /// virtio-blk serial of the boot disk, e.g. "d3"
   public var serial: String = String()
 
   /// expected ext4 UUID (lowercase, hyphenated)
@@ -137,6 +137,9 @@ public nonisolated struct Msl_V1_AttachDiskRequest: Sendable {
 
   /// size of the image file: grow the filesystem to it
   public var sizeBytes: UInt64 = 0
+
+  /// instead of `serial`: the image's path on the Mac, for a loop device
+  public var macPath: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -148,7 +151,7 @@ public nonisolated struct Msl_V1_AttachDiskReply: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// e.g. /dev/vdc
+  /// e.g. /dev/vdc or /dev/loop0
   public var device: String = String()
 
   /// What was done before mounting (e2fsck, growth); empty when nothing.
@@ -770,7 +773,7 @@ nonisolated extension Msl_V1_Empty: SwiftProtobuf.Message, SwiftProtobuf._Messag
 
 nonisolated extension Msl_V1_AttachDiskRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AttachDiskRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}serial\0\u{1}uuid\0\u{3}size_bytes\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}serial\0\u{1}uuid\0\u{3}size_bytes\0\u{3}mac_path\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -782,6 +785,7 @@ nonisolated extension Msl_V1_AttachDiskRequest: SwiftProtobuf.Message, SwiftProt
       case 2: try { try decoder.decodeSingularStringField(value: &self.serial) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.uuid) }()
       case 4: try { try decoder.decodeSingularUInt64Field(value: &self.sizeBytes) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.macPath) }()
       default: break
       }
     }
@@ -800,6 +804,9 @@ nonisolated extension Msl_V1_AttachDiskRequest: SwiftProtobuf.Message, SwiftProt
     if self.sizeBytes != 0 {
       try visitor.visitSingularUInt64Field(value: self.sizeBytes, fieldNumber: 4)
     }
+    if !self.macPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.macPath, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -808,6 +815,7 @@ nonisolated extension Msl_V1_AttachDiskRequest: SwiftProtobuf.Message, SwiftProt
     if lhs.serial != rhs.serial {return false}
     if lhs.uuid != rhs.uuid {return false}
     if lhs.sizeBytes != rhs.sizeBytes {return false}
+    if lhs.macPath != rhs.macPath {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

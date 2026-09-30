@@ -270,7 +270,7 @@ pub fn main() -> sys::Result<()> {
             sys::log(&format!("virtiofs {tag}: {e}"));
         }
     }
-    // data.img has the serial "data" (slots for the distros' own disks follow it).
+    // data.img has the serial "data" (the distros' own disks follow it: d0, d1, ...).
     let data = find_by_serial(Path::new(SYS_BLOCK), "data").unwrap_or_else(|| "vda".into());
     grow_data_disk(&data);
     sys::mount_fs(&format!("/dev/{data}"), DATA, "ext4", MsFlags::MS_NOATIME, None)?;
@@ -613,23 +613,33 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
     if running().lock().unwrap().contains_key(&req.id) || stopping().lock().unwrap().contains_key(&req.id) {
         return Err(Status::failed_precondition("the distribution is running"));
     }
-    let name = find_by_serial(Path::new(SYS_BLOCK), &req.serial)
-        .ok_or_else(|| Status::not_found(format!("no disk with serial {}", req.serial)))?;
-    let dev = format!("/dev/{name}");
-    {
-        let att = attached().lock().unwrap();
-        if let Some(d) = att.get(&req.id) {
-            return if *d == name {
-                Ok(pb::AttachDiskReply { device: dev, repaired: String::new() })
-            } else {
-                Err(Status::failed_precondition(format!("the distribution's disk is already attached as /dev/{d}")))
-            };
-        }
-        if att.values().any(|d| *d == name) {
-            return Err(Status::failed_precondition(format!("{dev} is in use by another distribution")));
-        }
+    let serial_dev = || {
+        find_by_serial(Path::new(SYS_BLOCK), &req.serial).ok_or_else(|| Status::not_found(format!("no disk with serial {}", req.serial)))
+    };
+    if let Some(d) = attached().lock().unwrap().get(&req.id).cloned() {
+        let same = if req.mac_path.is_empty() { serial_dev()? == d } else { d.starts_with("loop") };
+        return if same {
+            Ok(pb::AttachDiskReply { device: format!("/dev/{d}"), repaired: String::new() })
+        } else {
+            Err(Status::failed_precondition(format!("the distribution's disk is already attached as /dev/{d}")))
+        };
     }
-    // The slot may have served another file before: drop its cached blocks.
+    // The disk attached at boot, or (added since) a loop device over the image
+    // on the Mac share. The loop device goes away with its last user: keep
+    // `_loop` open until the filesystem is mounted.
+    let (name, _loop) = if req.mac_path.is_empty() {
+        (serial_dev()?, None)
+    } else {
+        let file = mac_file(&req.mac_path)?;
+        let (n, f) = sys::loop_attach(&file).map_err(|e| Status::failed_precondition(format!("loop device for {}: {e}", file.display())))?;
+        (n, Some(f))
+    };
+    let dev = format!("/dev/{name}");
+    if attached().lock().unwrap().values().any(|d| *d == name) {
+        return Err(Status::failed_precondition(format!("{dev} is in use by another distribution")));
+    }
+    // Drop any blocks cached from an earlier mount: the file may have been
+    // replaced on the Mac since (an import of a disk image).
     let sb = {
         let f = sys::open_excl(&dev).map_err(|e| Status::failed_precondition(format!("{dev}: {e}")))?;
         sys::blkflsbuf(&f).map_err(|e| status(format!("{dev}: {e}")))?;
@@ -675,8 +685,18 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
     Ok(pb::AttachDiskReply { device: dev, repaired: repaired.join("; ") })
 }
 
+/// A Mac path as seen through the virtiofs share of the Mac's `/`.
+fn mac_file(mac_path: &str) -> Result<PathBuf, Status> {
+    let p = Path::new(mac_path);
+    if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err(Status::invalid_argument(format!("not an absolute path: {mac_path}")));
+    }
+    Ok(Path::new("/mnt/mac").join(p.strip_prefix("/").unwrap_or(p)))
+}
+
 /// Stop a distro and unmount its own disk (DetachDisk). Returns once nothing in
-/// the VM holds the device, so the host can switch the slot's file.
+/// the VM holds the device (a loop device is then released), so the host can
+/// copy, move or delete the file.
 fn detach_blocking(id: &str) -> Result<(), Status> {
     check_id(id)?;
     stop_blocking(id);
@@ -1146,17 +1166,25 @@ mod tests {
     #[test]
     fn finds_disk_by_serial() {
         let root = std::env::temp_dir().join(format!("msl-sysblock-{}", std::process::id()));
-        for (dev, serial) in [("vda", "data"), ("vdb", "slot0\n"), ("vdc", "slot1\0\0"), ("sda", "slot2")] {
+        for (dev, serial) in [("vda", "data"), ("vdb", "d0\n"), ("vdc", "d1\0\0"), ("sda", "d2")] {
             std::fs::create_dir_all(root.join(dev)).unwrap();
             std::fs::write(root.join(dev).join("serial"), serial).unwrap();
         }
         std::fs::create_dir_all(root.join("loop0")).unwrap();
         assert_eq!(find_by_serial(&root, "data").as_deref(), Some("vda"));
-        assert_eq!(find_by_serial(&root, "slot0").as_deref(), Some("vdb"));
-        assert_eq!(find_by_serial(&root, "slot1").as_deref(), Some("vdc"));
-        assert_eq!(find_by_serial(&root, "slot2"), None); // not a virtio disk
-        assert_eq!(find_by_serial(&root, "slot"), None);
+        assert_eq!(find_by_serial(&root, "d0").as_deref(), Some("vdb"));
+        assert_eq!(find_by_serial(&root, "d1").as_deref(), Some("vdc"));
+        assert_eq!(find_by_serial(&root, "d2"), None); // not a virtio disk
+        assert_eq!(find_by_serial(&root, "d"), None);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn maps_mac_paths_onto_the_share() {
+        assert_eq!(mac_file("/Users/a/MSL/x/ext4.img").unwrap(), Path::new("/mnt/mac/Users/a/MSL/x/ext4.img"));
+        assert_eq!(mac_file("/Volumes/T7/ext4.img").unwrap(), Path::new("/mnt/mac/Volumes/T7/ext4.img"));
+        assert!(mac_file("relative/ext4.img").is_err());
+        assert!(mac_file("/Users/a/../../etc/shadow").is_err());
     }
 
     #[test]

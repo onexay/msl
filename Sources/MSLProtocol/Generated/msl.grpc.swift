@@ -630,10 +630,11 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
-        /// > the slot's block device (found by its virtio serial) as the distro's
-        /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
-        /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+        /// > A distro's own disk (ext4.img): mounts it as the distro's directory, either
+        /// > the virtio-blk disk attached at boot (found by its serial) or, for a disk
+        /// > that appeared while the VM runs, a loop device over the file on the Mac
+        /// > share. Checks the ext4 UUID, runs e2fsck when the filesystem isn't clean,
+        /// > and grows it offline to `size_bytes`. The distro must be stopped.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_AttachDiskRequest` message.
@@ -656,8 +657,8 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
-        /// > host can rebind the slot to another file.
+        /// > Stops the distro, unmounts its disk and flushes it (a loop device is
+        /// > released), so the host can copy, move or delete the file.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_DistroRef` message.
@@ -1215,10 +1216,11 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
-        /// > the slot's block device (found by its virtio serial) as the distro's
-        /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
-        /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+        /// > A distro's own disk (ext4.img): mounts it as the distro's directory, either
+        /// > the virtio-blk disk attached at boot (found by its serial) or, for a disk
+        /// > that appeared while the VM runs, a loop device over the file on the Mac
+        /// > share. Checks the ext4 UUID, runs e2fsck when the filesystem isn't clean,
+        /// > and grows it offline to `size_bytes`. The distro must be stopped.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_AttachDiskRequest` message.
@@ -1252,8 +1254,8 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
-        /// > host can rebind the slot to another file.
+        /// > Stops the distro, unmounts its disk and flushes it (a loop device is
+        /// > released), so the host can copy, move or delete the file.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_DistroRef` message.
@@ -1762,10 +1764,11 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
-    /// > the slot's block device (found by its virtio serial) as the distro's
-    /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
-    /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+    /// > A distro's own disk (ext4.img): mounts it as the distro's directory, either
+    /// > the virtio-blk disk attached at boot (found by its serial) or, for a disk
+    /// > that appeared while the VM runs, a loop device over the file on the Mac
+    /// > share. Checks the ext4 UUID, runs e2fsck when the filesystem isn't clean,
+    /// > and grows it offline to `size_bytes`. The distro must be stopped.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Msl_V1_AttachDiskRequest` message.
@@ -1794,8 +1797,8 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
-    /// > host can rebind the slot to another file.
+    /// > Stops the distro, unmounts its disk and flushes it (a loop device is
+    /// > released), so the host can copy, move or delete the file.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Msl_V1_DistroRef` message.
@@ -2344,10 +2347,11 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
-    /// > the slot's block device (found by its virtio serial) as the distro's
-    /// > directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
-    /// > clean, and grows it offline to `size_bytes`. The distro must be stopped.
+    /// > A distro's own disk (ext4.img): mounts it as the distro's directory, either
+    /// > the virtio-blk disk attached at boot (found by its serial) or, for a disk
+    /// > that appeared while the VM runs, a loop device over the file on the Mac
+    /// > share. Checks the ext4 UUID, runs e2fsck when the filesystem isn't clean,
+    /// > and grows it offline to `size_bytes`. The distro must be stopped.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -2380,8 +2384,8 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Stops the distro, unmounts its disk and flushes the slot's buffers, so the
-    /// > host can rebind the slot to another file.
+    /// > Stops the distro, unmounts its disk and flushes it (a loop device is
+    /// > released), so the host can copy, move or delete the file.
     ///
     /// - Parameters:
     ///   - message: request message to send.
