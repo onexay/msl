@@ -52,7 +52,7 @@ fn sigchld_fd() -> libc::c_int {
         assert!(fd >= 0, "eventfd: {}", std::io::Error::last_os_error());
         SIGCHLD_FD.store(fd, Ordering::Relaxed);
         let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = on_sigchld as usize;
+        sa.sa_sigaction = on_sigchld as extern "C" fn(libc::c_int) as usize;
         sa.sa_flags = libc::SA_RESTART | libc::SA_NOCLDSTOP;
         libc::sigemptyset(&mut sa.sa_mask);
         libc::sigaction(libc::SIGCHLD, &sa, std::ptr::null_mut());

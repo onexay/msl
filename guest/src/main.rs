@@ -22,6 +22,7 @@ mod nfs;
 mod nfsview;
 mod oobe;
 mod paths;
+mod portwatch;
 mod reaper;
 mod rpc;
 mod session;
