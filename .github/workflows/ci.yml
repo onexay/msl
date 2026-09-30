@@ -17,13 +17,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Select Xcode for the minimum macOS (as the release package)
+        id: xcode
         run: |
           MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
           sudo xcode-select -s "$(ls -d /Applications/Xcode_"$MIN"*.app | sort -V | tail -1)"
           xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
           swift --version
-      - run: swift build
-      - run: swift test
+          echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+      # The dependencies (swift-nio, BoringSSL, swift-certificates, ...) take ~4 of
+      # the job's ~6 minutes to fetch and compile, and change only with
+      # Package.resolved. The release package job stays uncached (clean builds).
+      - name: Cache SwiftPM checkouts and the debug build
+        uses: actions/cache@v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-
+      - run: swift build --build-tests
+      - run: swift test --skip-build
 
   # The release package, built here rather than on a developer's Mac: msl claims
   # macOS 26 as its minimum, so it must be built with Xcode 26. A newer Xcode's
