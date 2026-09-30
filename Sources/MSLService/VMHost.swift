@@ -50,7 +50,6 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
     let queue = DispatchQueue(label: "msl.vm")
     private var vm: VZVirtualMachine?
     private var bridges: [UInt32: Int32] = [:]  // guest port -> listening fd
-    private var nbd: NBDServer?
     private let lock = NSLock()
     public var onStop: (() -> Void)?
 
@@ -61,13 +60,6 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
     public var isRunning: Bool {
         queue.sync { vm?.state == .running }
     }
-
-    /// The server behind the distros' disk slots while the VM runs (#50).
-    public var diskSlots: NBDServer? {
-        lock.withLock { nbd }
-    }
-
-    var nbdSocket: URL { paths.runDir.appendingPathComponent("nbd.sock") }
 
     // MARK: boot
 
@@ -97,8 +89,17 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
     /// Settings and start time of the running VM (nil when stopped).
     public private(set) var booted: (settings: VMSettings, at: Date)?
 
-    public func ensureRunning(config: MSLConfig) throws {
-        if isRunning { return }
+    /// A distro's own disk to attach at boot: its image, found in the VM by `serial`.
+    public struct BootDisk: Equatable, Sendable {
+        public var serial: String
+        public var path: String
+    }
+
+    /// Boot the VM with `disks` attached as virtio-blk. Returns the ones that
+    /// were (an image that can't be opened is left out and logged).
+    @discardableResult
+    public func ensureRunning(config: MSLConfig, disks: [BootDisk] = []) throws -> [BootDisk] {
+        if isRunning { return [] }
         var res = try Resources.locate()
         if let k = config.kernel {
             guard FileManager.default.fileExists(atPath: k) else {
@@ -108,18 +109,8 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         }
         let settings = Self.resolve(config)
         try ensureDataDisk(config)
-        // The slots connect when the VM starts, so the server must be listening first.
         try FileManager.default.createDirectory(at: paths.runDir, withIntermediateDirectories: true)
-        let server = NBDServer(socketPath: nbdSocket.path, slots: DistroDisk.slotCount(), slotSize: DistroDisk.slotSize)
-        try server.start()
-        let vmConfig: VZVirtualMachineConfiguration
-        do {
-            vmConfig = try makeConfig(res, settings, slots: server.slotCount)
-        } catch {
-            server.stop()
-            throw error
-        }
-        lock.withLock { nbd = server }
+        let (vmConfig, attached) = try makeConfig(res, settings, disks: disks)
         let sem = DispatchSemaphore(value: 0)
         var startError: Error?
         queue.sync {
@@ -134,12 +125,11 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         sem.wait()
         if let startError {
             queue.sync { vm = nil }
-            lock.withLock { nbd = nil }
-            server.stop()
             throw ServiceError("The virtual machine could not be started: \(startError.localizedDescription)", code: ErrorCode.vm)
         }
         queue.sync { booted = (settings, Date()) }
-        log("vm started (\(settings.processors) CPUs, \(settings.memoryBytes >> 20) MiB)")
+        log("vm started (\(settings.processors) CPUs, \(settings.memoryBytes >> 20) MiB, \(attached.count) distro disks)")
+        return attached
     }
 
     func ensureDataDisk(_ config: MSLConfig) throws {
@@ -175,14 +165,6 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         return "msl.machine_id=" + uuid.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// `nbd+unix:///slotN?socket=<path>` (the NBD URI format; the path is percent-encoded).
-    static func slotURL(socket: String, slot: Int) -> URL {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "&=+?#")
-        let path = socket.addingPercentEncoding(withAllowedCharacters: allowed) ?? socket
-        return URL(string: "nbd+unix:///\(NBDServer.exportName(slot))?socket=\(path)")!
-    }
-
     /// Total capacity of the Mac volume holding `url`.
     static func volumeCapacity(_ url: URL) -> UInt64? {
         (try? url.resourceValues(forKeys: [.volumeTotalCapacityKey]).volumeTotalCapacity).flatMap { $0.map(UInt64.init) }
@@ -208,7 +190,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         return VZNATNetworkDeviceAttachment()
     }
 
-    func makeConfig(_ res: Resources, _ s: VMSettings, slots: Int) throws -> VZVirtualMachineConfiguration {
+    func makeConfig(_ res: Resources, _ s: VMSettings, disks: [BootDisk]) throws -> (VZVirtualMachineConfiguration, [BootDisk]) {
         let c = VZVirtualMachineConfiguration()
         let boot = VZLinuxBootLoader(kernelURL: res.kernel)
         boot.initialRamdiskURL = res.initrd
@@ -232,13 +214,20 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         let data = VZVirtioBlockDeviceConfiguration(attachment: disk)
         data.blockDeviceIdentifier = "data"  // how mini-init finds it
         c.storageDevices = [data]
-        // The distros' own disks (#50): NBD slots, bound to an ext4.img at runtime.
-        for i in 0..<slots {
-            let a = try VZNetworkBlockDeviceStorageDeviceAttachment(url: Self.slotURL(socket: nbdSocket.path, slot: i), timeout: 5,
-                                                                    isForcedReadOnly: false, synchronizationMode: .full)
-            let dev = VZVirtioBlockDeviceConfiguration(attachment: a)
-            dev.blockDeviceIdentifier = NBDServer.exportName(i)
-            c.storageDevices.append(dev)
+        // The distros' own disks (#50), served by VZ like data.img: guest
+        // flushes become F_FULLFSYNC (.full).
+        var attached: [BootDisk] = []
+        for d in disks.prefix(DistroDisk.maxBootDisks) {
+            do {
+                let a = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: d.path), readOnly: false,
+                                                               cachingMode: .automatic, synchronizationMode: .full)
+                let dev = VZVirtioBlockDeviceConfiguration(attachment: a)
+                dev.blockDeviceIdentifier = d.serial
+                c.storageDevices.append(dev)
+                attached.append(d)
+            } catch {
+                log("disk \(d.path) not attached: \(error.localizedDescription)")
+            }
         }
 
         let nic = VZVirtioNetworkDeviceConfiguration()
@@ -259,7 +248,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         c.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
         c.usbControllers = [VZXHCIControllerConfiguration()]
         try c.validate()
-        return c
+        return (c, attached)
     }
 
     // MARK: stop
@@ -289,8 +278,6 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
 
     private func stopped() {
         queue.sync { vm = nil; booted = nil }
-        // Flushes every image still bound (F_FULLFSYNC).
-        lock.withLock { () -> NBDServer? in defer { nbd = nil }; return nbd }?.stop()
         lock.withLock {
             for (port, fd) in bridges {
                 close(fd)

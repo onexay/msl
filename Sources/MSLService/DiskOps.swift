@@ -44,17 +44,19 @@ extension Service {
 
     /// A distro on data.img moves onto its own new disk: the guest copies its files over.
     private func migrate(_ d: DistroRecord, to folder: URL) throws {
-        try bootVM()
         var rec = d
         rec.location = folder.path
         rec.disk = try createDisk(in: folder, vhdSize: nil)
+        ownDisks.prepare(rec)  // attached at boot if the VM isn't running yet
         var done = false
         defer {
+            ownDisks.forget(rec.id)
             if !done {
                 try? ownDisks.detach(rec)
                 if let disk = rec.disk { removeDisk(disk, location: folder.path) }
             }
         }
+        try bootVM()
         files.unmount(name: d.name)
         try ownDisks.ensureAttached(rec)
         let mini = try guest.miniInit
@@ -76,7 +78,9 @@ extension Service {
 
     /// `--manage <distro> --resize <size>` for a distro on its own disk: the
     /// image grows while the distro is stopped; the guest grows the filesystem
-    /// (offline) when it attaches the disk again.
+    /// (offline) when it mounts the disk again. The disk attached at boot keeps
+    /// its old size, so it comes back at the next boot, or at once if the VM
+    /// can restart (DistroDisks).
     func resizeDisk(_ d: DistroRecord, _ requested: String) throws {
         guard let disk = d.disk else { return }
         let url = URL(fileURLWithPath: disk.path)
@@ -162,7 +166,9 @@ extension Service {
         var rec = DistroRecord(id: id, name: name, location: folder?.path ?? image.deletingLastPathComponent().path)
         rec.disk = DistroDiskInfo(path: path, uuid: sb.uuid)
         var registered = false
+        ownDisks.prepare(rec)  // attached at boot if the VM isn't running yet
         defer {
+            ownDisks.forget(rec.id)
             if !registered {
                 try? ownDisks.detach(rec)
                 if created, let disk = rec.disk { removeDisk(disk, location: rec.location) }

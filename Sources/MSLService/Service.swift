@@ -41,8 +41,8 @@ public final class Service: @unchecked Sendable {
     private let diskLock = NSLock()
     private(set) lazy var forwarder = PortForwarder(vm: vm, guest: guest)
     private(set) lazy var files = FileView(vm: vm, paths: paths, registry: registry, guest: guest)
-    /// The distros' own disks (#50) and their NBD slots.
-    private(set) lazy var ownDisks = DistroDisks(vm: vm, guest: guest, runningIds: { [weak self] in self?.runningIds() ?? [] })
+    /// The distros' own disks (#50).
+    private(set) lazy var ownDisks = DistroDisks(vm: vm, guest: guest)
 
     public init(paths: Paths = Paths()) {
         self.paths = paths
@@ -56,11 +56,13 @@ public final class Service: @unchecked Sendable {
             self?.files.shutdown()
             self?.guest.reset()
         }
-        files.isViewable = { [weak self] d in d.disk == nil || self?.ownDisks.slot(of: d.id) != nil }
+        files.isViewable = { [weak self] d in d.disk == nil || self?.ownDisks.isAttached(d.id) == true }
         ownDisks.beforeDetach = { [weak self] id in
             if let d = self?.registry.find(id: id) { self?.files.unmount(name: d.name) }
         }
         ownDisks.onChange = { [weak self] in self?.files.syncLinks() }
+        ownDisks.canRestartVM = { [weak self] in self?.vmIsIdle() ?? false }
+        ownDisks.restartVM = { [weak self] in try self?.restartVM() }
     }
 
     public func serve() throws -> Never {
@@ -301,7 +303,8 @@ public final class Service: @unchecked Sendable {
             config = MSLConfig.load()
             for w in config.warnings { log("msl: \(w)") }
             do {
-                try vm.ensureRunning(config: config)
+                let plan = ownDisks.bootPlan(registry.all, defaultId: registry.defaultDistro?.id)
+                ownDisks.booted(try vm.ensureRunning(config: config, disks: plan))
             } catch where executableReplaced {
                 throw ServiceError("msld was updated on disk while running and can no longer start the virtual machine.\nRun 'msl --shutdown' to restart it.", code: ErrorCode.vm)
             }
@@ -311,6 +314,21 @@ public final class Service: @unchecked Sendable {
             if config.dnsTunneling { vm.listen(port: DNSProxy.vsockPort) { DNSProxy.handle($0) } }
             files.start(transport: config.fileViewTransport)
         }
+    }
+
+    /// Nothing depends on the running VM but this request: no distro runs, no
+    /// other request is in progress, and no `--mount` disk is attached.
+    func vmIsIdle() -> Bool {
+        vm.isRunning && idle.activeRequests <= 1 && diskLock.withLock({ disks.isEmpty }) && runningIds().isEmpty
+    }
+
+    /// Stop the VM and boot it again (to attach a new distro disk at boot).
+    func restartVM() throws {
+        shutdown(force: false)
+        guard !vm.isRunning else {
+            throw ServiceError("The virtual machine didn't stop.", code: ErrorCode.vm)
+        }
+        try bootVM()
     }
 
     func summaries() -> [DistroSummary] {
@@ -484,22 +502,25 @@ public final class Service: @unchecked Sendable {
     /// (the location defaults to msl's `distros/<id>`). With MSL_LEGACY_STORE
     /// set (tests), it goes to the shared data.img instead, as before #50.
     func importDistro(name: String?, location: String?, vhdSize: UInt64?, from input: Int32) throws -> DistroRecord {
-        try bootVM()
         let id = UUID().uuidString.lowercased()
         let folder = URL(fileURLWithPath: location ?? paths.root.appendingPathComponent("distros/\(id)").path).standardizedFileURL
         var rec = DistroRecord(id: id, name: name ?? "", location: folder.path)
         if ProcessInfo.processInfo.environment["MSL_LEGACY_STORE"] == nil {
+            // Created before the VM boots, it's attached at boot.
             rec.disk = try createDisk(in: folder, vhdSize: vhdSize)
+            ownDisks.prepare(rec)
         }
         // Undo everything if the import doesn't end up registered.
         var registered = false
         defer {
+            ownDisks.forget(id)
             if !registered {
                 if rec.disk != nil { try? ownDisks.detach(rec) }
                 if let mini = try? guest.miniInit { _ = try? blocking { try await mini.deleteDistro(.with { $0.id = id }) } }
                 if let disk = rec.disk { removeDisk(disk, location: rec.location) }
             }
         }
+        try bootVM()
         try ownDisks.ensureAttached(rec)
         let mini = try guest.miniInit
         let vm = self.vm
@@ -561,7 +582,8 @@ public final class Service: @unchecked Sendable {
         }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let size = DistroDisk.initialSize(requested: vhdSize, configured: config.defaultVhdSize, volumeCapacity: VMHost.volumeCapacity(folder))
+            let configured = (vm.isRunning ? config : MSLConfig.load()).defaultVhdSize
+            let size = DistroDisk.initialSize(requested: vhdSize, configured: configured, volumeCapacity: VMHost.volumeCapacity(folder))
             let disk = try DiskImage.create(at: image, size: size)
             log("created disk \(image.path) (\(StatusFormat.bytes(size)))")
             return disk

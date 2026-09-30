@@ -4,6 +4,12 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+- A distribution's disk is attached to the VM as virtio-blk when the VM boots, served by Virtualization.framework like `data.img`, instead of through msld's NBD disk slots. msld no longer serves disk I/O, and `fsync` inside a distribution reaches the SSD again. virtio-blk can't be hot-plugged: a disk added while the VM runs (an install, an import, a `--move` to another volume, a `--resize`) makes msld restart the VM if no distribution is running, which takes about 1.5 s. If one is, the new disk is mounted through a loop device over the Mac share until the VM next restarts; that path is slower, and it's flushed to the SSD when the disk is detached and at shutdown. Up to 19 distribution disks are attached at boot, and the rest use the loop device. A distribution's disk is no longer limited to 4 TB.
+
+### Removed
+- The NBD disk slots and `MSL_DISK_SLOTS`.
+
 ## [0.2.0] - 2026-09-29
 
 ### Added

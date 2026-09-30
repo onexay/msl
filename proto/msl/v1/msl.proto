@@ -61,13 +61,14 @@ service MiniInit {
   // rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
   rpc SetFileView(FileViewRequest) returns (Empty);
 
-  // A distro's own disk (ext4.img, served by msld through an NBD slot): mounts
-  // the slot's block device (found by its virtio serial) as the distro's
-  // directory. Checks the ext4 UUID, runs e2fsck when the filesystem isn't
-  // clean, and grows it offline to `size_bytes`. The distro must be stopped.
+  // A distro's own disk (ext4.img): mounts it as the distro's directory, either
+  // the virtio-blk disk attached at boot (found by its serial) or, for a disk
+  // that appeared while the VM runs, a loop device over the file on the Mac
+  // share. Checks the ext4 UUID, runs e2fsck when the filesystem isn't clean,
+  // and grows it offline to `size_bytes`. The distro must be stopped.
   rpc AttachDisk(AttachDiskRequest) returns (AttachDiskReply);
-  // Stops the distro, unmounts its disk and flushes the slot's buffers, so the
-  // host can rebind the slot to another file.
+  // Stops the distro, unmounts its disk and flushes it (a loop device is
+  // released), so the host can copy, move or delete the file.
   rpc DetachDisk(DistroRef) returns (Empty);
   // Copies a distro kept on data.img onto its (attached) own disk, then removes
   // it from data.img.
@@ -78,13 +79,14 @@ service MiniInit {
 
 message AttachDiskRequest {
   string id = 1;
-  string serial = 2;       // virtio-blk serial of the slot, e.g. "slot3"
+  string serial = 2;       // virtio-blk serial of the boot disk, e.g. "d3"
   string uuid = 3;         // expected ext4 UUID (lowercase, hyphenated)
   uint64 size_bytes = 4;   // size of the image file: grow the filesystem to it
+  string mac_path = 5;     // instead of `serial`: the image's path on the Mac, for a loop device
 }
 
 message AttachDiskReply {
-  string device = 1;       // e.g. /dev/vdc
+  string device = 1;       // e.g. /dev/vdc or /dev/loop0
   // What was done before mounting (e2fsck, growth); empty when nothing.
   string repaired = 2;
 }

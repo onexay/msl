@@ -105,14 +105,60 @@ pub fn fstrim(path: &str) -> std::io::Result<u64> {
     Ok(r.len)
 }
 
-/// BLKFLSBUF: drop a block device's buffer cache, e.g. after the host switched
-/// the file behind an NBD slot.
+/// BLKFLSBUF: drop a block device's buffer cache, e.g. after the file behind it
+/// was replaced on the Mac.
 pub fn blkflsbuf(f: &std::fs::File) -> std::io::Result<()> {
     const BLKFLSBUF: libc::c_ulong = 0x1261; // _IO(0x12, 97)
     if unsafe { libc::ioctl(std::os::fd::AsRawFd::as_raw_fd(f), BLKFLSBUF as _) } < 0 {
         return Err(std::io::Error::last_os_error());
     }
     Ok(())
+}
+
+/// Bind `file` to a free loop device (direct I/O, autoclear) and return its
+/// name ("loop0") with an open handle. The device detaches itself when the last
+/// user goes away, so keep the handle until the filesystem is mounted.
+pub fn loop_attach(file: &Path) -> std::io::Result<(String, std::fs::File)> {
+    use std::os::fd::AsRawFd;
+    const LOOP_CTL_GET_FREE: libc::c_ulong = 0x4C82;
+    const LOOP_CONFIGURE: libc::c_ulong = 0x4C0A;
+    const LO_FLAGS_AUTOCLEAR: u32 = 4;
+    const LO_FLAGS_DIRECT_IO: u32 = 16;
+    #[repr(C)]
+    struct LoopInfo64 {
+        device: u64, inode: u64, rdevice: u64, offset: u64, sizelimit: u64,
+        number: u32, encrypt_type: u32, encrypt_key_size: u32, flags: u32,
+        file_name: [u8; 64], crypt_name: [u8; 64], encrypt_key: [u8; 32], init: [u64; 2],
+    }
+    #[repr(C)]
+    struct LoopConfig { fd: u32, block_size: u32, info: LoopInfo64, reserved: [u64; 8] }
+
+    let backing = std::fs::OpenOptions::new().read(true).write(true).open(file)?;
+    let ctl = std::fs::OpenOptions::new().read(true).write(true).open("/dev/loop-control")?;
+    let mut last = std::io::Error::from_raw_os_error(libc::EBUSY);
+    for _ in 0..8 {
+        // Another caller can take the free device first: EBUSY, try the next.
+        let n = unsafe { libc::ioctl(ctl.as_raw_fd(), LOOP_CTL_GET_FREE as _) };
+        if n < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let name = format!("loop{n}");
+        let dev = std::fs::OpenOptions::new().read(true).write(true).open(format!("/dev/{name}"))?;
+        let mut cfg: LoopConfig = unsafe { std::mem::zeroed() };
+        cfg.fd = backing.as_raw_fd() as u32;
+        cfg.info.flags = LO_FLAGS_AUTOCLEAR | LO_FLAGS_DIRECT_IO;
+        let tail = file.as_os_str().as_encoded_bytes();
+        let tail = &tail[tail.len().saturating_sub(63)..];
+        cfg.info.file_name[..tail.len()].copy_from_slice(tail);
+        if unsafe { libc::ioctl(dev.as_raw_fd(), LOOP_CONFIGURE as _, &cfg) } == 0 {
+            return Ok((name, dev));
+        }
+        last = std::io::Error::last_os_error();
+        if last.raw_os_error() != Some(libc::EBUSY) {
+            break;
+        }
+    }
+    Err(last)
 }
 
 /// Open a block device exclusively. Fails with EBUSY while anything holds it,
