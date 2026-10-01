@@ -83,7 +83,7 @@ Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an 
 | Kernel | Linux $(cat "$PKG/msl-$VERSION/share/msl/kernel.version"), release [\`$KTAG\`](https://github.com/$KREPO/releases/tag/$KTAG) |
 | VS Code extension | release [\`$XTAG\`](https://github.com/$XREPO/releases/tag/$XTAG), installed by \`msl --manage-ide\` |
 | Commit | $(git rev-parse --short HEAD) |
-| Requires | Apple silicon, macOS 26 or later |
+| Requires | Apple silicon, macOS $MIN or later |
 | GPL sources | BusyBox and e2fsprogs: the attached Debian source packages \`busybox_*\` and \`e2fsprogs_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$KREPO/releases/tag/$KTAG). |
 | Built by | CI run [$RUN](https://github.com/$REPO/actions/runs/$RUN), $(grep ^Xcode dist/ci/build-info.txt) |
 | Signing | ad-hoc (not notarised); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |

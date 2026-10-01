@@ -35,7 +35,7 @@ msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand b
                └─ msl-init [distro B]
 ```
 
-### Host side (Swift, macOS 26+)
+### Host side (Swift, macOS 27+)
 **`msl` CLI**
 - A hand-written parser that reproduces wsl.exe's rules:
   - options may come in any order;

@@ -569,3 +569,21 @@ import Testing
     }
 }
 
+
+@Suite struct MinimumMacOSTests {
+    @Test func refusesOlderMacOS() {
+        #expect(MSLBuild.unsupportedMacOS(OperatingSystemVersion(majorVersion: 26, minorVersion: 6, patchVersion: 0))
+            == "msl needs macOS 27 or later (this is macOS 26.6).")
+        #expect(MSLBuild.unsupportedMacOS(OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)) == nil)
+    }
+
+    /// Package.swift's platform, install.sh's check and MSLBuild.minimumMacOS move together.
+    @Test func sameMinimumEverywhere() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let package = try String(contentsOf: root.appendingPathComponent("Package.swift"), encoding: .utf8)
+        let install = try String(contentsOf: root.appendingPathComponent("install.sh"), encoding: .utf8)
+        let n = MSLBuild.minimumMacOS
+        #expect(package.contains(".macOS(\"\(n).0\")"))
+        #expect(install.contains("-ge \(n) ]") && install.contains("needs macOS \(n) or later"))
+    }
+}

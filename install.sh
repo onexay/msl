@@ -78,7 +78,7 @@ say ""
 [ "$(uname -s)" = Darwin ] || die "msl runs on macOS only."
 [ "$(uname -m)" = arm64 ] || die "msl needs macOS on Apple silicon."
 MACOS=$(sw_vers -productVersion)
-[ "${MACOS%%.*}" -ge 26 ] 2>/dev/null || die "msl needs macOS 26 or later (this is macOS $MACOS)."
+[ "${MACOS%%.*}" -ge 27 ] 2>/dev/null || die "msl needs macOS 27 or later (this is macOS $MACOS)."
 ok "Apple silicon, macOS $MACOS"
 
 # --- Where ------------------------------------------------------------------

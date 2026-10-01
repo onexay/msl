@@ -391,6 +391,7 @@ do {
 } catch {
     fail("\(error)", ErrorCode.invalidArgument)
 }
+if let m = MSLBuild.unsupportedMacOS() { fail(m, ErrorCode.unsupported) }
 
 switch command {
 case .help:

@@ -13,14 +13,18 @@ concurrency:
 jobs:
   host:
     name: Host (Swift)
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v7
       - name: Select Xcode for the minimum macOS (as the release package)
         id: xcode
         run: |
           MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_"$MIN"*.app | sort -V | tail -1)"
+          # The newest released Xcode for the minimum macOS; never a beta (the
+          # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do case $(readlink -f "$x") in *beta*) ;; *) echo "$x" ;; esac; done | sort -V | tail -1)
+          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
+          sudo xcode-select -s "$XC"
           xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
           swift --version
           echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
@@ -37,21 +41,24 @@ jobs:
       - run: swift test --skip-build
 
   # The release package, built here rather than on a developer's Mac: msl claims
-  # macOS 26 as its minimum, so it must be built with Xcode 26. A newer Xcode's
-  # Swift runtime links libraries macOS 26 lacks (0.1.9 failed to start there).
+  # macOS 27 as its minimum, so it must be built with Xcode 27. A newer Xcode's
+  # Swift runtime links libraries the minimum macOS lacks (0.1.9 failed to
+  # start on macOS 26 that way). xcode-27 is GitHub's macOS 27 image (preview).
   # scripts/publish.sh publishes this artifact; CI never publishes.
   package:
     name: Release package
     if: github.event_name == 'push'  # only main can be released; PRs skip ~10 min of macOS time
-    runs-on: macos-26
+    runs-on: xcode-27
     env: { GH_TOKEN: "${{ github.token }}" }
     steps:
       - uses: actions/checkout@v7
       - name: Select Xcode for the minimum macOS
         run: |
           MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
-          XC=$(ls -d /Applications/Xcode_"$MIN"*.app | sort -V | tail -1)
-          [ -n "$XC" ] || { echo "no Xcode $MIN on this runner"; exit 1; }
+          # The newest released Xcode for the minimum macOS; never a beta (the
+          # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do case $(readlink -f "$x") in *beta*) ;; *) echo "$x" ;; esac; done | sort -V | tail -1)
+          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
           sudo xcode-select -s "$XC"
           xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
           xcodebuild -version && swift --version

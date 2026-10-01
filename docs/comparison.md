@@ -10,7 +10,7 @@ msl's goal is narrow: **be `wsl.exe` on macOS**. That means the same CLI, the sa
 
 | | **msl** | **WSL 2** (reference) | **OrbStack** machines | **Apple `container machine`** | **Lima** | **Multipass** | **UTM** | **Tart** |
 |---|---|---|---|---|---|---|---|---|
-| Host | macOS 26+, Apple silicon | Windows | macOS 14+ | macOS 26, Apple silicon | macOS, Linux (Windows experimental) | macOS, Linux, Windows | macOS | macOS, Apple silicon |
+| Host | macOS 27+, Apple silicon | Windows | macOS 14+ | macOS 26, Apple silicon | macOS, Linux (Windows experimental) | macOS, Linux, Windows | macOS | macOS, Apple silicon |
 | `wsl.exe` CLI compatibility | **Yes** (arguments, output, exit codes) | Native | No | No | No | No | No | No |
 | Runs WSL `.wsl` images unmodified | **Yes** (arm64; honours `wsl.conf`, `wsl-distribution.conf` OOBE) | Native | No | No (OCI images) | No (cloud images) | No (Ubuntu images) | No | No (OCI VM images) |
 | VM model | One shared VM, per-distro namespaces | One shared VM, per-distro namespaces | One shared VM | One VM per machine | One VM per instance | One VM per instance | One VM per VM | One VM per VM |

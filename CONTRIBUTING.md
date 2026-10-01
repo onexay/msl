@@ -11,7 +11,7 @@ Thanks for helping. msl aims to behave exactly like `wsl.exe` on macOS, so the b
 
 ## Set up
 
-You need macOS 26 or later on Apple silicon, plus:
+You need macOS 27 or later on Apple silicon, plus:
 - Xcode 27 (Swift 6.4);
 - Rust 1.98 (`rustup`) with the `aarch64-unknown-linux-musl` target (`guest/rust-toolchain.toml` pins it);
 - `protoc`.
@@ -84,7 +84,7 @@ The extension's source is in [msl-vscode-extension](https://github.com/onexay/ms
 
 ## Releases
 
-- **msl** ships as `v<version>` releases. The Latest one is what `install.sh` and `msl --update` use. A release is one pull request: pin the kernel and extension releases it ships (`scripts/pin.sh kernel`, `scripts/pin.sh vscode`; unchanged pins stay as they are), set the version with `scripts/set-version.sh <version>` (the root `VERSION` file is the source of truth), and move the *Unreleased* changelog entries under it. Merge it, wait for main's CI to pass, then run `scripts/publish.sh <version>`; that CI run is the release build. CI's *Release package* job builds the release (tarball + `.sha256`, `update.json`) with the Xcode that matches msl's minimum macOS, 26: a newer Xcode's Swift runtime links libraries that macOS 26 lacks, so a package built on a newer Mac doesn't start there (0.1.9 didn't). `publish.sh` never builds: it downloads that job's artifact for HEAD, checks that it's from this commit and Xcode 26 and that it bundles the published kernel and extension, signs the checksum when `MSL_GPG_KEY` is set, attaches the BusyBox and e2fsprogs source, and takes the notes from `CHANGELOG.md`. `scripts/package.sh <version>` builds the same files locally, for testing only.
+- **msl** ships as `v<version>` releases. The Latest one is what `install.sh` and `msl --update` use. A release is one pull request: pin the kernel and extension releases it ships (`scripts/pin.sh kernel`, `scripts/pin.sh vscode`; unchanged pins stay as they are), set the version with `scripts/set-version.sh <version>` (the root `VERSION` file is the source of truth), and move the *Unreleased* changelog entries under it. Merge it, wait for main's CI to pass, then run `scripts/publish.sh <version>`; that CI run is the release build. CI's *Release package* job builds the release (tarball + `.sha256`, `update.json`) with the Xcode that matches msl's minimum macOS, 27 (a release, never a beta): a newer Xcode's Swift runtime links libraries that the minimum macOS lacks, so a package built on a newer Mac doesn't start there (0.1.9 didn't on macOS 26). `publish.sh` never builds: it downloads that job's artifact for HEAD, checks that it's from this commit and Xcode 27 and that it bundles the published kernel and extension, signs the checksum when `MSL_GPG_KEY` is set, attaches the BusyBox and e2fsprogs source, and takes the notes from `CHANGELOG.md`. `scripts/package.sh <version>` builds the same files locally, for testing only.
 - **The kernel** is released from [msl-kernel](https://github.com/onexay/msl-kernel) as `kernel-<linux version>-msl-<config hash>`; its README describes how. Each msl release's notes name the kernel it bundles.
 - **The VS Code extension** is released from [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension) as `vscode-<version>`.
 - `scripts/publish.sh` refuses to publish an msl release whose bundled kernel or `.vsix` isn't the pinned one (see [Kernel](#kernel) and [VS Code extension](#vs-code-extension)).

@@ -2,7 +2,7 @@
 
 **Linux as the development environment on macOS, the way WSL made it on Windows.**
 
-msl runs Linux distributions on macOS the way WSL runs them on Windows. The `msl` command is `wsl.exe` for macOS: same arguments, same output, same exit codes. It runs Microsoft's WSL distribution images, unmodified, in one lightweight Linux VM. It needs Apple silicon and macOS 26 or later, and uses only Apple's Virtualization.framework.
+msl runs Linux distributions on macOS the way WSL runs them on Windows. The `msl` command is `wsl.exe` for macOS: same arguments, same output, same exit codes. It runs Microsoft's WSL distribution images, unmodified, in one lightweight Linux VM. It needs Apple silicon and macOS 27 or later, and uses only Apple's Virtualization.framework.
 
 Why: teams split across Windows and macOS end up with two developer setups, two sets of docs and two sets of bugs. With WSL on Windows and msl on macOS, everyone develops in the same Linux distro, from the same image, with the same commands, scripts and `wsl.conf`. The toolchain is Linux on both; the host OS is just where the editor and browser live.
 

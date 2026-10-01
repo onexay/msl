@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import Foundation
+
 /// Build identity. `scripts/package.sh` stamps the release version and update
 /// channel; `scripts/build.sh` stamps the commit.
 public enum MSLBuild {
@@ -10,6 +12,14 @@ public enum MSLBuild {
     public static var displayVersion: String { commit.isEmpty ? version : "\(version)+\(commit)" }
     /// Release manifest URL for `msl --update` (empty for local builds; MSL_UPDATE_URL overrides).
     public static let updateURL = ""
+    /// The oldest macOS msl runs on: Package.swift's platform, and what install.sh checks.
+    public static let minimumMacOS = 27
+
+    /// Why msl can't run on this macOS, or nil. dyld starts a command-line binary
+    /// built for a newer macOS anyway, so msl and msld check for themselves.
+    public static func unsupportedMacOS(_ v: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion) -> String? {
+        v.majorVersion >= minimumMacOS ? nil : "msl needs macOS \(minimumMacOS) or later (this is macOS \(v.majorVersion).\(v.minorVersion))."
+    }
 }
 
 /// Dotted version comparison ("0.10.0" > "0.9.3").

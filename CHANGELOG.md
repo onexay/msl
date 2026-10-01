@@ -4,6 +4,9 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+- msl requires macOS 27 or later. GPU acceleration in distributions ([#13](https://github.com/onexay/msl/issues/13)) uses a device only macOS 27 offers, and one baseline keeps the build simple. On an older macOS, `install.sh`, `msl`, `msld` and `msl --update` stop with a message instead of starting.
+
 ## [0.3.0] - 2026-10-01
 
 ### Changed

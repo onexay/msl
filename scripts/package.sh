@@ -55,10 +55,11 @@ SHA=$(shasum -a 256 "$TARBALL" | cut -d' ' -f1)
 echo "$SHA  $NAME-macos-arm64.tar.gz" > "$TARBALL.sha256"
 
 
+MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
 cat > dist/update.json <<JSON
 {
   "channels": {
-    "stable": { "version": "$VERSION", "url": "$BASE_URL/$NAME-macos-arm64.tar.gz", "sha256": "$SHA" }
+    "stable": { "version": "$VERSION", "url": "$BASE_URL/$NAME-macos-arm64.tar.gz", "sha256": "$SHA", "minimumMacOS": $MIN }
   }
 }
 JSON

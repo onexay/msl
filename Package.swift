@@ -6,7 +6,7 @@ let v5: [SwiftSetting] = [.swiftLanguageMode(.v5)]
 
 let package = Package(
     name: "msl",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS("27.0")],
     products: [
         .executable(name: "msl", targets: ["msl"]),
         .executable(name: "msld", targets: ["msld"]),

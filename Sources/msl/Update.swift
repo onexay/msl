@@ -20,7 +20,7 @@ enum Installation {
         _ = try? c.receive(Reply.self)
     }
 
-    struct Channel: Decodable { var version: String; var url: String; var sha256: String }
+    struct Channel: Decodable { var version: String; var url: String; var sha256: String; var minimumMacOS: Int }
     struct UpdateManifest: Decodable { var channels: [String: Channel] }
 
     static func update(prerelease: Bool) -> Never {
@@ -46,6 +46,10 @@ enum Installation {
         guard versionIsNewer(ch.version, than: MSLBuild.version) else {
             out("The most recent version of \(Messages.product) is already installed.")
             exit(0)
+        }
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        guard os.majorVersion >= ch.minimumMacOS else {
+            fail("Update failed: \(Messages.product) \(ch.version) needs macOS \(ch.minimumMacOS) or later (this is macOS \(os.majorVersion).\(os.minorVersion)).", ErrorCode.unsupported)
         }
         guard FileManager.default.isWritableFile(atPath: prefix.appendingPathComponent("bin").path) else {
             fail("Updating requires write access to \(prefix.path); run 'sudo \(Messages.exe) --update'.", ErrorCode.unsupported)
