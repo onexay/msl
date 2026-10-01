@@ -75,6 +75,40 @@ pub async fn dial_host(port: u32, token: &[u8]) -> std::io::Result<File> {
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
+/// Copy `from` to `to` until eof or an error, with read and write. Not
+/// std::io::copy: into a pipe it uses splice(2), which holds the pipe's lock
+/// while it waits for the socket, so a process exiting with that pipe as its
+/// stdin blocks in pipe_release (state D) and is never reaped.
+pub fn copy_plain(mut from: File, mut to: &File) {
+    use std::io::{Read, Write};
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        match from.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if to.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+}
+
+/// Relay a target in the VM and the host over two one-way streams:
+/// `from_host` into the target (its eof shuts down the target's write side),
+/// and the target into `to_host` (closed at the target's eof).
+pub fn relay(target: File, from_host: File, to_host: File) -> std::io::Result<()> {
+    let t = target.try_clone()?;
+    std::thread::spawn(move || {
+        copy_plain(from_host, &t);
+        unsafe { libc::shutdown(t.as_raw_fd(), libc::SHUT_WR) };
+    });
+    std::thread::spawn(move || copy_plain(target, &to_host));
+    Ok(())
+}
+
 impl DataPort {
     pub fn bind() -> std::io::Result<Self> {
         let listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, VMADDR_PORT_ANY))?;

@@ -125,6 +125,8 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         sem.wait()
         if let startError {
             queue.sync { vm = nil }
+            let e = startError as NSError
+            log("vm start failed: \(e.domain) \(e.code) \(e.userInfo); disks: \(attached.map(\.path))")
             throw ServiceError("The virtual machine could not be started: \(startError.localizedDescription)", code: ErrorCode.vm)
         }
         queue.sync { booted = (settings, Date()) }

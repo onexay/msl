@@ -69,6 +69,19 @@ public enum Msl_V1_MiniInit: Sendable {
                 type: .serverStreaming
             )
         }
+        /// Namespace for "OpenStream" metadata.
+        public enum OpenStream: Sendable {
+            /// Request type for "OpenStream".
+            public typealias Input = Msl_V1_OpenStreamRequest
+            /// Response type for "OpenStream".
+            public typealias Output = Msl_V1_Empty
+            /// Descriptor for "OpenStream".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
+                method: "OpenStream",
+                type: .unary
+            )
+        }
         /// Namespace for "DeleteDistro" metadata.
         public enum DeleteDistro: Sendable {
             /// Request type for "DeleteDistro".
@@ -269,6 +282,7 @@ public enum Msl_V1_MiniInit: Sendable {
             Ping.descriptor,
             ImportDistro.descriptor,
             ExportDistro.descriptor,
+            OpenStream.descriptor,
             DeleteDistro.descriptor,
             StartDistro.descriptor,
             StopDistro.descriptor,
@@ -367,6 +381,32 @@ extension Msl_V1_MiniInit {
             deserializer: some GRPCCore.MessageDeserializer<Msl_V1_ExportDistroEvent>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Msl_V1_ExportDistroEvent>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "OpenStream" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
+        /// > allowed) or a localhost TCP port in a running distro, as two streams
+        /// > dialed back to the host, one per direction. Returns once the target is
+        /// > open and both streams are up.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_OpenStreamRequest` message.
+        ///   - serializer: A serializer for `Msl_V1_OpenStreamRequest` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func openStream<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_OpenStreamRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "DeleteDistro" method.
@@ -829,6 +869,43 @@ extension Msl_V1_MiniInit {
             try await self.client.serverStreaming(
                 request: request,
                 descriptor: Msl_V1_MiniInit.Method.ExportDistro.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "OpenStream" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
+        /// > allowed) or a localhost TCP port in a running distro, as two streams
+        /// > dialed back to the host, one per direction. Returns once the target is
+        /// > open and both streams are up.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_OpenStreamRequest` message.
+        ///   - serializer: A serializer for `Msl_V1_OpenStreamRequest` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func openStream<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_OpenStreamRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Msl_V1_MiniInit.Method.OpenStream.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1439,6 +1516,38 @@ extension Msl_V1_MiniInit.ClientProtocol {
         )
     }
 
+    /// Call the "OpenStream" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
+    /// > allowed) or a localhost TCP port in a running distro, as two streams
+    /// > dialed back to the host, one per direction. Returns once the target is
+    /// > open and both streams are up.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Msl_V1_OpenStreamRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func openStream<Result>(
+        request: GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.openStream(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_OpenStreamRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "DeleteDistro" method.
     ///
     /// > Source IDL Documentation:
@@ -1972,6 +2081,42 @@ extension Msl_V1_MiniInit.ClientProtocol {
             metadata: metadata
         )
         return try await self.exportDistro(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "OpenStream" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
+    /// > allowed) or a localhost TCP port in a running distro, as two streams
+    /// > dialed back to the host, one per direction. Returns once the target is
+    /// > open and both streams are up.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func openStream<Result>(
+        _ message: Msl_V1_OpenStreamRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.openStream(
             request: request,
             options: options,
             onResponse: handleResponse

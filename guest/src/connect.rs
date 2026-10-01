@@ -108,6 +108,11 @@ fn connect_as(pid: i32, uid: u32, gid: u32, groups: Vec<u32>, path: String) -> s
     .map_err(|_| std::io::Error::other("connect thread panicked"))?
 }
 
+/// A Unix socket in a running distro, as `uid`, within the allowlist (OpenStream).
+pub fn open_unix(uid: u32, id: &str, path: &str) -> Result<UnixStream, String> {
+    open(&Request { uid, id: id.to_string(), path: path.to_string() })
+}
+
 fn open(req: &Request) -> Result<UnixStream, String> {
     let pid = crate::miniinit::distro_init_pid(&req.id).ok_or("the distro is not running")?;
     let root = format!("/proc/{pid}/root");

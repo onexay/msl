@@ -326,10 +326,10 @@ fn raw_bridge(sock: File, local_in: Option<File>, local_out: Option<File>) -> st
     } else {
         let _ = sent_tx.send(());
     }
-    if let Some(mut output) = local_out {
-        let mut from_host = sock.try_clone()?;
+    if let Some(output) = local_out {
+        let from_host = sock.try_clone()?;
         std::thread::spawn(move || {
-            let _ = std::io::copy(&mut from_host, &mut output);
+            crate::rpc::copy_plain(from_host, &output);
             // Dropping `output` closes the child's stdin (eof).
         });
     }

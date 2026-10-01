@@ -118,9 +118,34 @@ func request(_ r: Request, fds: [Int32] = []) -> Reply {
     }
 }
 
+/// A `direct` request: msld hands over the guest's stream (`.stream`) and msl
+/// moves the data itself, writing `file` to it (`sending`) or reading it into
+/// `file`, then gets the final reply. An older msld uses `file` itself.
+func streamRequest(_ r: Request, file: Int32, sending: Bool) -> Reply {
+    signal(SIGPIPE, SIG_IGN)
+    let c = connect()
+    do { try c.send(r, fds: [file]) } catch { fail("Lost connection to msld: \(error)", ErrorCode.service) }
+    let done = DispatchGroup()
+    while true {
+        let reply: Reply
+        let fds: [Int32]
+        do { (reply, fds) = try c.receive(Reply.self) } catch { fail("Lost connection to msld.", ErrorCode.service) }
+        if case .stream = reply, let s = fds.first {
+            if sending {
+                Streams.copy(from: file, to: s, endWrite: true, group: done)
+            } else {
+                Streams.copy(from: s, to: file, group: done)
+            }
+            continue
+        }
+        done.wait()  // an export is complete once its stream ends (msld already has the guest's result)
+        return reply
+    }
+}
+
 func expectOK(_ reply: Reply) {
     switch reply {
-    case .ok, .installed, .distros, .versionInfo, .exited, .mounted, .status, .streams: return
+    case .ok, .installed, .distros, .versionInfo, .exited, .mounted, .status, .streams, .stream: return
     case .failure(let m, let c): fail(m, c)
     }
 }
@@ -222,15 +247,17 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
         case .streams(let ttyStream, let stdin, let stdout, let stderr):
             var it = fds.makeIterator()
             if ttyStream, let s = it.next() {
-                if tty.0 { Streams.copy(from: 0, to: s, endWrite: true) }
+                // Not half-closed at our eof: it also carries the output (see OpenStreamRequest).
+                if tty.0 { Streams.copy(from: 0, to: s) }
                 Streams.copy(from: s, to: tty.1 ? 1 : 2, group: done)
             }
             if stdin, let s = it.next() { Streams.copy(from: 0, to: s, endWrite: true) }
             if stdout, let s = it.next() { Streams.copy(from: s, to: 1, group: done) }
             if stderr, let s = it.next() { Streams.copy(from: s, to: 2, group: done) }
         case .exited(let code):
-            // The guest ends each output stream once everything is delivered.
-            done.wait()
+            // The guest ends each output stream once everything is delivered;
+            // as msld's relay did, stop waiting on one that has gone quiet.
+            Streams.drain(done)
             TTY.restore()
             exit(code)
         case .failure(let m, let code):
@@ -245,6 +272,21 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
 
 /// Copying between msl's stdio and a direct run's streams (vsock fds from msld).
 enum Streams {
+    /// When an output copy last read data, and how many are writing now.
+    nonisolated(unsafe) static var lastRead = Date()
+    nonisolated(unsafe) static var writing = 0
+    static let activityLock = NSLock()
+
+    /// Wait for the output copies in `group`. Give up only when none has read
+    /// anything for 2 s and none is writing (a slow reader such as a paused
+    /// `less` keeps us here): the process has exited, so such a stream is one
+    /// the guest won't finish.
+    static func drain(_ group: DispatchGroup) {
+        while group.wait(timeout: .now() + 0.1) == .timedOut {
+            if activityLock.withLock({ writing == 0 && Date().timeIntervalSince(lastRead) > 2 }) { return }
+        }
+    }
+
     /// Copy `from` -> `to` on a thread until eof. `endWrite`: shut down the
     /// write side of `to` at eof (stdin's eof for the process). An output stream
     /// whose destination is gone (`msl … | head`) is closed, so the process gets
@@ -258,6 +300,9 @@ enum Streams {
                 let n = read(from, &buf, buf.count)
                 if n < 0 && errno == EINTR { continue }
                 if n <= 0 { break }
+                let output = group != nil
+                if output { activityLock.withLock { lastRead = Date(); writing += 1 } }
+                defer { if output { activityLock.withLock { writing -= 1 } } }
                 var off = 0
                 while off < n {
                     let w = buf.withUnsafeBytes { write(to, $0.baseAddress! + off, n - off) }
@@ -390,7 +435,7 @@ case .export(let name, let file, let format):
     }
     let fd = openOutput(file)
     if file != "-" { out(Messages.exportProgress) }
-    expectOK(request(.export(name: name, format: format ?? "tar"), fds: [fd]))
+    expectOK(streamRequest(.export(name: name, format: format ?? "tar", direct: true), file: fd, sending: false))
     if file != "-" { out(Messages.operationCompleted) }
 
 case .importTar(let name, let location, let file, let version, let vhd):
@@ -404,7 +449,7 @@ case .importTar(let name, let location, let file, let version, let vhd):
     }
     let fd = openInput(file)
     out(Messages.importProgress)
-    expectOK(request(.importTar(name: name, location: absolutePath(location)), fds: [fd]))
+    expectOK(streamRequest(.importTar(name: name, location: absolutePath(location), direct: true), file: fd, sending: true))
     out(Messages.operationCompleted)
 
 case .install(let spec):
@@ -428,7 +473,8 @@ case .install(let spec):
         out(Messages.installing(entry.FriendlyName))
     }
     let fd = openInput(file)
-    let reply = request(.installFromFile(name: name, location: spec.location.map(absolutePath), sourceDescription: file, vhdSize: spec.vhdSize), fds: [fd])
+    let reply = streamRequest(.installFromFile(name: name, location: spec.location.map(absolutePath), sourceDescription: file, vhdSize: spec.vhdSize, direct: true),
+                              file: fd, sending: true)
     expectOK(reply)
     guard case .installed(let name) = reply else { exit(failureExit) }
     out(Messages.distributionInstalled(name))
@@ -465,6 +511,34 @@ case .manage(let name, let op):
 
 case .debugShell:
     run(RunSpec(), debugShell: true)
+
+case .connect(let req):
+    // stdin/stdout <-> the target; msld keeps the distro up while we're connected.
+    signal(SIGPIPE, SIG_IGN)
+    let c = connect()
+    var unix: String?, tcp: UInt16?
+    switch req.target {
+    case .unix(let p): unix = p
+    case .tcp(let p): tcp = p
+    }
+    let reply: Reply
+    let fds: [Int32]
+    do {
+        try c.send(Request.connect(distro: req.distro, unix: unix, tcp: tcp))
+        (reply, fds) = try c.receive(Reply.self)
+    } catch {
+        fail("Lost connection to msld: \(error)", ErrorCode.service)
+    }
+    guard case .streams = reply, fds.count == 2 else {
+        expectOK(reply)
+        exit(failureExit)
+    }
+    // One stream each way: ending ours never cuts the target's reply short.
+    let done = DispatchGroup()
+    Streams.copy(from: 0, to: fds[0], endWrite: true)
+    Streams.copy(from: fds[1], to: 1, group: done)
+    done.wait()
+    exit(0)
 
 case .mount(let m):
     let reply = request(.mount(m))
