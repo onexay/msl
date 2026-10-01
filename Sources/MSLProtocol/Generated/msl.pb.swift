@@ -339,8 +339,7 @@ public nonisolated struct Msl_V1_ImportDistroRequest: Sendable {
 
   public var id: String = String()
 
-  /// Set: the guest dials the tar stream back to the host (raw) and sends no
-  /// data_port event. Unset: data_port, framed.
+  /// the tar stream, dialed back to the host
   public var stream: Msl_V1_HostStream {
     get {_stream ?? Msl_V1_HostStream()}
     set {_stream = newValue}
@@ -378,6 +377,42 @@ public nonisolated struct Msl_V1_HostStream: Sendable {
 /// One vsock per direction, as with session stdio: Virtualization.framework
 /// drops data still on its way to the host when the host has half-closed a
 /// connection and the guest then closes it.
+public nonisolated struct Msl_V1_OpenStreamEvent: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var event: Msl_V1_OpenStreamEvent.OneOf_Event? = nil
+
+  public var opened: Msl_V1_Empty {
+    get {
+      if case .opened(let v)? = event {return v}
+      return Msl_V1_Empty()
+    }
+    set {event = .opened(newValue)}
+  }
+
+  /// bytes written to the host stream (see Exited)
+  public var done: UInt64 {
+    get {
+      if case .done(let v)? = event {return v}
+      return 0
+    }
+    set {event = .done(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Event: Equatable, Sendable {
+    case opened(Msl_V1_Empty)
+    /// bytes written to the host stream (see Exited)
+    case done(UInt64)
+
+  }
+
+  public init() {}
+}
+
 public nonisolated struct Msl_V1_OpenStreamRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -429,14 +464,6 @@ public nonisolated struct Msl_V1_ImportDistroEvent: Sendable {
 
   public var event: Msl_V1_ImportDistroEvent.OneOf_Event? = nil
 
-  public var dataPort: UInt32 {
-    get {
-      if case .dataPort(let v)? = event {return v}
-      return 0
-    }
-    set {event = .dataPort(newValue)}
-  }
-
   public var done: Msl_V1_ImportDistroDone {
     get {
       if case .done(let v)? = event {return v}
@@ -448,7 +475,6 @@ public nonisolated struct Msl_V1_ImportDistroEvent: Sendable {
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Event: Equatable, Sendable {
-    case dataPort(UInt32)
     case done(Msl_V1_ImportDistroDone)
 
   }
@@ -514,7 +540,7 @@ public nonisolated struct Msl_V1_ExportDistroRequest: Sendable {
 
   public var format: Msl_V1_ExportFormat = .tar
 
-  /// as in ImportDistroRequest
+  /// the tar stream, dialed back to the host
   public var stream: Msl_V1_HostStream {
     get {_stream ?? Msl_V1_HostStream()}
     set {_stream = newValue}
@@ -538,14 +564,6 @@ public nonisolated struct Msl_V1_ExportDistroEvent: Sendable {
 
   public var event: Msl_V1_ExportDistroEvent.OneOf_Event? = nil
 
-  public var dataPort: UInt32 {
-    get {
-      if case .dataPort(let v)? = event {return v}
-      return 0
-    }
-    set {event = .dataPort(newValue)}
-  }
-
   public var done: Msl_V1_ExportDistroDone {
     get {
       if case .done(let v)? = event {return v}
@@ -557,7 +575,6 @@ public nonisolated struct Msl_V1_ExportDistroEvent: Sendable {
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Event: Equatable, Sendable {
-    case dataPort(UInt32)
     case done(Msl_V1_ExportDistroDone)
 
   }
@@ -571,6 +588,9 @@ public nonisolated struct Msl_V1_ExportDistroDone: Sendable {
   // methods supported on all messages.
 
   public var entries: UInt64 = 0
+
+  /// the tar stream's length (see Exited)
+  public var bytes: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -751,10 +771,9 @@ public nonisolated struct Msl_V1_RunRequest: @unchecked Sendable {
     set {_uniqueStorage()._macHome = newValue}
   }
 
-  /// Set: the guest connects to these host ports itself (guest-initiated vsock
-  /// connections, which a stalled host reader can't freeze, #36) and the
-  /// streams carry raw bytes, with no framing. Unset: the guest announces data
-  /// ports in Started and the host connects (framed, framed.rs).
+  /// The host ports the guest connects to for the session's streams
+  /// (guest-initiated vsock connections, which a stalled host reader can't
+  /// freeze, #36); they carry raw bytes, with no framing.
   public var dialBack: Msl_V1_DialBack {
     get {_storage._dialBack ?? Msl_V1_DialBack()}
     set {_uniqueStorage()._dialBack = newValue}
@@ -838,20 +857,16 @@ public nonisolated struct Msl_V1_Started: Sendable {
 
   public var sessionID: UInt64 = 0
 
-  /// 0 = not used. tty_port carries the PTY master (both directions).
-  public var ttyPort: UInt32 = 0
-
-  public var stdinPort: UInt32 = 0
-
-  public var stdoutPort: UInt32 = 0
-
-  public var stderrPort: UInt32 = 0
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
+/// End of stream is carried here, not by the vsock: Virtualization.framework
+/// can drop the tail of a guest->host connection when the guest closes it, and
+/// can lose a half-close (eof). So the guest reports how many bytes it wrote to
+/// each output stream; the host reads exactly that many, then closes the stream,
+/// and the guest closes its end only after that.
 public nonisolated struct Msl_V1_Exited: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -859,6 +874,12 @@ public nonisolated struct Msl_V1_Exited: Sendable {
 
   /// exit status, or 128 + signal
   public var code: Int32 = 0
+
+  public var ttyBytes: UInt64 = 0
+
+  public var stdoutBytes: UInt64 = 0
+
+  public var stderrBytes: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1494,6 +1515,68 @@ nonisolated extension Msl_V1_HostStream: SwiftProtobuf.Message, SwiftProtobuf._M
   }
 }
 
+nonisolated extension Msl_V1_OpenStreamEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".OpenStreamEvent"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}opened\0\u{1}done\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: Msl_V1_Empty?
+        var hadOneofValue = false
+        if let current = self.event {
+          hadOneofValue = true
+          if case .opened(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.event = .opened(v)
+        }
+      }()
+      case 2: try {
+        var v: UInt64?
+        try decoder.decodeSingularUInt64Field(value: &v)
+        if let v = v {
+          if self.event != nil {try decoder.handleConflictingOneOf()}
+          self.event = .done(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.event {
+    case .opened?: try {
+      guard case .opened(let v)? = self.event else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .done?: try {
+      guard case .done(let v)? = self.event else { preconditionFailure() }
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 2)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Msl_V1_OpenStreamEvent, rhs: Msl_V1_OpenStreamEvent) -> Bool {
+    if lhs.event != rhs.event {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Msl_V1_OpenStreamRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".OpenStreamRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}stream\0\u{3}distro_id\0\u{1}uid\0\u{3}unix_path\0\u{3}tcp_port\0\u{3}from_host\0")
@@ -1555,7 +1638,7 @@ nonisolated extension Msl_V1_OpenStreamRequest: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Msl_V1_ImportDistroEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ImportDistroEvent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}data_port\0\u{1}done\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{2}done\0\u{c}\u{1}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1563,14 +1646,6 @@ nonisolated extension Msl_V1_ImportDistroEvent: SwiftProtobuf.Message, SwiftProt
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.event != nil {try decoder.handleConflictingOneOf()}
-          self.event = .dataPort(v)
-        }
-      }()
       case 2: try {
         var v: Msl_V1_ImportDistroDone?
         var hadOneofValue = false
@@ -1594,17 +1669,9 @@ nonisolated extension Msl_V1_ImportDistroEvent: SwiftProtobuf.Message, SwiftProt
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
     // https://github.com/apple/swift-protobuf/issues/1182
-    switch self.event {
-    case .dataPort?: try {
-      guard case .dataPort(let v)? = self.event else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
-    }()
-    case .done?: try {
-      guard case .done(let v)? = self.event else { preconditionFailure() }
+    try { if case .done(let v)? = self.event {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    }()
-    case nil: break
-    }
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1744,7 +1811,7 @@ nonisolated extension Msl_V1_ExportDistroRequest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Msl_V1_ExportDistroEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ExportDistroEvent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}data_port\0\u{1}done\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{2}done\0\u{c}\u{1}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1752,14 +1819,6 @@ nonisolated extension Msl_V1_ExportDistroEvent: SwiftProtobuf.Message, SwiftProt
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.event != nil {try decoder.handleConflictingOneOf()}
-          self.event = .dataPort(v)
-        }
-      }()
       case 2: try {
         var v: Msl_V1_ExportDistroDone?
         var hadOneofValue = false
@@ -1783,17 +1842,9 @@ nonisolated extension Msl_V1_ExportDistroEvent: SwiftProtobuf.Message, SwiftProt
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
     // https://github.com/apple/swift-protobuf/issues/1182
-    switch self.event {
-    case .dataPort?: try {
-      guard case .dataPort(let v)? = self.event else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
-    }()
-    case .done?: try {
-      guard case .done(let v)? = self.event else { preconditionFailure() }
+    try { if case .done(let v)? = self.event {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    }()
-    case nil: break
-    }
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1806,7 +1857,7 @@ nonisolated extension Msl_V1_ExportDistroEvent: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Msl_V1_ExportDistroDone: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ExportDistroDone"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}entries\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}entries\0\u{1}bytes\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1815,6 +1866,7 @@ nonisolated extension Msl_V1_ExportDistroDone: SwiftProtobuf.Message, SwiftProto
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularUInt64Field(value: &self.entries) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.bytes) }()
       default: break
       }
     }
@@ -1824,11 +1876,15 @@ nonisolated extension Msl_V1_ExportDistroDone: SwiftProtobuf.Message, SwiftProto
     if self.entries != 0 {
       try visitor.visitSingularUInt64Field(value: self.entries, fieldNumber: 1)
     }
+    if self.bytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.bytes, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Msl_V1_ExportDistroDone, rhs: Msl_V1_ExportDistroDone) -> Bool {
     if lhs.entries != rhs.entries {return false}
+    if lhs.bytes != rhs.bytes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2320,7 +2376,7 @@ nonisolated extension Msl_V1_RunEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 nonisolated extension Msl_V1_Started: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Started"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}tty_port\0\u{3}stdin_port\0\u{3}stdout_port\0\u{3}stderr_port\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{c}\u{2}\u{1}\u{c}\u{3}\u{1}\u{c}\u{4}\u{1}\u{c}\u{5}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2329,10 +2385,6 @@ nonisolated extension Msl_V1_Started: SwiftProtobuf.Message, SwiftProtobuf._Mess
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularUInt64Field(value: &self.sessionID) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.ttyPort) }()
-      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.stdinPort) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.stdoutPort) }()
-      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.stderrPort) }()
       default: break
       }
     }
@@ -2342,27 +2394,11 @@ nonisolated extension Msl_V1_Started: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if self.sessionID != 0 {
       try visitor.visitSingularUInt64Field(value: self.sessionID, fieldNumber: 1)
     }
-    if self.ttyPort != 0 {
-      try visitor.visitSingularUInt32Field(value: self.ttyPort, fieldNumber: 2)
-    }
-    if self.stdinPort != 0 {
-      try visitor.visitSingularUInt32Field(value: self.stdinPort, fieldNumber: 3)
-    }
-    if self.stdoutPort != 0 {
-      try visitor.visitSingularUInt32Field(value: self.stdoutPort, fieldNumber: 4)
-    }
-    if self.stderrPort != 0 {
-      try visitor.visitSingularUInt32Field(value: self.stderrPort, fieldNumber: 5)
-    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Msl_V1_Started, rhs: Msl_V1_Started) -> Bool {
     if lhs.sessionID != rhs.sessionID {return false}
-    if lhs.ttyPort != rhs.ttyPort {return false}
-    if lhs.stdinPort != rhs.stdinPort {return false}
-    if lhs.stdoutPort != rhs.stdoutPort {return false}
-    if lhs.stderrPort != rhs.stderrPort {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2370,7 +2406,7 @@ nonisolated extension Msl_V1_Started: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 nonisolated extension Msl_V1_Exited: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Exited"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}code\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}code\0\u{3}tty_bytes\0\u{3}stdout_bytes\0\u{3}stderr_bytes\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2379,6 +2415,9 @@ nonisolated extension Msl_V1_Exited: SwiftProtobuf.Message, SwiftProtobuf._Messa
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularInt32Field(value: &self.code) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.ttyBytes) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.stdoutBytes) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.stderrBytes) }()
       default: break
       }
     }
@@ -2388,11 +2427,23 @@ nonisolated extension Msl_V1_Exited: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if self.code != 0 {
       try visitor.visitSingularInt32Field(value: self.code, fieldNumber: 1)
     }
+    if self.ttyBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.ttyBytes, fieldNumber: 2)
+    }
+    if self.stdoutBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.stdoutBytes, fieldNumber: 3)
+    }
+    if self.stderrBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.stderrBytes, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Msl_V1_Exited, rhs: Msl_V1_Exited) -> Bool {
     if lhs.code != rhs.code {return false}
+    if lhs.ttyBytes != rhs.ttyBytes {return false}
+    if lhs.stdoutBytes != rhs.stdoutBytes {return false}
+    if lhs.stderrBytes != rhs.stderrBytes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

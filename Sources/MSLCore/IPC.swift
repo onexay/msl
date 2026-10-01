@@ -19,10 +19,6 @@ public struct RunRequest: Codable, Sendable {
     public var mslenv: String = ""
     public var mslenvValues: [String: String] = [:]
     public var macHome: String = ""
-    /// The session's streams come back as fds (Reply.streams) that msl reads and
-    /// writes itself; msld isn't in the data path. msl still passes its stdio
-    /// fds, so an older msld (which ignores this) relays as before.
-    public var direct: Bool?
     public init(spec: RunSpec, macCwd: String, env: [String: String], stdinTTY: Bool, stdoutTTY: Bool, stderrTTY: Bool, rows: UInt16, cols: UInt16) {
         self.spec = spec; self.macCwd = macCwd; self.env = env
         self.stdinTTY = stdinTTY; self.stdoutTTY = stdoutTTY; self.stderrTTY = stderrTTY
@@ -38,14 +34,12 @@ public enum Request: Codable, Sendable {
     case terminate(name: String)
     case shutdown(force: Bool)
     case unregister(name: String)
-    /// fd[0] = output file (or stdout). `direct` (and every case below that has
-    /// it): msld replies `.stream` with a vsock fd that msl writes or reads
-    /// itself, then the final reply; an older msld ignores it and uses fd[0].
-    case export(name: String, format: String, direct: Bool? = nil)
-    /// fd[0] = input file (or stdin). `location` is absolute; `vhdSize` sizes the new disk.
-    case importTar(name: String, location: String, vhdSize: UInt64? = nil, direct: Bool? = nil)
-    /// fd[0] = input file
-    case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil, direct: Bool? = nil)
+    /// The tar streams of these three: msld replies `.stream` with a vsock fd
+    /// that msl writes the file to or reads it from, then the final reply.
+    case export(name: String, format: String)
+    /// `location` is absolute; `vhdSize` sizes the new disk.
+    case importTar(name: String, location: String, vhdSize: UInt64? = nil)
+    case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil)
     /// `msl --connect`: a byte stream to a Unix socket (`unix`) or localhost port
     /// (`tcp`) in a distro, for VS Code's managed pipes. msld replies `.streams`
     /// (stdin: to the target, stdout: from it) and keeps the distro running
@@ -58,9 +52,10 @@ public enum Request: Codable, Sendable {
     case importDisk(name: String, location: String, image: String)
     /// `--import-in-place`: an ext4 image used where it is.
     case importInPlace(name: String, image: String)
-    /// fds = [stdin, stdout, stderr]
+    /// msld replies `.streams` for each process it runs (the distro's first-run
+    /// setup, then the command), then `.exited`.
     case run(RunRequest)
-    /// A root shell in the utility VM itself; fds = [stdin, stdout, stderr]
+    /// A root shell in the utility VM itself; replies as `run`.
     case debugShell(RunRequest)
     case mount(MountSpec)
     case unmount(disk: String?)
@@ -92,13 +87,19 @@ public enum Reply: Codable, Sendable {
     case installed(name: String)
     /// A run finished with this exit code.
     case exited(Int32)
-    /// A direct run's streams (RunRequest.direct), as fds in this order, each
-    /// present only when true: tty (both directions), stdin, stdout, stderr.
-    /// Output streams end with eof once the guest has delivered everything.
+    /// A process's streams (`run`, `connect`), as fds in this order, each present
+    /// only when true: tty (both directions), stdin, stdout, stderr. Output
+    /// streams end with eof once the guest has delivered everything.
     case streams(tty: Bool, stdin: Bool, stdout: Bool, stderr: Bool)
-    /// One vsock stream as the attached fd (`direct` requests, `connect`). One
-    /// the guest writes ends with eof.
+    /// One vsock stream as the attached fd (a tar stream).
     case stream
+    /// A process from `.streams` has exited: how many bytes the guest wrote to
+    /// each output stream. msl reads exactly that much from each, then closes
+    /// it; the vsock's own end (close or eof) isn't reliable on VZ.
+    case ended(tty: UInt64, stdout: UInt64, stderr: UInt64)
+    /// The guest has finished writing a `.stream` (export) or `connect` output
+    /// stream, after `bytes` bytes; read that many, then close it.
+    case streamEnd(bytes: UInt64)
     case mounted(device: String, mountPoint: String)
 }
 

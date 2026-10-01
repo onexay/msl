@@ -74,12 +74,12 @@ public enum Msl_V1_MiniInit: Sendable {
             /// Request type for "OpenStream".
             public typealias Input = Msl_V1_OpenStreamRequest
             /// Response type for "OpenStream".
-            public typealias Output = Msl_V1_Empty
+            public typealias Output = Msl_V1_OpenStreamEvent
             /// Descriptor for "OpenStream".
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
                 method: "OpenStream",
-                type: .unary
+                type: .serverStreaming
             )
         }
         /// Namespace for "DeleteDistro" metadata.
@@ -341,7 +341,7 @@ extension Msl_V1_MiniInit {
         /// > Source IDL Documentation:
         /// >
         /// > Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
-        /// > directory. Events: data_port, then done.
+        /// > directory, read from `stream`. Events: done.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_ImportDistroRequest` message.
@@ -364,7 +364,7 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Streams the distro's rootfs as a tar. Events: data_port, then done.
+        /// > Writes the distro's rootfs as a tar to `stream`. Events: done.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_ExportDistroRequest` message.
@@ -389,13 +389,13 @@ extension Msl_V1_MiniInit {
         /// >
         /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
         /// > allowed) or a localhost TCP port in a running distro, as two streams
-        /// > dialed back to the host, one per direction. Returns once the target is
-        /// > open and both streams are up.
+        /// > dialed back to the host, one per direction. Events: opened (the target is
+        /// > open and both streams are up), then done once the target has closed.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_OpenStreamRequest` message.
         ///   - serializer: A serializer for `Msl_V1_OpenStreamRequest` messages.
-        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_OpenStreamEvent` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response and returns its result to
         ///       the caller. Returning from the closure will cancel the RPC if it hasn't
@@ -404,9 +404,9 @@ extension Msl_V1_MiniInit {
         func openStream<Result>(
             request: GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>,
             serializer: some GRPCCore.MessageSerializer<Msl_V1_OpenStreamRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_OpenStreamEvent>,
             options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Msl_V1_OpenStreamEvent>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "DeleteDistro" method.
@@ -816,7 +816,7 @@ extension Msl_V1_MiniInit {
         /// > Source IDL Documentation:
         /// >
         /// > Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
-        /// > directory. Events: data_port, then done.
+        /// > directory, read from `stream`. Events: done.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_ImportDistroRequest` message.
@@ -848,7 +848,7 @@ extension Msl_V1_MiniInit {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Streams the distro's rootfs as a tar. Events: data_port, then done.
+        /// > Writes the distro's rootfs as a tar to `stream`. Events: done.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_ExportDistroRequest` message.
@@ -882,13 +882,13 @@ extension Msl_V1_MiniInit {
         /// >
         /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
         /// > allowed) or a localhost TCP port in a running distro, as two streams
-        /// > dialed back to the host, one per direction. Returns once the target is
-        /// > open and both streams are up.
+        /// > dialed back to the host, one per direction. Events: opened (the target is
+        /// > open and both streams are up), then done once the target has closed.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Msl_V1_OpenStreamRequest` message.
         ///   - serializer: A serializer for `Msl_V1_OpenStreamRequest` messages.
-        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_OpenStreamEvent` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response and returns its result to
         ///       the caller. Returning from the closure will cancel the RPC if it hasn't
@@ -897,13 +897,11 @@ extension Msl_V1_MiniInit {
         public func openStream<Result>(
             request: GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>,
             serializer: some GRPCCore.MessageSerializer<Msl_V1_OpenStreamRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_OpenStreamEvent>,
             options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
-                try response.message
-            }
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Msl_V1_OpenStreamEvent>) async throws -> Result
         ) async throws -> Result where Result: Sendable {
-            try await self.client.unary(
+            try await self.client.serverStreaming(
                 request: request,
                 descriptor: Msl_V1_MiniInit.Method.OpenStream.descriptor,
                 serializer: serializer,
@@ -1466,7 +1464,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     /// > Source IDL Documentation:
     /// >
     /// > Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
-    /// > directory. Events: data_port, then done.
+    /// > directory, read from `stream`. Events: done.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Msl_V1_ImportDistroRequest` message.
@@ -1493,7 +1491,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Streams the distro's rootfs as a tar. Events: data_port, then done.
+    /// > Writes the distro's rootfs as a tar to `stream`. Events: done.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Msl_V1_ExportDistroRequest` message.
@@ -1522,8 +1520,8 @@ extension Msl_V1_MiniInit.ClientProtocol {
     /// >
     /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
     /// > allowed) or a localhost TCP port in a running distro, as two streams
-    /// > dialed back to the host, one per direction. Returns once the target is
-    /// > open and both streams are up.
+    /// > dialed back to the host, one per direction. Events: opened (the target is
+    /// > open and both streams are up), then done once the target has closed.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Msl_V1_OpenStreamRequest` message.
@@ -1535,14 +1533,12 @@ extension Msl_V1_MiniInit.ClientProtocol {
     public func openStream<Result>(
         request: GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>,
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
-            try response.message
-        }
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Msl_V1_OpenStreamEvent>) async throws -> Result
     ) async throws -> Result where Result: Sendable {
         try await self.openStream(
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_OpenStreamRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_OpenStreamEvent>(),
             options: options,
             onResponse: handleResponse
         )
@@ -2029,7 +2025,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     /// > Source IDL Documentation:
     /// >
     /// > Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
-    /// > directory. Events: data_port, then done.
+    /// > directory, read from `stream`. Events: done.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -2060,7 +2056,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Streams the distro's rootfs as a tar. Events: data_port, then done.
+    /// > Writes the distro's rootfs as a tar to `stream`. Events: done.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -2093,8 +2089,8 @@ extension Msl_V1_MiniInit.ClientProtocol {
     /// >
     /// > A byte stream to a Unix socket (VS Code's, see connect.rs for what's
     /// > allowed) or a localhost TCP port in a running distro, as two streams
-    /// > dialed back to the host, one per direction. Returns once the target is
-    /// > open and both streams are up.
+    /// > dialed back to the host, one per direction. Events: opened (the target is
+    /// > open and both streams are up), then done once the target has closed.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -2108,9 +2104,7 @@ extension Msl_V1_MiniInit.ClientProtocol {
         _ message: Msl_V1_OpenStreamRequest,
         metadata: GRPCCore.Metadata = [:],
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
-            try response.message
-        }
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Msl_V1_OpenStreamEvent>) async throws -> Result
     ) async throws -> Result where Result: Sendable {
         let request = GRPCCore.ClientRequest<Msl_V1_OpenStreamRequest>(
             message: message,

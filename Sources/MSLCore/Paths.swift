@@ -20,7 +20,6 @@ public struct Paths: Sendable {
     public var machineIdentifier: URL { root.appendingPathComponent("machine-identifier") }
     public var socket: URL { root.appendingPathComponent("msld.sock") }
     /// Byte streams into distros (VS Code managed pipes); see Connect.swift.
-    public var connectSocket: URL { root.appendingPathComponent("connect.sock") }
     /// The msl binary that set up the IDE extension (`msl --manage-ide`), so the
     /// extension finds it wherever msl is installed.
     public var cliPointer: URL { root.appendingPathComponent("cli-path") }

@@ -20,17 +20,17 @@ service MiniInit {
   rpc Ping(Empty) returns (PingReply);
 
   // Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
-  // directory. Events: data_port, then done.
+  // directory, read from `stream`. Events: done.
   rpc ImportDistro(ImportDistroRequest) returns (stream ImportDistroEvent);
 
-  // Streams the distro's rootfs as a tar. Events: data_port, then done.
+  // Writes the distro's rootfs as a tar to `stream`. Events: done.
   rpc ExportDistro(ExportDistroRequest) returns (stream ExportDistroEvent);
 
   // A byte stream to a Unix socket (VS Code's, see connect.rs for what's
   // allowed) or a localhost TCP port in a running distro, as two streams
-  // dialed back to the host, one per direction. Returns once the target is
-  // open and both streams are up.
-  rpc OpenStream(OpenStreamRequest) returns (Empty);
+  // dialed back to the host, one per direction. Events: opened (the target is
+  // open and both streams are up), then done once the target has closed.
+  rpc OpenStream(OpenStreamRequest) returns (stream OpenStreamEvent);
 
   // Removes the distro's root filesystem (the distro must be stopped).
   rpc DeleteDistro(DistroRef) returns (Empty);
@@ -160,9 +160,7 @@ message DistroRef {
 
 message ImportDistroRequest {
   string id = 1;
-  // Set: the guest dials the tar stream back to the host (raw) and sends no
-  // data_port event. Unset: data_port, framed.
-  HostStream stream = 2;
+  HostStream stream = 2;     // the tar stream, dialed back to the host
 }
 
 // A raw stream the guest dials back to the host: a guest-initiated vsock
@@ -177,6 +175,13 @@ message HostStream {
 // One vsock per direction, as with session stdio: Virtualization.framework
 // drops data still on its way to the host when the host has half-closed a
 // connection and the guest then closes it.
+message OpenStreamEvent {
+  oneof event {
+    Empty opened = 1;
+    uint64 done = 2;  // bytes written to the host stream (see Exited)
+  }
+}
+
 message OpenStreamRequest {
   HostStream stream = 1;     // target -> host; the guest closes it at the target's eof
   HostStream from_host = 6;  // host -> target; its eof shuts down the target's write side
@@ -187,8 +192,8 @@ message OpenStreamRequest {
 }
 
 message ImportDistroEvent {
+  reserved 1;
   oneof event {
-    uint32 data_port = 1;
     ImportDistroDone done = 2;
   }
 }
@@ -214,18 +219,19 @@ enum ExportFormat {
 message ExportDistroRequest {
   string id = 1;
   ExportFormat format = 2;
-  HostStream stream = 3;     // as in ImportDistroRequest
+  HostStream stream = 3;     // the tar stream, dialed back to the host
 }
 
 message ExportDistroEvent {
+  reserved 1;
   oneof event {
-    uint32 data_port = 1;
     ExportDistroDone done = 2;
   }
 }
 
 message ExportDistroDone {
   uint64 entries = 1;
+  uint64 bytes = 2;  // the tar stream's length (see Exited)
 }
 
 message StartDistroRequest {
@@ -314,10 +320,9 @@ message RunRequest {
   map<string, string> mslenv_values = 15;
   // macOS home directory (for mslpath -w of Linux-only paths).
   string mac_home = 16;
-  // Set: the guest connects to these host ports itself (guest-initiated vsock
-  // connections, which a stalled host reader can't freeze, #36) and the
-  // streams carry raw bytes, with no framing. Unset: the guest announces data
-  // ports in Started and the host connects (framed, framed.rs).
+  // The host ports the guest connects to for the session's streams
+  // (guest-initiated vsock connections, which a stalled host reader can't
+  // freeze, #36); they carry raw bytes, with no framing.
   DialBack dial_back = 17;
 }
 
@@ -343,16 +348,20 @@ message RunEvent {
 }
 
 message Started {
+  reserved 2, 3, 4, 5;
   uint64 session_id = 1;
-  // 0 = not used. tty_port carries the PTY master (both directions).
-  uint32 tty_port = 2;
-  uint32 stdin_port = 3;
-  uint32 stdout_port = 4;
-  uint32 stderr_port = 5;
 }
 
+// End of stream is carried here, not by the vsock: Virtualization.framework
+// can drop the tail of a guest->host connection when the guest closes it, and
+// can lose a half-close (eof). So the guest reports how many bytes it wrote to
+// each output stream; the host reads exactly that many, then closes the stream,
+// and the guest closes its end only after that.
 message Exited {
   int32 code = 1;  // exit status, or 128 + signal
+  uint64 tty_bytes = 2;
+  uint64 stdout_bytes = 3;
+  uint64 stderr_bytes = 4;
 }
 
 message ResizeRequest {

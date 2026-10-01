@@ -166,6 +166,17 @@ enum ManageIDE {
         if !setUp.isEmpty { out("Quit and reopen \(setUp.map(\.ide.name).joined(separator: " and ")) (⌘Q) for the change to take effect.") }
     }
 
+    /// For `msl --update` (after its files are replaced): reinstall the extension
+    /// from the new .vsix wherever it's installed, since msl and the extension
+    /// change together (no compatibility between versions).
+    static func refreshInstalled() {
+        guard getuid() != 0 else { return }  // a sudo install updates the IDEs at the next `msl --manage-ide`
+        for f in detect() where f.extensionInstalled {
+            out("\(f.ide.name):")
+            _ = install(f)
+        }
+    }
+
     static func install(_ f: Found) -> (success: Bool, changed: Bool) {
         var changed = false
         guard let cli = f.cli else {

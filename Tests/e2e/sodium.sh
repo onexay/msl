@@ -1,10 +1,9 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Sodium end-to-end test: byte streams into a distro for the VS Code extension.
-# msl-bridge (stdio relay), msl --connect (the guest dials the stream back),
-# msld's connect socket (vsock 1026 and the 1025
-# forwarder), its allowlist and permission checks, and idle-timeout sessions.
-# Uses a throwaway MSL_HOME, so it has its own msld and connect.sock.
+# Sodium end-to-end test: byte streams into a distro for the VS Code extension:
+# msl --connect (two streams the guest dials back, one per direction), its
+# allowlist and permission checks, and idle-timeout sessions.
+# Uses a throwaway MSL_HOME, so it has its own msld.
 #   Tests/e2e/sodium.sh [path/to/msl]
 # The extension itself is checked by hand: see the README in
 # github.com/onexay/msl-vscode-extension.
@@ -35,28 +34,6 @@ def serve(c):
 while True:
     c, _ = l.accept(); threading.Thread(target=serve, args=(c,), daemon=True).start()
 EOF
-# connect.sock client: client.py <distro> <target> [bytes] [hold-seconds]
-cat > "$MSL_HOME/client.py" <<'EOF'
-import hashlib, os, socket, sys, threading, time
-s = socket.socket(socket.AF_UNIX); s.connect(os.path.join(os.environ["MSL_HOME"], "connect.sock"))
-s.sendall(f"CONNECT distro={sys.argv[1]} {sys.argv[2]}\n".encode())
-line = b""
-while not line.endswith(b"\n"):
-    b = s.recv(1)
-    if not b: break
-    line += b
-line = line.decode().strip()
-n = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-if not line.startswith("OK") or n == 0:
-    if len(sys.argv) > 4: time.sleep(float(sys.argv[4]))
-    print(line); sys.exit(0)
-data = os.urandom(n)
-threading.Thread(target=lambda: (s.sendall(data), s.shutdown(socket.SHUT_WR))).start()
-got = bytearray()
-while (d := s.recv(1 << 20)): got += d
-print(line, "match" if hashlib.sha256(got).digest() == hashlib.sha256(data).digest() else f"MISMATCH {len(got)}")
-EOF
-client() { python3 "$MSL_HOME/client.py" "$@"; }
 
 $MSL --install $D --no-launch >/dev/null
 $MSL -d $D -u root -e sh -c 'id tester >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/bash tester'
@@ -68,51 +45,32 @@ sleep 1
 $MSL -d $D -e sh -c "mkdir -p $SOCKDIR && cat > /tmp/echo.py" < "$MSL_HOME/echo.py"
 $MSL -d $D -e sh -c "setsid python3 /tmp/echo.py $SOCKDIR/echo.sock >/dev/null 2>&1 </dev/null & sleep 1"
 
-# msl-bridge (the extension's fallback)
 head -c 100000000 /dev/urandom > "$MSL_HOME/in.bin"
 want=$(shasum -a 256 < "$MSL_HOME/in.bin" | cut -c1-64)
-check "msl-bridge: 100 MB echo with half-close" "$want" "$($MSL -d $D -e /run/msl/init msl-bridge unix:$SOCKDIR/echo.sock < "$MSL_HOME/in.bin" | shasum -a 256 | cut -c1-64)"
 $MSL -d $D -e sh -c 'setsid python3 -m http.server 18780 --bind 127.0.0.1 -d /etc >/dev/null 2>&1 </dev/null & sleep 1'
-check "msl-bridge: tcp target" "200 OK" "$(printf 'GET /hostname HTTP/1.0\r\n\r\n' | $MSL -d $D -e /run/msl/init msl-bridge tcp:18780 | head -1)"
-$MSL -d $D -e /run/msl/init msl-bridge unix:/nope 2>/dev/null; check "msl-bridge: connect error exits 1" "1" "$?"
-$MSL -d $D -e /run/msl/init msl-bridge bogus 2>/dev/null; check "msl-bridge: usage error exits 2" "2" "$?"
-
-# connect.sock
-check "connect.sock is 0600" "600" "$(stat -f %Lp "$MSL_HOME/connect.sock")"
-check "connect: 100 MB echo over vsock 1026" "OK match" "$(client $D unix=$SOCKDIR/echo.sock 100000000)"
-check "connect: distro name is case-insensitive" "OK match" "$(client ubuntu-24.04 unix=$SOCKDIR/echo.sock 1000)"
-check "connect: tcp target (1025 forwarder)" "OK
-HTTP/1.0 200 OK" "$(printf "CONNECT distro=$D tcp=18780\nGET /hostname HTTP/1.0\r\n\r\n" | nc -U "$MSL_HOME/connect.sock" | head -2 | tr -d '\r')"
-for bad in /var/run/docker.sock /run/systemd/private $SOCKDIR/../msl/echo.sock $SOCKDIR/sub/x.sock /root/.vscode-server/msl/x.sock $SOCKDIR/.hidden.sock; do
-  check "connect: refuses $bad" "not allowed" "$(client $D unix=$bad)"
-done
 $MSL -d $D -u root -e sh -c "setsid python3 /tmp/echo.py /root/rootonly.sock >/dev/null 2>&1 </dev/null & sleep 1"
 $MSL -d $D -e sh -c "ln -sf /root/rootonly.sock $SOCKDIR/to-root.sock && ln -sf /run/msl-view $SOCKDIR/to-vm.sock"
-check "connect: symlink to a root-only socket (runs as the user)" "Permission denied" "$(client $D unix=$SOCKDIR/to-root.sock)"
-check "connect: symlink to a VM-only path (resolves in the distro)" "No such file" "$(client $D unix=$SOCKDIR/to-vm.sock)"
-check "connect: unknown distro" "ERR There is no distribution" "$(client Nope unix=$SOCKDIR/echo.sock)"
-check "connect: malformed line" "ERR expected: CONNECT" "$(printf 'HELLO\n' | nc -U "$MSL_HOME/connect.sock")"
 
-# msl --connect (what the extension uses now): msl itself carries the stream,
-# dialed back by the guest; msld isn't in the data path.
+# msl --connect: msl itself carries the streams, dialed back by the guest.
+connect() { $MSL --connect "$@" 2>&1 < /dev/null; }
 check "msl --connect: 100 MB echo with half-close" "$want" "$($MSL --connect $D unix=$SOCKDIR/echo.sock < "$MSL_HOME/in.bin" | shasum -a 256 | cut -c1-64)"
+check "msl --connect: distro name is case-insensitive" "200 OK" "$(printf 'GET /hostname HTTP/1.0\r\n\r\n' | $MSL --connect ubuntu-24.04 tcp=18780 | head -1 | tr -d '\r')"
 check "msl --connect: tcp target" "200 OK" "$(printf 'GET /hostname HTTP/1.0\r\n\r\n' | $MSL --connect $D tcp=18780 | head -1 | tr -d '\r')"
-check "msl --connect: refuses a socket outside the allowlist" "not allowed" "$($MSL --connect $D unix=/var/run/docker.sock 2>&1 < /dev/null)"
-check "msl --connect: runs as the user" "Permission denied" "$($MSL --connect $D unix=$SOCKDIR/to-root.sock 2>&1 < /dev/null)"
-check "msl --connect: unknown distro" "There is no distribution" "$($MSL --connect Nope unix=$SOCKDIR/echo.sock 2>&1 < /dev/null)"
-check "msl --connect: nothing listening" "Connection refused" "$($MSL --connect $D tcp=1 2>&1 < /dev/null)"
+for bad in /var/run/docker.sock /run/systemd/private $SOCKDIR/../msl/echo.sock $SOCKDIR/sub/x.sock /root/.vscode-server/msl/x.sock $SOCKDIR/.hidden.sock; do
+  check "msl --connect: refuses $bad" "not allowed" "$(connect $D unix=$bad)"
+done
+check "msl --connect: symlink to a root-only socket (runs as the user)" "Permission denied" "$(connect $D unix=$SOCKDIR/to-root.sock)"
+check "msl --connect: symlink to a VM-only path (resolves in the distro)" "No such file" "$(connect $D unix=$SOCKDIR/to-vm.sock)"
+check "msl --connect: unknown distro" "There is no distribution" "$(connect Nope unix=$SOCKDIR/echo.sock)"
+check "msl --connect: nothing listening" "Connection refused" "$(connect $D tcp=1)"
+check "msl --connect: malformed target" "Invalid command line argument" "$(connect $D path=/x)"
 
 kill $KEEP 2>/dev/null; wait $KEEP 2>/dev/null  # from here on, only the pipe keeps the distro running
 # Sessions: an open pipe keeps the distro past instanceIdleTimeout (2 s here),
 # and connecting starts a stopped distro.
-client $D unix=$SOCKDIR/echo.sock 0 6 >/dev/null &
-sleep 5
-check "connect: open pipe keeps the distro running" "Running" "$($MSL -l -v | grep $D)"
-wait
 sleep 4
-check "connect: distro stops after the pipe closes" "Stopped" "$($MSL -l -v | grep $D)"
-check "connect: starts a stopped distro" "Running" "$(client $D unix=$SOCKDIR/missing.sock >/dev/null; $MSL -l -v | grep $D)"
-# The echo server went with the distro's earlier stop: hold a TCP pipe instead.
+check "msl --connect: starts a stopped distro" "Running" "$(connect $D unix=$SOCKDIR/missing.sock >/dev/null; $MSL -l -v | grep $D)"
+# The servers went with the distro's earlier stop: start one to hold a pipe to.
 $MSL -d $D -e sh -c "setsid python3 -m http.server 18781 >/dev/null 2>&1 </dev/null & sleep 1"
 (sleep 6) | $MSL --connect $D tcp=18781 >/dev/null 2>&1 &
 sleep 5

@@ -110,6 +110,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         let settings = Self.resolve(config)
         try ensureDataDisk(config)
         try FileManager.default.createDirectory(at: paths.runDir, withIntermediateDirectories: true)
+        try Self.waitUntilFree([paths.dataDisk.path] + disks.map(\.path))
         let (vmConfig, attached) = try makeConfig(res, settings, disks: disks)
         let sem = DispatchSemaphore(value: 0)
         var startError: Error?
@@ -142,6 +143,26 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         let fmt = try EXT4.Formatter(FilePath(url.path), minDiskSize: size, journal: .init(defaultMode: .ordered))
         try fmt.close()
         log("created data disk \(url.path) (\(StatusFormat.bytes(size)))")
+    }
+
+    /// VZ holds an exclusive flock on each disk image while a VM uses it, and
+    /// releases it a little after the VM reports it has stopped. Booting before
+    /// then fails with "The storage device attachment is invalid", so wait (up
+    /// to `timeout`) until every image can be locked.
+    static func waitUntilFree(_ images: [String], timeout: TimeInterval = 10) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        for path in images {
+            let fd = open(path, O_RDONLY | O_CLOEXEC)
+            guard fd >= 0 else { continue }  // missing: makeConfig reports it
+            defer { close(fd) }
+            while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+                guard errno == EWOULDBLOCK, Date() < deadline else {
+                    throw ServiceError("The disk \(path) is in use by another virtual machine.", code: ErrorCode.vm)
+                }
+                usleep(50_000)
+            }
+            flock(fd, LOCK_UN)
+        }
     }
 
     /// The persisted machine identifier, created at the first start. A new one
@@ -271,7 +292,10 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             let current = queue.sync { vm }
-            guard let current else { return true }
+            guard let current else {
+                awaitTeardown()  // another path (the delegate) is still tearing it down
+                return true
+            }
             if queue.sync(execute: { current.state == .stopped }) {
                 stopped(current)
                 return true
@@ -281,17 +305,38 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         return false
     }
 
+    /// Teardowns of a stopped VM still running (`stopped`). A boot must wait for
+    /// them: `vm` is cleared first, and a teardown finishing after the next boot
+    /// would wipe that boot's state (DistroDisks' boot disks, the vsock bridges).
+    private let teardown = NSCondition()
+    private var tearingDown = 0
+
+    /// Wait (up to `timeout`) until no stopped VM is still being torn down.
+    public func awaitTeardown(timeout: TimeInterval = 10) {
+        let deadline = Date().addingTimeInterval(timeout)
+        teardown.lock()
+        defer { teardown.unlock() }
+        while tearingDown > 0 && teardown.wait(until: deadline) {}
+    }
+
     /// `which` stopped. Runs once per VM (the stop paths and the delegate all
     /// report it), and never for a VM started since: a late report must not
-    /// tear down the next boot (DistroDisks' state, the vsock bridges).
+    /// tear down the next boot.
     private func stopped(_ which: VZVirtualMachine) {
         let current = queue.sync { () -> Bool in
             guard vm === which else { return false }
             vm = nil
             booted = nil
+            teardown.withLock { tearingDown += 1 }
             return true
         }
         guard current else { return }
+        defer {
+            teardown.lock()
+            tearingDown -= 1
+            teardown.broadcast()
+            teardown.unlock()
+        }
         lock.withLock {
             for (port, fd) in bridges {
                 close(fd)

@@ -74,8 +74,8 @@ More: [VS Code](https://onexay.github.io/msl-docs/docs/tutorials/msl-vscode/), i
 ```
 msl (CLI) ──Unix socket──▶ msld (per-user service, started on demand)
                             │ owns the VM, the registry, port forwarding, the DNS proxy,
-                            │ the ~/.msl/distros NFS mounts, and connect.sock (IDE pipes)
-                            │ gRPC and flow-controlled streams over vsock
+                            │ and the ~/.msl/distros NFS mounts; it sets sessions up and
+                            │ hands msl their vsock streams (msl moves the bytes itself)
                             ▼
                  One utility VM (msl kernel + initrd)
                    msl-guest as PID 1: data disk, network, NFS view, DNS stub

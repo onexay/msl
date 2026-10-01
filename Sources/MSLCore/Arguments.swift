@@ -283,7 +283,7 @@ public enum Arguments {
             let d = try value(first)
             let t = try value(first)
             try noMore()
-            guard let req = ConnectRequest(line: "CONNECT distro=\(d) \(t)") else { throw ArgumentError.invalid(t) }
+            guard let req = ConnectRequest(distro: d, target: t) else { throw ArgumentError.invalid(t) }
             return .connect(req)
         case "--mount":
             var m = MountSpec()

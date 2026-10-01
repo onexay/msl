@@ -3,14 +3,12 @@ import Foundation
 
 /// Byte copying between file descriptors on dedicated threads.
 enum Pump {
-    /// Copy `from` -> `to` until EOF/error; then `onDone`. With `stop`, the copy
-    /// can be abandoned (used for a client stdin that may never EOF).
+    /// Copy `from` -> `to` until EOF/error; then `onDone`.
     @discardableResult
-    static func copy(from: Int32, to: Int32, stop: StopFlag? = nil, shutdownWrite: Bool = true, onDone: (() -> Void)? = nil) -> Thread {
+    static func copy(from: Int32, to: Int32, shutdownWrite: Bool = true, onDone: (() -> Void)? = nil) -> Thread {
         let t = Thread {
             var buf = [UInt8](repeating: 0, count: 64 * 1024)
             outer: while true {
-                if let stop, !stop.waitReadable(from) { break }
                 let n = read(from, &buf, buf.count)
                 if n < 0 && errno == EINTR { continue }
                 if n <= 0 { break }
@@ -94,34 +92,6 @@ func blocking<T>(_ op: @escaping @Sendable () async throws -> T) throws -> T {
 
 final class ResultBox<T>: @unchecked Sendable {
     var result: Result<T, Error>?
-}
-
-/// A one-shot signal that can be awaited from async code (set from any thread).
-final class Completion: @unchecked Sendable {
-    private let lock = NSLock()
-    private var done = false
-    var isSignaled: Bool { lock.withLock { done } }
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func signal() {
-        let w = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
-            done = true
-            defer { waiters.removeAll() }
-            return waiters
-        }
-        w.forEach { $0.resume() }
-    }
-
-    func wait() async {
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            let resumeNow = lock.withLock { () -> Bool in
-                if done { return true }
-                waiters.append(c)
-                return false
-            }
-            if resumeNow { c.resume() }
-        }
-    }
 }
 
 /// File descriptors collected across threads, closed together.
