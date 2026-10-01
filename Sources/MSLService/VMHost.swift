@@ -359,7 +359,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
 
     // MARK: vsock
 
-    private var listeners: [VZVirtioSocketListener] = []
+    private var listeners: [UInt32: VZVirtioSocketListener] = [:]  // on `queue`
 
     /// Accept guest-initiated vsock connections on `port`; `handler` gets a dup'd
     /// fd it owns, on a background thread.
@@ -371,8 +371,51 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
             objc_setAssociatedObject(l, &ListenerDelegate.key, d, .OBJC_ASSOCIATION_RETAIN)
             l.delegate = d
             dev.setSocketListener(l, forPort: port)
-            self.listeners.append(l)
+            self.listeners[port] = l
         }
+    }
+
+    /// Stop accepting guest connections on `port`.
+    public func unlisten(port: UInt32) {
+        queue.async {
+            (self.vm?.socketDevices.first as? VZVirtioSocketDevice)?.removeSocketListener(forPort: port)
+            self.listeners[port] = nil
+        }
+    }
+
+    /// A one-shot port for a guest-initiated stream (RunRequest.dial_back): a
+    /// random host port whose first connection that starts with `token` is the
+    /// stream (any other is dropped; a process in the VM could guess the port).
+    /// `wait` returns the stream's fd, which the caller owns.
+    public func acceptStream(token: [UInt8], timeout: TimeInterval = 15) -> (port: UInt32, wait: () throws -> Int32) {
+        let port = UInt32.random(in: 0x4000_0000...0x7fff_ffff)
+        let sem = DispatchSemaphore(value: 0)
+        let box = FDBox()
+        let remove = { [weak self] in self?.unlisten(port: port) }
+        listen(port: port) { fd in
+            // The token comes first; a connection that doesn't send it in 5 s isn't ours.
+            var got = [UInt8]()
+            var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let deadline = Date().addingTimeInterval(5)
+            while got.count < token.count {
+                let left = Int32(max(0, deadline.timeIntervalSinceNow) * 1000)
+                guard poll(&p, 1, left) > 0 else { break }
+                var buf = [UInt8](repeating: 0, count: token.count - got.count)
+                let n = read(fd, &buf, buf.count)
+                if n <= 0 { break }
+                got += buf[0..<n]
+            }
+            guard got == token, box.claim(fd) else { close(fd); return }
+            remove()
+            sem.signal()
+        }
+        return (port, {
+            guard sem.wait(timeout: .now() + timeout) == .success else {
+                remove()
+                throw ServiceError("The distribution didn't open its session stream.", code: ErrorCode.service)
+            }
+            return box.fd
+        })
     }
 
     /// Connect to a guest vsock port. The returned fd is a dup the caller owns.
@@ -437,3 +480,16 @@ final class ListenerDelegate: NSObject, VZVirtioSocketListenerDelegate, @uncheck
     }
 }
 
+
+/// Holds the first fd handed to it.
+final class FDBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var fd: Int32 = -1
+    func claim(_ fd: Int32) -> Bool {
+        lock.withLock {
+            guard self.fd < 0 else { return false }
+            self.fd = fd
+            return true
+        }
+    }
+}

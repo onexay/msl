@@ -18,6 +18,11 @@
 // an ephemeral vsock port, announces it in a stream event, and the host connects
 // to it. An announced port accepts exactly one connection.
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -560,53 +565,142 @@ public nonisolated struct Msl_V1_LookupUserReply: Sendable {
   public init() {}
 }
 
-public nonisolated struct Msl_V1_RunRequest: Sendable {
+public nonisolated struct Msl_V1_RunRequest: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// Empty argv and empty command_line: start the user's shell as a login shell.
-  public var argv: [String] = []
+  public var argv: [String] {
+    get {_storage._argv}
+    set {_uniqueStorage()._argv = newValue}
+  }
 
   /// Used with SHELL_TYPE_STANDARD / SHELL_TYPE_LOGIN.
-  public var commandLine: String = String()
+  public var commandLine: String {
+    get {_storage._commandLine}
+    set {_uniqueStorage()._commandLine = newValue}
+  }
 
-  public var shellType: Msl_V1_ShellType = .standard
+  public var shellType: Msl_V1_ShellType {
+    get {_storage._shellType}
+    set {_uniqueStorage()._shellType = newValue}
+  }
 
   /// User name; empty = default user (wsl.conf [user] default, else default_uid).
-  public var user: String = String()
+  public var user: String {
+    get {_storage._user}
+    set {_uniqueStorage()._user = newValue}
+  }
 
-  public var defaultUid: UInt32 = 0
+  public var defaultUid: UInt32 {
+    get {_storage._defaultUid}
+    set {_uniqueStorage()._defaultUid = newValue}
+  }
 
   /// Linux path; "~" = user's home. Falls back to home if it doesn't exist.
-  public var cwd: String = String()
+  public var cwd: String {
+    get {_storage._cwd}
+    set {_uniqueStorage()._cwd = newValue}
+  }
 
-  public var env: Dictionary<String,String> = [:]
+  public var env: Dictionary<String,String> {
+    get {_storage._env}
+    set {_uniqueStorage()._env = newValue}
+  }
 
   /// Which host stdio fds are terminals. Any true -> a PTY is allocated and used
   /// for those fds; the others get pipes.
-  public var stdinTty: Bool = false
+  public var stdinTty: Bool {
+    get {_storage._stdinTty}
+    set {_uniqueStorage()._stdinTty = newValue}
+  }
 
-  public var stdoutTty: Bool = false
+  public var stdoutTty: Bool {
+    get {_storage._stdoutTty}
+    set {_uniqueStorage()._stdoutTty = newValue}
+  }
 
-  public var stderrTty: Bool = false
+  public var stderrTty: Bool {
+    get {_storage._stderrTty}
+    set {_uniqueStorage()._stderrTty = newValue}
+  }
 
-  public var rows: UInt32 = 0
+  public var rows: UInt32 {
+    get {_storage._rows}
+    set {_uniqueStorage()._rows = newValue}
+  }
 
-  public var cols: UInt32 = 0
+  public var cols: UInt32 {
+    get {_storage._cols}
+    set {_uniqueStorage()._cols = newValue}
+  }
 
   /// Caller's macOS working directory; used when `cwd` is empty. The guest maps
   /// it under the distro's [automount] root (default /mnt/macos).
-  public var macCwd: String = String()
+  public var macCwd: String {
+    get {_storage._macCwd}
+    set {_uniqueStorage()._macCwd = newValue}
+  }
 
   /// MSLENV (the WSLENV equivalent) and the macOS values of the variables it
   /// lists; the guest applies the /p and /l path translations.
-  public var mslenv: String = String()
+  public var mslenv: String {
+    get {_storage._mslenv}
+    set {_uniqueStorage()._mslenv = newValue}
+  }
 
-  public var mslenvValues: Dictionary<String,String> = [:]
+  public var mslenvValues: Dictionary<String,String> {
+    get {_storage._mslenvValues}
+    set {_uniqueStorage()._mslenvValues = newValue}
+  }
 
   /// macOS home directory (for mslpath -w of Linux-only paths).
-  public var macHome: String = String()
+  public var macHome: String {
+    get {_storage._macHome}
+    set {_uniqueStorage()._macHome = newValue}
+  }
+
+  /// Set: the guest connects to these host ports itself (guest-initiated vsock
+  /// connections, which a stalled host reader can't freeze, #36) and the
+  /// streams carry raw bytes, with no framing. Unset: the guest announces data
+  /// ports in Started and the host connects (framed, framed.rs).
+  public var dialBack: Msl_V1_DialBack {
+    get {_storage._dialBack ?? Msl_V1_DialBack()}
+    set {_uniqueStorage()._dialBack = newValue}
+  }
+  /// Returns true if `dialBack` has been explicitly set.
+  public var hasDialBack: Bool {_storage._dialBack != nil}
+  /// Clears the value of `dialBack`. Subsequent reads from it will return its default value.
+  public mutating func clearDialBack() {_uniqueStorage()._dialBack = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// Host vsock ports (CID 2) for a session's streams; 0 = not used. The guest
+/// writes `token` first on each connection, so the host can tell its agent from
+/// any other process in the VM. tty carries the PTY master (both directions).
+/// Once the process has exited and its output is delivered (or a background
+/// process keeps it open for 2 s), the guest shuts down the write side of each
+/// output stream before it reports Exited.
+public nonisolated struct Msl_V1_DialBack: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var token: Data = Data()
+
+  public var ttyPort: UInt32 = 0
+
+  public var stdinPort: UInt32 = 0
+
+  public var stdoutPort: UInt32 = 0
+
+  public var stderrPort: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1725,7 +1819,189 @@ nonisolated extension Msl_V1_LookupUserReply: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Msl_V1_RunRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RunRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}argv\0\u{3}command_line\0\u{3}shell_type\0\u{1}user\0\u{3}default_uid\0\u{1}cwd\0\u{1}env\0\u{3}stdin_tty\0\u{3}stdout_tty\0\u{3}stderr_tty\0\u{1}rows\0\u{1}cols\0\u{3}mac_cwd\0\u{1}mslenv\0\u{3}mslenv_values\0\u{3}mac_home\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}argv\0\u{3}command_line\0\u{3}shell_type\0\u{1}user\0\u{3}default_uid\0\u{1}cwd\0\u{1}env\0\u{3}stdin_tty\0\u{3}stdout_tty\0\u{3}stderr_tty\0\u{1}rows\0\u{1}cols\0\u{3}mac_cwd\0\u{1}mslenv\0\u{3}mslenv_values\0\u{3}mac_home\0\u{3}dial_back\0")
+
+  fileprivate class _StorageClass {
+    var _argv: [String] = []
+    var _commandLine: String = String()
+    var _shellType: Msl_V1_ShellType = .standard
+    var _user: String = String()
+    var _defaultUid: UInt32 = 0
+    var _cwd: String = String()
+    var _env: Dictionary<String,String> = [:]
+    var _stdinTty: Bool = false
+    var _stdoutTty: Bool = false
+    var _stderrTty: Bool = false
+    var _rows: UInt32 = 0
+    var _cols: UInt32 = 0
+    var _macCwd: String = String()
+    var _mslenv: String = String()
+    var _mslenvValues: Dictionary<String,String> = [:]
+    var _macHome: String = String()
+    var _dialBack: Msl_V1_DialBack? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _argv = source._argv
+      _commandLine = source._commandLine
+      _shellType = source._shellType
+      _user = source._user
+      _defaultUid = source._defaultUid
+      _cwd = source._cwd
+      _env = source._env
+      _stdinTty = source._stdinTty
+      _stdoutTty = source._stdoutTty
+      _stderrTty = source._stderrTty
+      _rows = source._rows
+      _cols = source._cols
+      _macCwd = source._macCwd
+      _mslenv = source._mslenv
+      _mslenvValues = source._mslenvValues
+      _macHome = source._macHome
+      _dialBack = source._dialBack
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeRepeatedStringField(value: &_storage._argv) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._commandLine) }()
+        case 3: try { try decoder.decodeSingularEnumField(value: &_storage._shellType) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._user) }()
+        case 5: try { try decoder.decodeSingularUInt32Field(value: &_storage._defaultUid) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._cwd) }()
+        case 7: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._env) }()
+        case 8: try { try decoder.decodeSingularBoolField(value: &_storage._stdinTty) }()
+        case 9: try { try decoder.decodeSingularBoolField(value: &_storage._stdoutTty) }()
+        case 10: try { try decoder.decodeSingularBoolField(value: &_storage._stderrTty) }()
+        case 11: try { try decoder.decodeSingularUInt32Field(value: &_storage._rows) }()
+        case 12: try { try decoder.decodeSingularUInt32Field(value: &_storage._cols) }()
+        case 13: try { try decoder.decodeSingularStringField(value: &_storage._macCwd) }()
+        case 14: try { try decoder.decodeSingularStringField(value: &_storage._mslenv) }()
+        case 15: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._mslenvValues) }()
+        case 16: try { try decoder.decodeSingularStringField(value: &_storage._macHome) }()
+        case 17: try { try decoder.decodeSingularMessageField(value: &_storage._dialBack) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._argv.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._argv, fieldNumber: 1)
+      }
+      if !_storage._commandLine.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._commandLine, fieldNumber: 2)
+      }
+      if _storage._shellType != .standard {
+        try visitor.visitSingularEnumField(value: _storage._shellType, fieldNumber: 3)
+      }
+      if !_storage._user.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._user, fieldNumber: 4)
+      }
+      if _storage._defaultUid != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._defaultUid, fieldNumber: 5)
+      }
+      if !_storage._cwd.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._cwd, fieldNumber: 6)
+      }
+      if !_storage._env.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._env, fieldNumber: 7)
+      }
+      if _storage._stdinTty != false {
+        try visitor.visitSingularBoolField(value: _storage._stdinTty, fieldNumber: 8)
+      }
+      if _storage._stdoutTty != false {
+        try visitor.visitSingularBoolField(value: _storage._stdoutTty, fieldNumber: 9)
+      }
+      if _storage._stderrTty != false {
+        try visitor.visitSingularBoolField(value: _storage._stderrTty, fieldNumber: 10)
+      }
+      if _storage._rows != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._rows, fieldNumber: 11)
+      }
+      if _storage._cols != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._cols, fieldNumber: 12)
+      }
+      if !_storage._macCwd.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._macCwd, fieldNumber: 13)
+      }
+      if !_storage._mslenv.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._mslenv, fieldNumber: 14)
+      }
+      if !_storage._mslenvValues.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._mslenvValues, fieldNumber: 15)
+      }
+      if !_storage._macHome.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._macHome, fieldNumber: 16)
+      }
+      try { if let v = _storage._dialBack {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+      } }()
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Msl_V1_RunRequest, rhs: Msl_V1_RunRequest) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._argv != rhs_storage._argv {return false}
+        if _storage._commandLine != rhs_storage._commandLine {return false}
+        if _storage._shellType != rhs_storage._shellType {return false}
+        if _storage._user != rhs_storage._user {return false}
+        if _storage._defaultUid != rhs_storage._defaultUid {return false}
+        if _storage._cwd != rhs_storage._cwd {return false}
+        if _storage._env != rhs_storage._env {return false}
+        if _storage._stdinTty != rhs_storage._stdinTty {return false}
+        if _storage._stdoutTty != rhs_storage._stdoutTty {return false}
+        if _storage._stderrTty != rhs_storage._stderrTty {return false}
+        if _storage._rows != rhs_storage._rows {return false}
+        if _storage._cols != rhs_storage._cols {return false}
+        if _storage._macCwd != rhs_storage._macCwd {return false}
+        if _storage._mslenv != rhs_storage._mslenv {return false}
+        if _storage._mslenvValues != rhs_storage._mslenvValues {return false}
+        if _storage._macHome != rhs_storage._macHome {return false}
+        if _storage._dialBack != rhs_storage._dialBack {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Msl_V1_DialBack: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DialBack"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}token\0\u{3}tty_port\0\u{3}stdin_port\0\u{3}stdout_port\0\u{3}stderr_port\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1733,96 +2009,41 @@ nonisolated extension Msl_V1_RunRequest: SwiftProtobuf.Message, SwiftProtobuf._M
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedStringField(value: &self.argv) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.commandLine) }()
-      case 3: try { try decoder.decodeSingularEnumField(value: &self.shellType) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.user) }()
-      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.defaultUid) }()
-      case 6: try { try decoder.decodeSingularStringField(value: &self.cwd) }()
-      case 7: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.env) }()
-      case 8: try { try decoder.decodeSingularBoolField(value: &self.stdinTty) }()
-      case 9: try { try decoder.decodeSingularBoolField(value: &self.stdoutTty) }()
-      case 10: try { try decoder.decodeSingularBoolField(value: &self.stderrTty) }()
-      case 11: try { try decoder.decodeSingularUInt32Field(value: &self.rows) }()
-      case 12: try { try decoder.decodeSingularUInt32Field(value: &self.cols) }()
-      case 13: try { try decoder.decodeSingularStringField(value: &self.macCwd) }()
-      case 14: try { try decoder.decodeSingularStringField(value: &self.mslenv) }()
-      case 15: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.mslenvValues) }()
-      case 16: try { try decoder.decodeSingularStringField(value: &self.macHome) }()
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.token) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.ttyPort) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.stdinPort) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.stdoutPort) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.stderrPort) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.argv.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.argv, fieldNumber: 1)
+    if !self.token.isEmpty {
+      try visitor.visitSingularBytesField(value: self.token, fieldNumber: 1)
     }
-    if !self.commandLine.isEmpty {
-      try visitor.visitSingularStringField(value: self.commandLine, fieldNumber: 2)
+    if self.ttyPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.ttyPort, fieldNumber: 2)
     }
-    if self.shellType != .standard {
-      try visitor.visitSingularEnumField(value: self.shellType, fieldNumber: 3)
+    if self.stdinPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.stdinPort, fieldNumber: 3)
     }
-    if !self.user.isEmpty {
-      try visitor.visitSingularStringField(value: self.user, fieldNumber: 4)
+    if self.stdoutPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.stdoutPort, fieldNumber: 4)
     }
-    if self.defaultUid != 0 {
-      try visitor.visitSingularUInt32Field(value: self.defaultUid, fieldNumber: 5)
-    }
-    if !self.cwd.isEmpty {
-      try visitor.visitSingularStringField(value: self.cwd, fieldNumber: 6)
-    }
-    if !self.env.isEmpty {
-      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.env, fieldNumber: 7)
-    }
-    if self.stdinTty != false {
-      try visitor.visitSingularBoolField(value: self.stdinTty, fieldNumber: 8)
-    }
-    if self.stdoutTty != false {
-      try visitor.visitSingularBoolField(value: self.stdoutTty, fieldNumber: 9)
-    }
-    if self.stderrTty != false {
-      try visitor.visitSingularBoolField(value: self.stderrTty, fieldNumber: 10)
-    }
-    if self.rows != 0 {
-      try visitor.visitSingularUInt32Field(value: self.rows, fieldNumber: 11)
-    }
-    if self.cols != 0 {
-      try visitor.visitSingularUInt32Field(value: self.cols, fieldNumber: 12)
-    }
-    if !self.macCwd.isEmpty {
-      try visitor.visitSingularStringField(value: self.macCwd, fieldNumber: 13)
-    }
-    if !self.mslenv.isEmpty {
-      try visitor.visitSingularStringField(value: self.mslenv, fieldNumber: 14)
-    }
-    if !self.mslenvValues.isEmpty {
-      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.mslenvValues, fieldNumber: 15)
-    }
-    if !self.macHome.isEmpty {
-      try visitor.visitSingularStringField(value: self.macHome, fieldNumber: 16)
+    if self.stderrPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.stderrPort, fieldNumber: 5)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: Msl_V1_RunRequest, rhs: Msl_V1_RunRequest) -> Bool {
-    if lhs.argv != rhs.argv {return false}
-    if lhs.commandLine != rhs.commandLine {return false}
-    if lhs.shellType != rhs.shellType {return false}
-    if lhs.user != rhs.user {return false}
-    if lhs.defaultUid != rhs.defaultUid {return false}
-    if lhs.cwd != rhs.cwd {return false}
-    if lhs.env != rhs.env {return false}
-    if lhs.stdinTty != rhs.stdinTty {return false}
-    if lhs.stdoutTty != rhs.stdoutTty {return false}
-    if lhs.stderrTty != rhs.stderrTty {return false}
-    if lhs.rows != rhs.rows {return false}
-    if lhs.cols != rhs.cols {return false}
-    if lhs.macCwd != rhs.macCwd {return false}
-    if lhs.mslenv != rhs.mslenv {return false}
-    if lhs.mslenvValues != rhs.mslenvValues {return false}
-    if lhs.macHome != rhs.macHome {return false}
+  public static func ==(lhs: Msl_V1_DialBack, rhs: Msl_V1_DialBack) -> Bool {
+    if lhs.token != rhs.token {return false}
+    if lhs.ttyPort != rhs.ttyPort {return false}
+    if lhs.stdinPort != rhs.stdinPort {return false}
+    if lhs.stdoutPort != rhs.stdoutPort {return false}
+    if lhs.stderrPort != rhs.stderrPort {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

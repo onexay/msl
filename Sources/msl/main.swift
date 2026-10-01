@@ -120,7 +120,7 @@ func request(_ r: Request, fds: [Int32] = []) -> Reply {
 
 func expectOK(_ reply: Reply) {
     switch reply {
-    case .ok, .installed, .distros, .versionInfo, .exited, .mounted, .status: return
+    case .ok, .installed, .distros, .versionInfo, .exited, .mounted, .status, .streams: return
     case .failure(let m, let c): fail(m, c)
     }
 }
@@ -179,6 +179,7 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
             if let v = host[name] { req.mslenvValues[name] = v }
         }
     }
+    req.direct = true
     let c = connect()
     do {
         try c.send(debugShell ? Request.debugShell(req) : Request.run(req), fds: TTY.passable([0, 1, 2]))
@@ -186,6 +187,8 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
         fail("Lost connection to msld: \(error)", ErrorCode.service)
     }
     if tty.0 { TTY.makeRaw() }
+    // We write to the streams ourselves now: a closed stdout must not kill msl.
+    signal(SIGPIPE, SIG_IGN)
 
     // Forward window size changes and (in pipe mode) signals.
     let q = DispatchQueue(label: "msl.signals")
@@ -205,12 +208,72 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
         on(sig) { try? c.send(ClientEvent.signal(sig)) }
     }
 
-    let reply = (try? c.receive(Reply.self).0) ?? .failure(message: "Lost connection to msld.", code: ErrorCode.service)
-    TTY.restore()
-    switch reply {
-    case .exited(let code): exit(code)
-    case .failure(let m, let code): fail(m, code)
-    default: exit(failureExit)
+    // A direct run: msld hands over the session's streams, then reports the exit.
+    // (An older msld relays our stdio itself and only sends the exit.)
+    let done = DispatchGroup()
+    while true {
+        let reply: Reply
+        let fds: [Int32]
+        do { (reply, fds) = try c.receive(Reply.self) } catch {
+            TTY.restore()
+            fail("Lost connection to msld.", ErrorCode.service)
+        }
+        switch reply {
+        case .streams(let ttyStream, let stdin, let stdout, let stderr):
+            var it = fds.makeIterator()
+            if ttyStream, let s = it.next() {
+                if tty.0 { Streams.copy(from: 0, to: s, endWrite: true) }
+                Streams.copy(from: s, to: tty.1 ? 1 : 2, group: done)
+            }
+            if stdin, let s = it.next() { Streams.copy(from: 0, to: s, endWrite: true) }
+            if stdout, let s = it.next() { Streams.copy(from: s, to: 1, group: done) }
+            if stderr, let s = it.next() { Streams.copy(from: s, to: 2, group: done) }
+        case .exited(let code):
+            // The guest ends each output stream once everything is delivered.
+            done.wait()
+            TTY.restore()
+            exit(code)
+        case .failure(let m, let code):
+            TTY.restore()
+            fail(m, code)
+        default:
+            TTY.restore()
+            exit(failureExit)
+        }
+    }
+}
+
+/// Copying between msl's stdio and a direct run's streams (vsock fds from msld).
+enum Streams {
+    /// Copy `from` -> `to` on a thread until eof. `endWrite`: shut down the
+    /// write side of `to` at eof (stdin's eof for the process). An output stream
+    /// whose destination is gone (`msl … | head`) is closed, so the process gets
+    /// SIGPIPE as it would locally. `group` is left when the copy ends.
+    @discardableResult
+    static func copy(from: Int32, to: Int32, endWrite: Bool = false, group: DispatchGroup? = nil) -> Thread {
+        group?.enter()
+        let t = Thread {
+            var buf = [UInt8](repeating: 0, count: 256 * 1024)
+            outer: while true {
+                let n = read(from, &buf, buf.count)
+                if n < 0 && errno == EINTR { continue }
+                if n <= 0 { break }
+                var off = 0
+                while off < n {
+                    let w = buf.withUnsafeBytes { write(to, $0.baseAddress! + off, n - off) }
+                    if w < 0 && errno == EINTR { continue }
+                    if w <= 0 {
+                        if group != nil { close(from) }  // our reader is gone: the guest's writes fail
+                        break outer
+                    }
+                    off += w
+                }
+            }
+            if endWrite { shutdown(to, SHUT_WR) }
+            group?.leave()
+        }
+        t.start()
+        return t
     }
 }
 
