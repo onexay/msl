@@ -22,7 +22,7 @@ jobs:
           MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
           # The newest released Xcode for the minimum macOS; never a beta (the
           # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
-          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do case $(readlink -f "$x") in *beta*) ;; *) echo "$x" ;; esac; done | sort -V | tail -1)
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
           [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
           sudo xcode-select -s "$XC"
           xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
@@ -57,7 +57,7 @@ jobs:
           MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
           # The newest released Xcode for the minimum macOS; never a beta (the
           # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
-          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do case $(readlink -f "$x") in *beta*) ;; *) echo "$x" ;; esac; done | sort -V | tail -1)
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
           [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
           sudo xcode-select -s "$XC"
           xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
