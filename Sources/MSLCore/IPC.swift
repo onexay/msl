@@ -4,7 +4,8 @@ import Foundation
 
 // msl <-> msld protocol over a Unix stream socket.
 // Frame: 4-byte big-endian length + JSON. File descriptors ride along with a
-// frame via SCM_RIGHTS.
+// frame via SCM_RIGHTS. A zero-length frame acknowledges a frame that carried
+// fds: `receive` sends one for each, and consumes the peer's (sendRetaining).
 
 public struct RunRequest: Codable, Sendable {
     public var spec: RunSpec
@@ -112,9 +113,14 @@ public enum IPCError: Error {
 public final class IPCConnection: @unchecked Sendable {
     public let fd: Int32
     private let writeLock = NSLock()
+    private let retainLock = NSLock()
+    private var retained: [[Int32]] = []  // sendRetaining's copies, oldest first
 
     public init(fd: Int32) { self.fd = fd }
-    deinit { close(fd) }
+    deinit {
+        retained.joined().forEach { close($0) }
+        close(fd)
+    }
 
     public static func connect(path: String) throws -> IPCConnection {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -161,14 +167,68 @@ public final class IPCConnection: @unchecked Sendable {
         }
     }
 
+    /// `send`, keeping a descriptor of each of `fds` open until the peer has
+    /// received them (its acknowledgement) or this connection closes; the
+    /// caller may close its own at once. A Unix socket (a vsock stream is one,
+    /// to Virtualization.framework's process) whose last descriptor is closed
+    /// while it's in a message the peer hasn't received yet is emptied and shut
+    /// down by XNU's garbage collection of in-flight descriptors: the peer gets
+    /// it at eof, without its data.
+    public func sendRetaining<T: Encodable>(_ value: T, fds: [Int32]) throws {
+        let copies = fds.map { dup($0) }.filter { $0 >= 0 }
+        retainLock.withLock { retained.append(copies) }
+        try send(value, fds: fds)
+    }
+
+    /// Wait for the peer's acknowledgement of a `sendRetaining`, when nothing
+    /// else reads this connection meanwhile.
+    public func awaitAcknowledgement() {
+        var fds: [Int32] = []
+        while let header = try? readExactly(4, fds: &fds) {
+            let len = header.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(as: UInt32.self)) }
+            if len == 0 { releaseOldest(); break }
+            guard len < 16 << 20, (try? readExactly(Int(len), fds: &fds)) != nil else { break }
+        }
+        fds.forEach { close($0) }
+    }
+
+    private func releaseOldest() {
+        let batch = retainLock.withLock { retained.isEmpty ? [] : retained.removeFirst() }
+        batch.forEach { close($0) }
+    }
+
     /// Receive one frame; any fds attached to it are returned (caller owns them).
     public func receive<T: Decodable>(_ type: T.Type) throws -> (T, [Int32]) {
-        var fds: [Int32] = []
-        let header = try readExactly(4, fds: &fds)
-        let len = header.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(as: UInt32.self)) }
-        guard len < 16 << 20 else { throw IPCError.tooLarge }
-        let body = try readExactly(Int(len), fds: &fds)
-        return (try JSONDecoder().decode(T.self, from: body), fds)
+        while true {
+            var fds: [Int32] = []
+            let header = try readExactly(4, fds: &fds)
+            let len = header.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(as: UInt32.self)) }
+            if len == 0 {  // the peer has a sendRetaining's fds
+                releaseOldest()
+                continue
+            }
+            guard len < 16 << 20 else { throw IPCError.tooLarge }
+            let body = try readExactly(Int(len), fds: &fds)
+            if !fds.isEmpty { try? acknowledge() }
+            return (try JSONDecoder().decode(T.self, from: body), fds)
+        }
+    }
+
+    private func acknowledge() throws {
+        var zero = UInt32(0)
+        try writeLock.withLock {
+            try withUnsafeBytes(of: &zero) { raw in
+                var off = 0
+                while off < raw.count {
+                    let n = Darwin.write(fd, raw.baseAddress! + off, raw.count - off)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw IPCError.io(errno)
+                    }
+                    off += n
+                }
+            }
+        }
     }
 
     private func readExactly(_ count: Int, fds: inout [Int32]) throws -> Data {
