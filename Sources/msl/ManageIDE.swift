@@ -252,7 +252,7 @@ enum ManageIDE {
     }
 
     static func ask(_ question: String, default d: String) -> String? {
-        FileHandle.standardOutput.write("\(question) (\(d)): ".data(using: .utf8)!)
+        write(1, "\(question) (\(d)): ")
         guard let line = readLine() else { return nil }
         let t = line.trimmingCharacters(in: .whitespaces)
         return t.isEmpty ? d : t

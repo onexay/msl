@@ -324,7 +324,7 @@ public final class Service: @unchecked Sendable {
                         events.attach(agent: agent, session: s.sessionID)
                         let fds = try streams.compactMap { try $0?.wait() }
                         defer { fds.forEach { close($0) } }
-                        try conn.send(Reply.streams(tty: wanted.tty, stdin: wanted.stdin, stdout: wanted.stdout, stderr: wanted.stderr), fds: fds)
+                        try conn.sendRetaining(Reply.streams(tty: wanted.tty, stdin: wanted.stdin, stdout: wanted.stdout, stderr: wanted.stderr), fds: fds)
                     case .exited(let e):
                         exit = e.code
                         try conn.send(Reply.ended(tty: e.ttyBytes, stdout: e.stdoutBytes, stderr: e.stderrBytes))
@@ -345,8 +345,9 @@ public final class Service: @unchecked Sendable {
         let s = vm.acceptStream(token: token)
         Thread.detachNewThread {
             guard let fd = try? s.wait() else { return }  // the guest failed first: its error is the reply
-            try? conn.send(Reply.stream, fds: [fd])
+            try? conn.sendRetaining(Reply.stream, fds: [fd])
             close(fd)
+            conn.awaitAcknowledgement()  // nothing else reads msl's side during the request
         }
         return .with { $0.token = Data(token); $0.port = s.port }
     }
@@ -384,7 +385,7 @@ public final class Service: @unchecked Sendable {
                         case .opened:
                             let fds = [try inp.wait(), try out.wait()]
                             defer { fds.forEach { close($0) } }
-                            try conn.send(Reply.streams(tty: false, stdin: true, stdout: true, stderr: false), fds: fds)
+                            try conn.sendRetaining(Reply.streams(tty: false, stdin: true, stdout: true, stderr: false), fds: fds)
                             opened.signal()
                         case .done(let n):
                             try? conn.send(Reply.streamEnd(bytes: n))

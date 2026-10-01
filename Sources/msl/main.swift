@@ -7,8 +7,21 @@ import MSLCore
 let mslVersion = MSLBuild.displayVersion
 let failureExit: Int32 = 255  // wsl.exe returns -1 on failure
 
-func out(_ s: String) { FileHandle.standardOutput.write((s + "\n").data(using: .utf8)!) }
-func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
+func out(_ s: String) { write(1, s + "\n") }
+func err(_ s: String) { write(2, s + "\n") }
+
+/// Write to stdout or stderr with write(2). FileHandle.write raises an
+/// Objective-C exception when the reader is gone (EPIPE with SIGPIPE ignored,
+/// as during a tar stream), which aborts msl; here the text is just dropped.
+func write(_ fd: Int32, _ s: String) {
+    var bytes = Array(s.utf8)[...]
+    while !bytes.isEmpty {
+        let n = bytes.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, $0.count) }
+        if n < 0 && errno == EINTR { continue }
+        if n <= 0 { return }
+        bytes = bytes.dropFirst(n)
+    }
+}
 
 /// `--json`: query results as JSON on stdout, errors as JSON on stderr.
 nonisolated(unsafe) var jsonMode = false
@@ -16,7 +29,7 @@ nonisolated(unsafe) var jsonMode = false
 func fail(_ message: String, _ code: String) -> Never {
     TTY.restore()
     if jsonMode {
-        FileHandle.standardError.write(Data(JSONOutput.encode(JSONOutput.Failure(error: .init(message: message, code: code)), pretty: isatty(2) != 0).utf8 + [0x0a]))
+        write(2, JSONOutput.encode(JSONOutput.Failure(error: .init(message: message, code: code)), pretty: isatty(2) != 0) + "\n")
     } else {
         out(Messages.failure(message, code))
     }
