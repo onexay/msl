@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Frame: [kind u8][len u32 BE][payload]; kind 0 = data, 1 = credit (u32 BE
 /// bytes delivered), 2 = eof. Both directions start with `window` credit.
-final class FramedBridge: @unchecked Sendable {
+public final class FramedBridge: @unchecked Sendable {
     static let window = 1 << 20
     static let maxFrame = 64 << 10
     static let creditBatch = 128 << 10
@@ -27,13 +27,17 @@ final class FramedBridge: @unchecked Sendable {
     private var remaining = 2     // sender + local writer
     private var threadsLeft = 3   // + receiver; the socket is closed when all are done
     private var closed = false
+    private let onClose: (() -> Void)?
 
     /// - localIn: read and send to the guest (nil: send eof at once).
     /// - localOut: receives the guest's bytes. At the guest's eof it is
     ///   `shutdown(SHUT_WR)` if `shutdownOnEOF` (sockets).
     /// - ownsLocal: close localIn/localOut when finished.
-    init(vsock: Int32, localIn: Int32?, localOut: Int32?, shutdownOnEOF: Bool = false, ownsLocal: Bool = false) {
+    /// - onClose: called once the bridge is finished and the vsock closed.
+    @discardableResult
+    public init(vsock: Int32, localIn: Int32?, localOut: Int32?, shutdownOnEOF: Bool = false, ownsLocal: Bool = false, onClose: (() -> Void)? = nil) {
         self.vsock = vsock
+        self.onClose = onClose
         let finishLocal: () -> Void = {
             guard ownsLocal else { return }
             if let i = localIn { close(i) }
@@ -112,13 +116,14 @@ final class FramedBridge: @unchecked Sendable {
     }
 
     private func threadDone() {
-        stateLock.withLock {
+        let last = stateLock.withLock { () -> Bool in
             threadsLeft -= 1
-            if threadsLeft == 0 {
-                closed = true
-                close(vsock)
-            }
+            guard threadsLeft == 0 else { return false }
+            closed = true
+            close(vsock)
+            return true
         }
+        if last { onClose?() }
     }
 
     private func finishOne(_ finishLocal: () -> Void) {
@@ -163,7 +168,7 @@ final class FramedBridge: @unchecked Sendable {
     static func be32(_ v: UInt32) -> [UInt8] { [UInt8(v >> 24), UInt8((v >> 16) & 0xff), UInt8((v >> 8) & 0xff), UInt8(v & 0xff)] }
 }
 
-func writeAll(_ fd: Int32, _ data: [UInt8]) -> Bool {
+private func writeAll(_ fd: Int32, _ data: [UInt8]) -> Bool {
     var off = 0
     while off < data.count {
         let w = data.withUnsafeBytes { write(fd, $0.baseAddress! + off, $0.count - off) }
@@ -174,7 +179,7 @@ func writeAll(_ fd: Int32, _ data: [UInt8]) -> Bool {
     return true
 }
 
-func readExactly(_ fd: Int32, _ buf: inout [UInt8]) -> Bool {
+private func readExactly(_ fd: Int32, _ buf: inout [UInt8]) -> Bool {
     var got = 0
     while got < buf.count {
         let n = buf.withUnsafeMutableBytes { read(fd, $0.baseAddress! + got, $0.count - got) }
