@@ -55,6 +55,7 @@ public final class Service: @unchecked Sendable {
             self?.forwarder.stopAll()
             self?.files.shutdown()
             self?.guest.reset()
+            self?.idle.changed()
         }
         files.isViewable = { [weak self] d in d.disk == nil || self?.ownDisks.isAttached(d.id) == true }
         ownDisks.beforeDetach = { [weak self] id in
@@ -83,35 +84,53 @@ public final class Service: @unchecked Sendable {
     }
 
     /// Stops idle distros after [general] instanceIdleTimeout and the VM after
-    /// [msl2] vmIdleTimeout (both in ms; -1 = never).
+    /// [msl2] vmIdleTimeout (both in ms; -1 = never). Sleeps until the next of
+    /// those deadlines or until requests, sessions or the VM change; no ticking.
     func startIdleMonitor() {
         Thread.detachNewThread {
             while true {
-                sleep(1)
                 guard self.vm.isRunning, self.idle.activeRequests == 0 else {
                     self.idle.resetVMIdle()
+                    self.idle.waitForChange(until: nil)
                     continue
                 }
+                let now = Date()
+                var next: Date?
+                func due(inMs ms: Int) { next = min(next ?? .distantFuture, now.addingTimeInterval(Double(ms) / 1000)) }
+                var stopped = false
                 let running = self.runningIds()
                 for id in running where self.config.instanceIdleTimeoutMs >= 0 {
-                    if self.idle.idleMs(distro: id) >= self.config.instanceIdleTimeoutMs,
-                       let mini = try? self.guest.miniInit {
+                    let idleMs = self.idle.idleMs(distro: id)
+                    if idleMs >= self.config.instanceIdleTimeoutMs, let mini = try? self.guest.miniInit {
                         log("instance idle timeout: stopping \(self.registry.find(id: id)?.name ?? id)")
                         _ = try? blocking { try await mini.stopDistro(.with { $0.id = id }) }
                         self.idle.forget(distro: id)
+                        stopped = true
+                    } else {
+                        due(inMs: self.config.instanceIdleTimeoutMs - idleMs)
                     }
                 }
+                if stopped { continue }  // the VM's countdown may start now
                 if ProcessInfo.processInfo.environment["MSL_DEBUG_IDLE"] != nil {
-                    log("idle: requests=\(self.idle.activeRequests) running=\(self.runningIds().count) vmIdleMs=\(self.idle.vmIdleMs()) limit=\(self.config.vmIdleTimeoutMs)")
+                    log("idle: requests=\(self.idle.activeRequests) running=\(running.count) vmIdleMs=\(self.idle.vmIdleMs()) limit=\(self.config.vmIdleTimeoutMs)")
                 }
-                if self.runningIds().isEmpty {
-                    if self.config.vmIdleTimeoutMs >= 0, self.idle.vmIdleMs() >= self.config.vmIdleTimeoutMs {
-                        log("vm idle timeout: shutting down")
-                        self.shutdown(force: false)
+                if running.isEmpty {
+                    if self.config.vmIdleTimeoutMs >= 0 {
+                        let idleMs = self.idle.vmIdleMs()
+                        if idleMs >= self.config.vmIdleTimeoutMs {
+                            log("vm idle timeout: shutting down")
+                            self.shutdown(force: false)
+                            continue
+                        }
+                        due(inMs: self.config.vmIdleTimeoutMs - idleMs)
                     }
                 } else {
                     self.idle.resetVMIdle()
+                    // A distro can stop by itself (a shutdown inside it), which
+                    // nothing announces: look again within a minute.
+                    due(inMs: 60_000)
                 }
+                self.idle.waitForChange(until: next)
             }
         }
     }
@@ -313,6 +332,7 @@ public final class Service: @unchecked Sendable {
             if config.localhostForwarding { forwarder.start() }
             if config.dnsTunneling { vm.listen(port: DNSProxy.vsockPort) { DNSProxy.handle($0) } }
             files.start(transport: config.fileViewTransport)
+            idle.changed()
         }
     }
 
@@ -825,15 +845,37 @@ final class IdleTracker: @unchecked Sendable {
     private var vmIdleSince = Date()
     private var requests = 0
 
-    var activeRequests: Int { lock.withLock { requests } }
-    func beginRequest() { lock.withLock { requests += 1 } }
-    func endRequest() { lock.withLock { requests -= 1; vmIdleSince = Date() } }
+    private let cond = NSCondition()
+    private var pending = false
 
-    func beginSession(distro: String) { lock.withLock { sessions[distro, default: 0] += 1 } }
+    var activeRequests: Int { lock.withLock { requests } }
+    func beginRequest() { lock.withLock { requests += 1 }; changed() }
+    func endRequest() { lock.withLock { requests -= 1; vmIdleSince = Date() }; changed() }
+
+    func beginSession(distro: String) { lock.withLock { sessions[distro, default: 0] += 1 }; changed() }
     func endSession(distro: String) {
         lock.withLock {
             sessions[distro, default: 1] -= 1
             if sessions[distro] == 0 { idleSince[distro] = Date() }
+        }
+        changed()
+    }
+
+    /// Wake the idle monitor: something its deadlines depend on changed.
+    func changed() {
+        cond.lock(); pending = true; cond.signal(); cond.unlock()
+    }
+
+    /// Sleep until `changed()` or `deadline` (nil: no deadline).
+    func waitForChange(until deadline: Date?) {
+        cond.lock()
+        defer { pending = false; cond.unlock() }
+        while !pending {
+            if let deadline {
+                if !cond.wait(until: deadline) { return }
+            } else {
+                cond.wait()
+            }
         }
     }
 

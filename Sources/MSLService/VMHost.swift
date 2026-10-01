@@ -255,20 +255,23 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
 
     public func stop() {
         let sem = DispatchSemaphore(value: 0)
+        let current = queue.sync { vm }
         queue.async {
-            guard let vm = self.vm, vm.canStop else { sem.signal(); return }
+            guard let vm = current, vm.canStop else { sem.signal(); return }
             vm.stop { _ in sem.signal() }
         }
         _ = sem.wait(timeout: .now() + 10)
-        stopped()
+        if let current { stopped(current) }
     }
 
     /// Wait for the guest to power itself off (after MiniInit.Shutdown).
     public func waitForStop(timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if queue.sync(execute: { vm == nil || vm?.state == .stopped }) {
-                stopped()
+            let current = queue.sync { vm }
+            guard let current else { return true }
+            if queue.sync(execute: { current.state == .stopped }) {
+                stopped(current)
                 return true
             }
             usleep(50_000)
@@ -276,8 +279,17 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         return false
     }
 
-    private func stopped() {
-        queue.sync { vm = nil; booted = nil }
+    /// `which` stopped. Runs once per VM (the stop paths and the delegate all
+    /// report it), and never for a VM started since: a late report must not
+    /// tear down the next boot (DistroDisks' state, the vsock bridges).
+    private func stopped(_ which: VZVirtualMachine) {
+        let current = queue.sync { () -> Bool in
+            guard vm === which else { return false }
+            vm = nil
+            booted = nil
+            return true
+        }
+        guard current else { return }
         lock.withLock {
             for (port, fd) in bridges {
                 close(fd)
@@ -290,12 +302,12 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
 
     public func guestDidStop(_ virtualMachine: VZVirtualMachine) {
         log("guest powered off")
-        DispatchQueue.global().async { self.stopped() }
+        DispatchQueue.global().async { self.stopped(virtualMachine) }
     }
 
     public func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
         log("vm stopped with error: \(error)")
-        DispatchQueue.global().async { self.stopped() }
+        DispatchQueue.global().async { self.stopped(virtualMachine) }
     }
 
     // MARK: USB mass storage (msl --mount)

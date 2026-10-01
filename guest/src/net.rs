@@ -33,25 +33,55 @@ pub fn listening_ports(tcp: &str, tcp6: &str) -> BTreeSet<u32> {
     out
 }
 
-/// Poll the kernel's socket tables and publish the set when it changes.
+/// Publish the set of listening ports whenever it changes. The kernel wakes
+/// the watcher on every listen and every listener closing (portwatch.rs); if
+/// that can't be set up (a custom kernel without CONFIG_CGROUP_BPF), it falls
+/// back to rescanning every 500 ms.
 pub fn spawn_port_watcher() -> watch::Receiver<Vec<u32>> {
     let (tx, rx) = watch::channel(Vec::new());
-    tokio::spawn(async move {
-        loop {
-            let tcp = std::fs::read_to_string("/proc/net/tcp").unwrap_or_default();
-            let tcp6 = std::fs::read_to_string("/proc/net/tcp6").unwrap_or_default();
-            let ports: Vec<u32> = listening_ports(&tcp, &tcp6).into_iter().filter(|p| *p != NFS_PORT as u32).collect();
-            tx.send_if_modified(|cur| {
-                if *cur != ports {
-                    *cur = ports;
-                    true
-                } else {
-                    false
+    let scan = move || {
+        let tcp = std::fs::read_to_string("/proc/net/tcp").unwrap_or_default();
+        let tcp6 = std::fs::read_to_string("/proc/net/tcp6").unwrap_or_default();
+        let ports: Vec<u32> = listening_ports(&tcp, &tcp6).into_iter().filter(|p| *p != NFS_PORT as u32).collect();
+        tx.send_if_modified(|cur| {
+            if *cur != ports {
+                *cur = ports;
+                true
+            } else {
+                false
+            }
+        });
+    };
+    let events = crate::portwatch::Events::attach()
+        .and_then(|e| tokio::io::unix::AsyncFd::with_interest(e, tokio::io::Interest::READABLE));
+    match events {
+        Ok(events) => {
+            tokio::spawn(async move {
+                scan();
+                loop {
+                    let Ok(mut ready) = events.readable().await else { break };
+                    ready.clear_ready();
+                    if !events.get_ref().drain() {
+                        continue;
+                    }
+                    scan();
+                    // A listener closing is reported just before the kernel
+                    // unhashes it: look once more when it's surely gone.
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    scan();
                 }
             });
-            tokio::time::sleep(Duration::from_millis(500)).await;
         }
-    });
+        Err(e) => {
+            crate::sys::log(&format!("port watcher: no kernel events ({e}); polling every 500 ms"));
+            tokio::spawn(async move {
+                loop {
+                    scan();
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            });
+        }
+    }
     rx
 }
 

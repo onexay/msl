@@ -7,6 +7,8 @@ All notable changes to msl are listed here. The format follows [Keep a Changelog
 ### Changed
 - A distribution's disk is attached to the VM as virtio-blk when the VM boots, served by Virtualization.framework like `data.img`, instead of through msld's NBD disk slots. msld no longer serves disk I/O, and `fsync` inside a distribution reaches the SSD again. virtio-blk can't be hot-plugged: a disk added while the VM runs (an install, an import, a `--move` to another volume, a `--resize`) makes msld restart the VM if no distribution is running, which takes about 1.5 s. If one is, the new disk is mounted through a loop device over the Mac share until the VM next restarts; that path is slower, and it's flushed to the SSD when the disk is detached and at shutdown. Up to 19 distribution disks are attached at boot, and the rest use the loop device. A distribution's disk is no longer limited to 4 TB.
 
+- An idle MSL wakes the Mac far less. `msld` no longer polls: its idle timers sleep until the next deadline instead of ticking every second, and its copy and accept loops block instead of waking every 100–200 ms (context switches while idle: about 1030 per 30 s before, 5–8 after). In the VM, the process reaper sleeps until a child exits instead of checking 20 times a second when there's none, and the localhost-forwarding port watcher is woken by the kernel (a sock_ops BPF program) when a port opens or closes instead of scanning every 500 ms. Idle, the VM's process now uses about 0.5% CPU, down from 2.5–3.5%.
+
 ### Removed
 - The NBD disk slots and `MSL_DISK_SLOTS`.
 
