@@ -30,6 +30,7 @@ rm -rf "$STAGE" && mkdir -p "$STAGE/bin" "$STAGE/libexec/msl" "$STAGE/share/msl"
 cp build/bin/msl "$STAGE/bin/msl"
 cp build/bin/msld "$STAGE/libexec/msl/msld"
 cp build/bin/msl-portd "$STAGE/libexec/msl/msl-portd"
+cp build/bin/msl-fileviewd "$STAGE/libexec/msl/msl-fileviewd"
 [ -f build/share/msl/msl.vsix ] || { echo "error: build/share/msl/msl.vsix is missing (see the VS Code extension step in scripts/build.sh)" >&2; exit 1; }
 cp build/share/msl/Image build/share/msl/initrd.gz build/share/msl/kernel.version build/share/msl/msl.vsix "$STAGE/share/msl/"
 cp LICENSE NOTICE docs/third_party_notices.md guest/vendor/busybox.COPYRIGHT guest/vendor/e2fsprogs.COPYRIGHT "$STAGE/share/doc/msl/"
@@ -39,8 +40,9 @@ if [ -n "${MSL_SIGN_IDENTITY:-}" ]; then
   codesign --force --options runtime --timestamp -s "$MSL_SIGN_IDENTITY" "$STAGE/bin/msl"
   codesign --force --options runtime --timestamp --entitlements Sources/msld/msld.entitlements -s "$MSL_SIGN_IDENTITY" "$STAGE/libexec/msl/msld"
   codesign --force --options runtime --timestamp -s "$MSL_SIGN_IDENTITY" "$STAGE/libexec/msl/msl-portd"
+  codesign --force --options runtime --timestamp -s "$MSL_SIGN_IDENTITY" "$STAGE/libexec/msl/msl-fileviewd"
 fi
-codesign -v "$STAGE/bin/msl" "$STAGE/libexec/msl/msld" "$STAGE/libexec/msl/msl-portd"
+codesign -v "$STAGE/bin/msl" "$STAGE/libexec/msl/msld" "$STAGE/libexec/msl/msl-portd" "$STAGE/libexec/msl/msl-fileviewd"
 
 # No extended attributes (e.g. com.apple.provenance) in the payload: they'd turn
 # into AppleDouble ._ files in the tarball.
