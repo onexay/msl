@@ -14,13 +14,13 @@ Include the msl version (`msl --version`), your macOS version, and the steps to 
 
 Each release's tarball has a SHA-256 checksum (`.sha256`). From now on, that file is also signed with the release key (`.sha256.asc`):
 
-- key: `E880 3CF7 DBA7 8BCB 3F0B  8F1D 43E8 9DC4 4167 036A` (rsa4096, onexay)
-- published on [keys.openpgp.org](https://keys.openpgp.org/search?q=E8803CF7DBA78BCB3F0B8F1D43E89DC44167036A) and on [github.com/onexay.gpg](https://github.com/onexay.gpg)
+- key: `509D 39A8 78FD EBBB CAF7  B715 FA9B 1101 AF64 043C` (rsa4096, onexay)
+- published on [keys.openpgp.org](https://keys.openpgp.org/search?q=509D39A878FDEBBBCAF7B715FA9B1101AF64043C) and on [github.com/onexay.gpg](https://github.com/onexay.gpg)
 
 `install.sh` checks the checksum, and also checks the signature when `gpg` is installed. To verify by hand:
 
 ```console
-$ gpg --keyserver hkps://keys.openpgp.org --recv-keys E8803CF7DBA78BCB3F0B8F1D43E89DC44167036A
+$ gpg --keyserver hkps://keys.openpgp.org --recv-keys 509D39A878FDEBBBCAF7B715FA9B1101AF64043C
 $ gpg --verify msl-<version>-macos-arm64.tar.gz.sha256.asc msl-<version>-macos-arm64.tar.gz.sha256
 $ shasum -a 256 -c msl-<version>-macos-arm64.tar.gz.sha256
 ```
