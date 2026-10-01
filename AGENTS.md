@@ -36,3 +36,11 @@ Avoid:
 - This commit updates...
 - Exhaustive bullet lists that restate the diff
 - Vague AI-style wording such as robust, comprehensive, seamless or streamlined
+
+## Debugging
+
+When a fix starts turning into a chain of workarounds, stop patching symptoms and look one layer higher. Ask which assumption in our own design lets the symptom happen at all, and fix it there.
+
+- Two or three fixes in a row for the same kind of failure (a lost byte, a hang, a race) usually means the cause is above the code being patched: a protocol that relies on behaviour the layer below doesn't guarantee, a lifecycle the code doesn't own, or a check that hides the real failure.
+- Before adding a retry, timeout, delay or fallback, say what it compensates for and why that can't be fixed where it starts.
+- Name the layer and the assumption in the findings, not just the symptom and the patch.
