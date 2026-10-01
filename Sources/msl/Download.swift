@@ -116,9 +116,9 @@ final class Progress: @unchecked Sendable {
         last = pct
         let width = 40, filled = width * pct / 1000
         let bar = String(repeating: "=", count: filled) + String(repeating: " ", count: width - filled)
-        FileHandle.standardError.write(String(format: "\r[%@] %5.1f%%", bar, Double(pct) / 10).data(using: .utf8)!)
+        write(2, String(format: "\r[%@] %5.1f%%", bar, Double(pct) / 10))
     }
-    func finish() { if tty && last >= 0 { FileHandle.standardError.write("\n".data(using: .utf8)!) } }
+    func finish() { if tty && last >= 0 { write(2, "\n") } }
 }
 
 final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
