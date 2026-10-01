@@ -11,6 +11,7 @@ let package = Package(
         .executable(name: "msl", targets: ["msl"]),
         .executable(name: "msld", targets: ["msld"]),
         .executable(name: "msl-portd", targets: ["msl-portd"]),
+        .executable(name: "msl-fileviewd", targets: ["msl-fileviewd"]),
     ],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.3"),
@@ -47,6 +48,8 @@ let package = Package(
         .executableTarget(name: "msl", dependencies: ["MSLCore"], swiftSettings: v5),
         // localhost forwarding's relay (WSL's wslrelay.exe), started by msld.
         .executableTarget(name: "msl-portd", dependencies: ["MSLCore"], swiftSettings: v5),
+        // The ~/.msl/distros view's relay (RPCFilter + copying), started by msld.
+        .executableTarget(name: "msl-fileviewd", dependencies: ["MSLCore"], swiftSettings: v5),
         .testTarget(name: "MSLCoreTests", dependencies: ["MSLCore"], swiftSettings: v5),
     ]
 )

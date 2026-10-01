@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # Build everything into build/:
-#   build/bin/{msl,msld,msl-portd}  (msld signed with the virtualization entitlement)
+#   build/bin/{msl,msld,msl-portd,msl-fileviewd}  (msld signed with the virtualization entitlement)
 #   build/share/msl/{Image,initrd.gz,kernel.version}
 # Kernel: the pinned msl-kernel release (kernel/release.tag, which kernel/fetch.sh
 # downloads into kernel/out), or a local build with MSL_KERNEL_OUT=<msl-kernel>/out.
@@ -40,7 +40,7 @@ if [ -n "$COMMIT" ] && ! git -C "$ROOT" diff --quiet HEAD -- . ':!Sources/MSLCor
 cp "$VFILE" "$VFILE.build"
 trap 'mv -f "$VFILE.build" "$VFILE"' EXIT
 sed -i '' "s|static let commit = \".*\"|static let commit = \"$COMMIT\"|" "$VFILE"
-(cd "$ROOT" && swift build -c "$CONFIG" --product msl -q && swift build -c "$CONFIG" --product msld -q && swift build -c "$CONFIG" --product msl-portd -q)
+(cd "$ROOT" && swift build -c "$CONFIG" --product msl -q && swift build -c "$CONFIG" --product msld -q && swift build -c "$CONFIG" --product msl-portd -q && swift build -c "$CONFIG" --product msl-fileviewd -q)
 mv -f "$VFILE.build" "$VFILE"; trap - EXIT
 BIN=$(cd "$ROOT" && swift build -c "$CONFIG" --show-bin-path)
 # Install atomically (new inode): overwriting a running msld in place breaks its
@@ -54,6 +54,7 @@ install_bin() {  # install_bin <src> <name> [entitlements]
 install_bin "$BIN/msl" msl
 install_bin "$BIN/msld" msld "$ROOT/Sources/msld/msld.entitlements"
 install_bin "$BIN/msl-portd" msl-portd
+install_bin "$BIN/msl-fileviewd" msl-fileviewd
 
 # The VS Code extension (msl --manage-ide installs it), like the kernel: the
 # pinned msl-vscode-extension release (extensions/vscode/release.tag, which
@@ -67,4 +68,4 @@ elif ! (cd "$EXT/dist" 2>/dev/null && shasum -a 256 -c "$EXT/release.sha256" >/d
   "$EXT/fetch.sh" >/dev/null || echo "warning: could not fetch the VS Code extension $(cat "$EXT/release.tag")"
 fi
 if [ -f "$VSIX" ]; then cp "$VSIX" "$OUT/share/msl/msl.vsix"; else rm -f "$OUT/share/msl/msl.vsix"; fi
-echo "built: build/bin/{msl,msld,msl-portd} build/share/msl/{Image,initrd.gz,msl.vsix} (kernel $(cat "$OUT/share/msl/kernel.version"))"
+echo "built: build/bin/{msl,msld,msl-portd,msl-fileviewd} build/share/msl/{Image,initrd.gz,msl.vsix} (kernel $(cat "$OUT/share/msl/kernel.version"))"
