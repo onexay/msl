@@ -237,20 +237,22 @@ public final class Service: @unchecked Sendable {
             files.syncLinks()
             if let disk = d.disk { removeDisk(disk, location: d.location) }  // as WSL deletes ext4.vhdx
             return .ok
-        case .export(let name, let format):
+        case .export(let name, let format, let direct):
             let d = try find(name)
-            try export(d, format: format, to: fds[0])
+            try export(d, format: format, to: fds[0], direct: direct == true ? conn : nil)
             return .ok
-        case .importTar(let name, let location, let vhdSize):
+        case .connect(let distro, let unix, let tcp):
+            return try connectStream(distro: distro, unix: unix, tcp: tcp, conn: conn)
+        case .importTar(let name, let location, let vhdSize, let direct):
             guard Registry.isValidName(name) else {
                 throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
             }
             guard registry.find(name: name) == nil else {
                 throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
             }
-            _ = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0])
+            _ = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0], direct: direct == true ? conn : nil)
             return .ok
-        case .installFromFile(let name, let location, _, let vhdSize):
+        case .installFromFile(let name, let location, _, let vhdSize, let direct):
             if let name {
                 guard Registry.isValidName(name) else {
                     throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
@@ -259,7 +261,7 @@ public final class Service: @unchecked Sendable {
                     throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
                 }
             }
-            let rec = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0])
+            let rec = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0], direct: direct == true ? conn : nil)
             return .installed(name: rec.name)
         case .exportDisk(let name, let path):
             try exportDisk(try find(name), to: URL(fileURLWithPath: path))
@@ -332,6 +334,59 @@ public final class Service: @unchecked Sendable {
                 return exit
             }
         }
+    }
+
+    /// A stream the guest dials back, handed to msl as `.stream` when it
+    /// arrives: msl reads or writes the data itself (a `direct` request).
+    func handOff(to conn: IPCConnection) -> Msl_V1_HostStream {
+        var token = [UInt8](repeating: 0, count: 16)
+        arc4random_buf(&token, token.count)
+        let s = vm.acceptStream(token: token)
+        Thread.detachNewThread {
+            guard let fd = try? s.wait() else { return }  // the guest failed first: its error is the reply
+            try? conn.send(Reply.stream, fds: [fd])
+            close(fd)
+        }
+        return .with { $0.token = Data(token); $0.port = s.port }
+    }
+
+    /// `msl --connect`: open the target in the distro, hand msl the stream, and
+    /// count it as a session until msl disconnects (VS Code's managed pipes).
+    func connectStream(distro: String, unix: String?, tcp: UInt16?, conn: IPCConnection) throws -> Reply {
+        let d = try find(distro)
+        _ = try startDistro(d)
+        // One stream per direction (see OpenStreamRequest).
+        var token = [UInt8](repeating: 0, count: 16)
+        arc4random_buf(&token, token.count)
+        let out = vm.acceptStream(token: token)
+        let inp = vm.acceptStream(token: token)
+        let mini = try guest.miniInit
+        let toHost = Msl_V1_HostStream.with { $0.token = Data(token); $0.port = out.port }
+        let fromHost = Msl_V1_HostStream.with { $0.token = Data(token); $0.port = inp.port }
+        do {
+            _ = try blocking {
+                try await mini.openStream(.with {
+                    $0.stream = toHost
+                    $0.fromHost = fromHost
+                    $0.distroID = d.id
+                    $0.uid = d.defaultUid
+                    if let unix { $0.unixPath = unix }
+                    if let tcp { $0.tcpPort = UInt32(tcp) }
+                })
+            }
+        } catch let e as RPCError {
+            vm.unlisten(port: out.port)
+            vm.unlisten(port: inp.port)
+            throw ServiceError(e.message, code: ErrorCode.service)
+        }
+        let fds = [try inp.wait(), try out.wait()]
+        try conn.send(Reply.streams(tty: false, stdin: true, stdout: true, stderr: false), fds: fds)
+        fds.forEach { close($0) }
+        idle.beginSession(distro: d.id)
+        defer { idle.endSession(distro: d.id) }
+        // msl holds the connection open for as long as it uses the stream.
+        while (try? conn.receive(ClientEvent.self)) != nil {}
+        return .ok
     }
 
     // MARK: helpers
@@ -558,7 +613,7 @@ public final class Service: @unchecked Sendable {
     /// Import a rootfs tar as a new distro on its own disk: `<location>/ext4.img`
     /// (the location defaults to msl's `distros/<id>`). With MSL_LEGACY_STORE
     /// set (tests), it goes to the shared data.img instead, as before #50.
-    func importDistro(name: String?, location: String?, vhdSize: UInt64?, from input: Int32) throws -> DistroRecord {
+    func importDistro(name: String?, location: String?, vhdSize: UInt64?, from input: Int32, direct: IPCConnection? = nil) throws -> DistroRecord {
         let id = UUID().uuidString.lowercased()
         let folder = URL(fileURLWithPath: location ?? paths.root.appendingPathComponent("distros/\(id)").path).standardizedFileURL
         var rec = DistroRecord(id: id, name: name ?? "", location: folder.path)
@@ -582,9 +637,10 @@ public final class Service: @unchecked Sendable {
         let mini = try guest.miniInit
         let vm = self.vm
         let done: Msl_V1_ImportDistroDone
+        let stream = direct.map { handOff(to: $0) }
         do {
             done = try blocking {
-                try await mini.importDistro(.with { $0.id = id }) { response in
+                try await mini.importDistro(.with { $0.id = id; if let s = stream { $0.stream = s } }) { response in
                     var pumping = false
                     let finished = Completion()
                     for try await event in response.messages {
@@ -664,7 +720,7 @@ public final class Service: @unchecked Sendable {
         }
     }
 
-    func export(_ d: DistroRecord, format: String, to output: Int32) throws {
+    func export(_ d: DistroRecord, format: String, to output: Int32, direct: IPCConnection? = nil) throws {
         let fmt: Msl_V1_ExportFormat
         switch format {
         case "", "tar": fmt = .tar
@@ -676,8 +732,9 @@ public final class Service: @unchecked Sendable {
         try ownDisks.ensureAttached(d)
         let mini = try guest.miniInit
         let vm = self.vm
+        let stream = direct.map { handOff(to: $0) }
         _ = try blocking {
-            try await mini.exportDistro(.with { $0.id = d.id; $0.format = fmt }) { response in
+            try await mini.exportDistro(.with { $0.id = d.id; $0.format = fmt; if let s = stream { $0.stream = s } }) { response in
                 var pumping = false
                 let finished = Completion()
                 for try await event in response.messages {

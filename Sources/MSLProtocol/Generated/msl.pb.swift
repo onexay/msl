@@ -339,9 +339,87 @@ public nonisolated struct Msl_V1_ImportDistroRequest: Sendable {
 
   public var id: String = String()
 
+  /// Set: the guest dials the tar stream back to the host (raw) and sends no
+  /// data_port event. Unset: data_port, framed.
+  public var stream: Msl_V1_HostStream {
+    get {_stream ?? Msl_V1_HostStream()}
+    set {_stream = newValue}
+  }
+  /// Returns true if `stream` has been explicitly set.
+  public var hasStream: Bool {self._stream != nil}
+  /// Clears the value of `stream`. Subsequent reads from it will return its default value.
+  public mutating func clearStream() {self._stream = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _stream: Msl_V1_HostStream? = nil
+}
+
+/// A raw stream the guest dials back to the host: a guest-initiated vsock
+/// connection to host `port` (CID 2), which a stalled host reader can't freeze
+/// (#36). The guest writes `token` first; the host takes the first connection
+/// with it. A stream the guest writes ends with eof.
+public nonisolated struct Msl_V1_HostStream: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var token: Data = Data()
+
+  public var port: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// One vsock per direction, as with session stdio: Virtualization.framework
+/// drops data still on its way to the host when the host has half-closed a
+/// connection and the guest then closes it.
+public nonisolated struct Msl_V1_OpenStreamRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// target -> host; the guest closes it at the target's eof
+  public var stream: Msl_V1_HostStream {
+    get {_stream ?? Msl_V1_HostStream()}
+    set {_stream = newValue}
+  }
+  /// Returns true if `stream` has been explicitly set.
+  public var hasStream: Bool {self._stream != nil}
+  /// Clears the value of `stream`. Subsequent reads from it will return its default value.
+  public mutating func clearStream() {self._stream = nil}
+
+  /// host -> target; its eof shuts down the target's write side
+  public var fromHost: Msl_V1_HostStream {
+    get {_fromHost ?? Msl_V1_HostStream()}
+    set {_fromHost = newValue}
+  }
+  /// Returns true if `fromHost` has been explicitly set.
+  public var hasFromHost: Bool {self._fromHost != nil}
+  /// Clears the value of `fromHost`. Subsequent reads from it will return its default value.
+  public mutating func clearFromHost() {self._fromHost = nil}
+
+  public var distroID: String = String()
+
+  /// the user to connect as (Unix sockets)
+  public var uid: UInt32 = 0
+
+  /// either this
+  public var unixPath: String = String()
+
+  /// or this (127.0.0.1, else ::1)
+  public var tcpPort: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _stream: Msl_V1_HostStream? = nil
+  fileprivate var _fromHost: Msl_V1_HostStream? = nil
 }
 
 public nonisolated struct Msl_V1_ImportDistroEvent: Sendable {
@@ -436,9 +514,21 @@ public nonisolated struct Msl_V1_ExportDistroRequest: Sendable {
 
   public var format: Msl_V1_ExportFormat = .tar
 
+  /// as in ImportDistroRequest
+  public var stream: Msl_V1_HostStream {
+    get {_stream ?? Msl_V1_HostStream()}
+    set {_stream = newValue}
+  }
+  /// Returns true if `stream` has been explicitly set.
+  public var hasStream: Bool {self._stream != nil}
+  /// Clears the value of `stream`. Subsequent reads from it will return its default value.
+  public mutating func clearStream() {self._stream = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _stream: Msl_V1_HostStream? = nil
 }
 
 public nonisolated struct Msl_V1_ExportDistroEvent: Sendable {
@@ -1332,7 +1422,7 @@ nonisolated extension Msl_V1_DistroRef: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 nonisolated extension Msl_V1_ImportDistroRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ImportDistroRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}stream\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1341,20 +1431,123 @@ nonisolated extension Msl_V1_ImportDistroRequest: SwiftProtobuf.Message, SwiftPr
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._stream) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.id.isEmpty {
       try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
     }
+    try { if let v = self._stream {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Msl_V1_ImportDistroRequest, rhs: Msl_V1_ImportDistroRequest) -> Bool {
     if lhs.id != rhs.id {return false}
+    if lhs._stream != rhs._stream {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Msl_V1_HostStream: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".HostStream"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}token\0\u{1}port\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.token) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.port) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.token.isEmpty {
+      try visitor.visitSingularBytesField(value: self.token, fieldNumber: 1)
+    }
+    if self.port != 0 {
+      try visitor.visitSingularUInt32Field(value: self.port, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Msl_V1_HostStream, rhs: Msl_V1_HostStream) -> Bool {
+    if lhs.token != rhs.token {return false}
+    if lhs.port != rhs.port {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Msl_V1_OpenStreamRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".OpenStreamRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}stream\0\u{3}distro_id\0\u{1}uid\0\u{3}unix_path\0\u{3}tcp_port\0\u{3}from_host\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._stream) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.distroID) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.uid) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.unixPath) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.tcpPort) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._fromHost) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._stream {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if !self.distroID.isEmpty {
+      try visitor.visitSingularStringField(value: self.distroID, fieldNumber: 2)
+    }
+    if self.uid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.uid, fieldNumber: 3)
+    }
+    if !self.unixPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.unixPath, fieldNumber: 4)
+    }
+    if self.tcpPort != 0 {
+      try visitor.visitSingularUInt32Field(value: self.tcpPort, fieldNumber: 5)
+    }
+    try { if let v = self._fromHost {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Msl_V1_OpenStreamRequest, rhs: Msl_V1_OpenStreamRequest) -> Bool {
+    if lhs._stream != rhs._stream {return false}
+    if lhs._fromHost != rhs._fromHost {return false}
+    if lhs.distroID != rhs.distroID {return false}
+    if lhs.uid != rhs.uid {return false}
+    if lhs.unixPath != rhs.unixPath {return false}
+    if lhs.tcpPort != rhs.tcpPort {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1507,7 +1700,7 @@ nonisolated extension Msl_V1_DistributionConf: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Msl_V1_ExportDistroRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ExportDistroRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}format\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}format\0\u{1}stream\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1517,24 +1710,33 @@ nonisolated extension Msl_V1_ExportDistroRequest: SwiftProtobuf.Message, SwiftPr
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
       case 2: try { try decoder.decodeSingularEnumField(value: &self.format) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._stream) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.id.isEmpty {
       try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
     }
     if self.format != .tar {
       try visitor.visitSingularEnumField(value: self.format, fieldNumber: 2)
     }
+    try { if let v = self._stream {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Msl_V1_ExportDistroRequest, rhs: Msl_V1_ExportDistroRequest) -> Bool {
     if lhs.id != rhs.id {return false}
     if lhs.format != rhs.format {return false}
+    if lhs._stream != rhs._stream {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -38,12 +38,19 @@ public enum Request: Codable, Sendable {
     case terminate(name: String)
     case shutdown(force: Bool)
     case unregister(name: String)
-    /// fd[0] = output file (or stdout)
-    case export(name: String, format: String)
+    /// fd[0] = output file (or stdout). `direct` (and every case below that has
+    /// it): msld replies `.stream` with a vsock fd that msl writes or reads
+    /// itself, then the final reply; an older msld ignores it and uses fd[0].
+    case export(name: String, format: String, direct: Bool? = nil)
     /// fd[0] = input file (or stdin). `location` is absolute; `vhdSize` sizes the new disk.
-    case importTar(name: String, location: String, vhdSize: UInt64? = nil)
+    case importTar(name: String, location: String, vhdSize: UInt64? = nil, direct: Bool? = nil)
     /// fd[0] = input file
-    case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil)
+    case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil, direct: Bool? = nil)
+    /// `msl --connect`: a byte stream to a Unix socket (`unix`) or localhost port
+    /// (`tcp`) in a distro, for VS Code's managed pipes. msld replies `.streams`
+    /// (stdin: to the target, stdout: from it) and keeps the distro running
+    /// until msl disconnects.
+    case connect(distro: String, unix: String?, tcp: UInt16?)
     case manage(name: String, op: ManageOp)
     /// `--export --vhd`: a copy of the distro's disk image at `path` (absolute).
     case exportDisk(name: String, path: String)
@@ -89,6 +96,9 @@ public enum Reply: Codable, Sendable {
     /// present only when true: tty (both directions), stdin, stdout, stderr.
     /// Output streams end with eof once the guest has delivered everything.
     case streams(tty: Bool, stdin: Bool, stdout: Bool, stderr: Bool)
+    /// One vsock stream as the attached fd (`direct` requests, `connect`). One
+    /// the guest writes ends with eof.
+    case stream
     case mounted(device: String, mountPoint: String)
 }
 

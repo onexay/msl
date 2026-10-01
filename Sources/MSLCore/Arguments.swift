@@ -79,6 +79,10 @@ public enum CLICommand: Equatable, Sendable {
     case setVersion(distribution: String, version: Int)
     case manage(distribution: String, op: ManageOp)
     case debugShell
+    /// `--connect <distro> unix=<path>|tcp=<port>` (not in --help): stdin and
+    /// stdout become a byte stream to that target in the distro. The VS Code
+    /// extension's managed pipes run one per pipe.
+    case connect(ConnectRequest)
     case mount(MountSpec)
     case unmount(String?)
     case update(preRelease: Bool)
@@ -275,6 +279,12 @@ public enum Arguments {
         case "--debug-shell":
             try noMore()
             return .debugShell
+        case "--connect":
+            let d = try value(first)
+            let t = try value(first)
+            try noMore()
+            guard let req = ConnectRequest(line: "CONNECT distro=\(d) \(t)") else { throw ArgumentError.invalid(t) }
+            return .connect(req)
         case "--mount":
             var m = MountSpec()
             m.disk = try value(first)

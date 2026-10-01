@@ -26,6 +26,12 @@ service MiniInit {
   // Streams the distro's rootfs as a tar. Events: data_port, then done.
   rpc ExportDistro(ExportDistroRequest) returns (stream ExportDistroEvent);
 
+  // A byte stream to a Unix socket (VS Code's, see connect.rs for what's
+  // allowed) or a localhost TCP port in a running distro, as two streams
+  // dialed back to the host, one per direction. Returns once the target is
+  // open and both streams are up.
+  rpc OpenStream(OpenStreamRequest) returns (Empty);
+
   // Removes the distro's root filesystem (the distro must be stopped).
   rpc DeleteDistro(DistroRef) returns (Empty);
 
@@ -154,6 +160,30 @@ message DistroRef {
 
 message ImportDistroRequest {
   string id = 1;
+  // Set: the guest dials the tar stream back to the host (raw) and sends no
+  // data_port event. Unset: data_port, framed.
+  HostStream stream = 2;
+}
+
+// A raw stream the guest dials back to the host: a guest-initiated vsock
+// connection to host `port` (CID 2), which a stalled host reader can't freeze
+// (#36). The guest writes `token` first; the host takes the first connection
+// with it. A stream the guest writes ends with eof.
+message HostStream {
+  bytes token = 1;
+  uint32 port = 2;
+}
+
+// One vsock per direction, as with session stdio: Virtualization.framework
+// drops data still on its way to the host when the host has half-closed a
+// connection and the guest then closes it.
+message OpenStreamRequest {
+  HostStream stream = 1;     // target -> host; the guest closes it at the target's eof
+  HostStream from_host = 6;  // host -> target; its eof shuts down the target's write side
+  string distro_id = 2;
+  uint32 uid = 3;            // the user to connect as (Unix sockets)
+  string unix_path = 4;      // either this
+  uint32 tcp_port = 5;       // or this (127.0.0.1, else ::1)
 }
 
 message ImportDistroEvent {
@@ -184,6 +214,7 @@ enum ExportFormat {
 message ExportDistroRequest {
   string id = 1;
   ExportFormat format = 2;
+  HostStream stream = 3;     // as in ImportDistroRequest
 }
 
 message ExportDistroEvent {

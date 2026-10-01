@@ -1,7 +1,8 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 # Sodium end-to-end test: byte streams into a distro for the VS Code extension.
-# msl-bridge (stdio relay), msld's connect socket (vsock 1026 and the 1025
+# msl-bridge (stdio relay), msl --connect (the guest dials the stream back),
+# msld's connect socket (vsock 1026 and the 1025
 # forwarder), its allowlist and permission checks, and idle-timeout sessions.
 # Uses a throwaway MSL_HOME, so it has its own msld and connect.sock.
 #   Tests/e2e/sodium.sh [path/to/msl]
@@ -92,6 +93,15 @@ check "connect: symlink to a VM-only path (resolves in the distro)" "No such fil
 check "connect: unknown distro" "ERR There is no distribution" "$(client Nope unix=$SOCKDIR/echo.sock)"
 check "connect: malformed line" "ERR expected: CONNECT" "$(printf 'HELLO\n' | nc -U "$MSL_HOME/connect.sock")"
 
+# msl --connect (what the extension uses now): msl itself carries the stream,
+# dialed back by the guest; msld isn't in the data path.
+check "msl --connect: 100 MB echo with half-close" "$want" "$($MSL --connect $D unix=$SOCKDIR/echo.sock < "$MSL_HOME/in.bin" | shasum -a 256 | cut -c1-64)"
+check "msl --connect: tcp target" "200 OK" "$(printf 'GET /hostname HTTP/1.0\r\n\r\n' | $MSL --connect $D tcp=18780 | head -1 | tr -d '\r')"
+check "msl --connect: refuses a socket outside the allowlist" "not allowed" "$($MSL --connect $D unix=/var/run/docker.sock 2>&1 < /dev/null)"
+check "msl --connect: runs as the user" "Permission denied" "$($MSL --connect $D unix=$SOCKDIR/to-root.sock 2>&1 < /dev/null)"
+check "msl --connect: unknown distro" "There is no distribution" "$($MSL --connect Nope unix=$SOCKDIR/echo.sock 2>&1 < /dev/null)"
+check "msl --connect: nothing listening" "Connection refused" "$($MSL --connect $D tcp=1 2>&1 < /dev/null)"
+
 kill $KEEP 2>/dev/null; wait $KEEP 2>/dev/null  # from here on, only the pipe keeps the distro running
 # Sessions: an open pipe keeps the distro past instanceIdleTimeout (2 s here),
 # and connecting starts a stopped distro.
@@ -102,6 +112,14 @@ wait
 sleep 4
 check "connect: distro stops after the pipe closes" "Stopped" "$($MSL -l -v | grep $D)"
 check "connect: starts a stopped distro" "Running" "$(client $D unix=$SOCKDIR/missing.sock >/dev/null; $MSL -l -v | grep $D)"
+# The echo server went with the distro's earlier stop: hold a TCP pipe instead.
+$MSL -d $D -e sh -c "setsid python3 -m http.server 18781 >/dev/null 2>&1 </dev/null & sleep 1"
+(sleep 6) | $MSL --connect $D tcp=18781 >/dev/null 2>&1 &
+sleep 5
+check "msl --connect: an open pipe keeps the distro running" "Running" "$($MSL -l -v | grep $D)"
+wait
+sleep 4
+check "msl --connect: distro stops after the pipe closes" "Stopped" "$($MSL -l -v | grep $D)"
 
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 $MSL --shutdown --force >/dev/null 2>&1

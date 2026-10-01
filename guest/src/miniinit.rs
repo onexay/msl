@@ -685,6 +685,11 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
     Ok(pb::AttachDiskReply { device: dev, repaired: repaired.join("; ") })
 }
 
+/// A dial-back stream from a request, if it has a usable one.
+fn req_stream(s: Option<pb::HostStream>) -> Option<pb::HostStream> {
+    s.filter(|s| !s.token.is_empty() && s.port != 0)
+}
+
 /// A Mac path as seen through the virtiofs share of the Mac's `/`.
 fn mac_file(mac_path: &str) -> Result<PathBuf, Status> {
     let p = Path::new(mac_path);
@@ -843,23 +848,34 @@ impl MiniInit for MiniInitService {
 
     async fn import_distro(&self, req: Request<pb::ImportDistroRequest>) -> Result<Response<Self::ImportDistroStream>, Status> {
         use pb::import_distro_event::Event;
-        let id = req.into_inner().id;
+        let req_import = req.into_inner();
+        let id = req_import.id.clone();
         let dir = distro_dir(&id)?;
         // An own disk is attached (its mount point exists) before the import.
         let own = attached().lock().unwrap().contains_key(&id);
         if if own { !is_empty_root(&dir.join("rootfs")) } else { dir.exists() } {
             return Err(Status::already_exists("distribution directory already exists"));
         }
-        let dp = DataPort::bind().map_err(status)?;
+        let stream = req_stream(req_import.stream);
+        let dp = if stream.is_none() { Some(DataPort::bind().map_err(status)?) } else { None };
         let (tx, rx) = tokio::sync::mpsc::channel(2);
-        tx.send(Ok(pb::ImportDistroEvent { event: Some(Event::DataPort(dp.port)) })).await.map_err(status)?;
+        if let Some(dp) = &dp {
+            tx.send(Ok(pb::ImportDistroEvent { event: Some(Event::DataPort(dp.port)) })).await.map_err(status)?;
+        }
         tokio::spawn(async move {
             let res = async {
-                let conn = dp.accept().await.map_err(status)?;
+                // Raw from a stream we dial back, or framed from the host's connection.
+                let conn = match (dp, &stream) {
+                    (Some(dp), _) => dp.accept().await.map_err(status)?,
+                    (None, Some(s)) => crate::rpc::dial_host(s.port, &s.token).await.map_err(status)?,
+                    (None, None) => unreachable!(),
+                };
+                let raw = stream.is_some();
                 let rootfs = dir.join("rootfs");
                 let d2 = dir.clone();
                 blocking(move || {
-                    let (source, _bridge) = crate::framed::receiver(conn).map_err(status)?;
+                    let source: Box<dyn std::io::Read + Send> =
+                        if raw { Box::new(conn) } else { Box::new(crate::framed::receiver(conn).map_err(status)?.0) };
                     let n = archive::unpack(source, &rootfs).map_err(|e| {
                         if own { clear_root(&rootfs) } else { let _ = std::fs::remove_dir_all(&d2); }
                         Status::invalid_argument(e)
@@ -886,13 +902,26 @@ impl MiniInit for MiniInitService {
             return Err(Status::not_found("distribution root filesystem not found"));
         }
         let format = pb::ExportFormat::try_from(req.format).unwrap_or(pb::ExportFormat::Tar);
-        let dp = DataPort::bind().map_err(status)?;
+        let stream = req_stream(req.stream);
+        let dp = if stream.is_none() { Some(DataPort::bind().map_err(status)?) } else { None };
         let (tx, rx) = tokio::sync::mpsc::channel(2);
-        tx.send(Ok(pb::ExportDistroEvent { event: Some(Event::DataPort(dp.port)) })).await.map_err(status)?;
+        if let Some(dp) = &dp {
+            tx.send(Ok(pb::ExportDistroEvent { event: Some(Event::DataPort(dp.port)) })).await.map_err(status)?;
+        }
         tokio::spawn(async move {
             let res = async {
-                let conn = dp.accept().await.map_err(status)?;
+                let conn = match (dp, &stream) {
+                    (Some(dp), _) => dp.accept().await.map_err(status)?,
+                    (None, Some(s)) => crate::rpc::dial_host(s.port, &s.token).await.map_err(status)?,
+                    (None, None) => unreachable!(),
+                };
+                let raw = stream.is_some();
                 blocking(move || {
+                    if raw {
+                        // Dropping the stream at the end is the host's eof.
+                        let n = archive::pack(&rootfs, format, conn).map_err(status)?;
+                        return Ok(pb::ExportDistroDone { entries: n });
+                    }
                     let (sink, bridge) = crate::framed::sender(conn).map_err(status)?;
                     let n = archive::pack(&rootfs, format, sink).map_err(status)?; // drops the sink
                     let _ = bridge.sent.recv(); // everything handed to the host
@@ -904,6 +933,36 @@ impl MiniInit for MiniInitService {
             let _ = tx.send(res.map(|d| pb::ExportDistroEvent { event: Some(Event::Done(d)) })).await;
         });
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+    }
+
+    async fn open_stream(&self, req: Request<pb::OpenStreamRequest>) -> Result<Response<pb::Empty>, Status> {
+        let req = req.into_inner();
+        check_id(&req.distro_id)?;
+        let to_host = req_stream(req.stream).ok_or_else(|| Status::invalid_argument("no stream"))?;
+        let from_host = req_stream(req.from_host).ok_or_else(|| Status::invalid_argument("no stream from the host"))?;
+        // The target first, so a refusal reaches the host as an error.
+        let (uid, id, path, port) = (req.uid, req.distro_id.clone(), req.unix_path.clone(), req.tcp_port);
+        let target: std::fs::File = blocking(move || {
+            use std::os::fd::OwnedFd;
+            if !path.is_empty() {
+                let s = crate::connect::open_unix(uid, &id, &path).map_err(Status::permission_denied)?;
+                return Ok(std::fs::File::from(OwnedFd::from(s)));
+            }
+            let port = u16::try_from(port).ok().filter(|p| *p > 0).ok_or_else(|| Status::invalid_argument("no target"))?;
+            let s = std::net::TcpStream::connect(("127.0.0.1", port))
+                .or_else(|_| std::net::TcpStream::connect(("::1", port)))
+                .map_err(|e| Status::unavailable(format!("localhost:{port}: {e}")))?;
+            let _ = s.set_nodelay(true);
+            Ok(std::fs::File::from(OwnedFd::from(s)))
+        })
+        .await?;
+        let (out, inp) = tokio::try_join!(
+            crate::rpc::dial_host(to_host.port, &to_host.token),
+            crate::rpc::dial_host(from_host.port, &from_host.token)
+        )
+        .map_err(status)?;
+        crate::rpc::relay(target, inp, out).map_err(status)?;
+        Ok(Response::new(pb::Empty {}))
     }
 
     async fn delete_distro(&self, req: Request<pb::DistroRef>) -> Result<Response<pb::Empty>, Status> {
