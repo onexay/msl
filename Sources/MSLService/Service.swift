@@ -411,6 +411,7 @@ public final class Service: @unchecked Sendable {
         try bootLock.withLock {
             if terminating { throw ServiceError("msld is shutting down (macOS is logging out or restarting, or it was stopped). Try again in a few seconds.", code: ErrorCode.vm) }
             if vm.isRunning { return }
+            vm.awaitTeardown()  // the previous VM's cleanup must not land on this boot
             config = MSLConfig.load()
             for w in config.warnings { log("msl: \(w)") }
             do {
