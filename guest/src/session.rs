@@ -3,8 +3,8 @@
 //! over one-shot vsock data ports.
 
 use crate::pb::{self, RunEvent, RunRequest, ShellType, run_event};
-use crate::rpc::{DataPort, dial_host, status};
-use crate::{config, framed, reaper, users};
+use crate::rpc::{dial_host, status};
+use crate::{config, reaper, users};
 use std::collections::HashMap;
 use std::fs::File;
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -135,39 +135,18 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
         None
     };
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    // Raw streams the host asked us to dial (guest-initiated), or data ports the
-    // host connects to (framed).
-    let dial_back = req.dial_back.clone().filter(|d| !d.token.is_empty());
-    let (tty_conn, in_conn, out_conn, err_conn) = if let Some(d) = &dial_back {
-        async fn dial(port: u32, token: &[u8]) -> Result<Option<File>, Status> {
-            if port == 0 { Ok(None) } else { dial_host(port, token).await.map(Some).map_err(status) }
-        }
-        let t = &d.token;
-        let conns = tokio::try_join!(dial(d.tty_port, t), dial(d.stdin_port, t), dial(d.stdout_port, t), dial(d.stderr_port, t))?;
-        let started = pb::Started { session_id: id, ..Default::default() };
-        tx.send(Ok(RunEvent { event: Some(run_event::Event::Started(started)) })).await.map_err(status)?;
-        conns
-    } else {
-        let bind = |need: bool| -> Result<Option<DataPort>, Status> { if need { DataPort::bind().map(Some).map_err(status) } else { Ok(None) } };
-        let tty_dp = bind(any_tty)?;
-        let in_dp = bind(!req.stdin_tty)?;
-        let out_dp = bind(!req.stdout_tty)?;
-        let err_dp = bind(!req.stderr_tty)?;
-        let port = |d: &Option<DataPort>| d.as_ref().map(|d| d.port).unwrap_or(0);
-        let started = pb::Started { session_id: id, tty_port: port(&tty_dp), stdin_port: port(&in_dp), stdout_port: port(&out_dp), stderr_port: port(&err_dp) };
-        tx.send(Ok(RunEvent { event: Some(run_event::Event::Started(started)) })).await.map_err(status)?;
-        async fn accept(d: Option<DataPort>) -> Result<Option<File>, Status> {
-            match d {
-                Some(d) => d.accept().await.map(Some).map_err(status),
-                None => Ok(None),
-            }
-        }
-        tokio::try_join!(accept(tty_dp), accept(in_dp), accept(out_dp), accept(err_dp))?
-    };
-    let raw = dial_back.is_some();
+    // The streams: the host ports to dial, one per stream (0 = not used).
+    let d = req.dial_back.clone().filter(|d| !d.token.is_empty()).ok_or_else(|| Status::invalid_argument("no dial_back"))?;
+    async fn dial(port: u32, token: &[u8]) -> Result<Option<File>, Status> {
+        if port == 0 { Ok(None) } else { dial_host(port, token).await.map(Some).map_err(status) }
+    }
+    let t = &d.token;
+    let (tty_conn, in_conn, out_conn, err_conn) =
+        tokio::try_join!(dial(d.tty_port, t), dial(d.stdin_port, t), dial(d.stdout_port, t), dial(d.stderr_port, t))?;
+    tx.send(Ok(RunEvent { event: Some(run_event::Event::Started(pb::Started { session_id: id })) })).await.map_err(status)?;
 
-    // Child stdio: the PTY slave for tty fds, pipes for the others. Each stream
-    // to the host is a raw copy (dial-back) or a flow-controlled bridge (framed.rs).
+    // Child stdio: the PTY slave for tty fds, pipes for the others, each copied
+    // to or from its stream.
     let slave_stdio = |p: &Option<nix::pty::OpenptyResult>| -> Result<Stdio, Status> {
         let s = p.as_ref().unwrap().slave.try_clone().map_err(status)?;
         Ok(Stdio::from(s))
@@ -205,14 +184,11 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
     fn file<T: Into<OwnedFd>>(x: T) -> File {
         File::from(x.into())
     }
-    // Streams whose output we must deliver before reporting the exit.
-    let mut outputs: Vec<Output> = Vec::new();
-    let bridge = |conn: File, local_in: Option<File>, local_out: Option<File>| -> Result<Output, Status> {
-        if raw {
-            raw_bridge(conn, local_in, local_out).map(Output::Raw).map_err(status)
-        } else {
-            framed::bridge(conn, local_in, local_out).map(Output::Framed).map_err(status)
-        }
+    // Output streams to deliver before reporting the exit: (kind, bridge),
+    // kind 0 = tty, 1 = stdout, 2 = stderr.
+    let mut outputs: Vec<(usize, RawBridge)> = Vec::new();
+    let bridge = |conn: File, local_in: Option<File>, local_out: Option<File>| -> Result<RawBridge, Status> {
+        raw_bridge(conn, local_in, local_out).map_err(status)
     };
     let mut master_for_map = None;
     if let (Some(p), Some(conn)) = (pty, tty_conn) {
@@ -220,79 +196,54 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
         master_for_map = Some(p.master.try_clone().map_err(status)?);
         let m_in = File::from(p.master.try_clone().map_err(status)?);
         let m_out = File::from(p.master);
-        outputs.push(bridge(conn, Some(m_in), Some(m_out))?);
+        outputs.push((0, bridge(conn, Some(m_in), Some(m_out))?));
     }
     if let (Some(conn), Some(sin)) = (in_conn, child.stdin.take()) {
         bridge(conn, None, Some(file(sin)))?;
     }
     if let (Some(conn), Some(sout)) = (out_conn, child.stdout.take()) {
-        outputs.push(bridge(conn, Some(file(sout)), None)?);
+        outputs.push((1, bridge(conn, Some(file(sout)), None)?));
     }
     if let (Some(conn), Some(serr)) = (err_conn, child.stderr.take()) {
-        outputs.push(bridge(conn, Some(file(serr)), None)?);
+        outputs.push((2, bridge(conn, Some(file(serr)), None)?));
     }
     sessions().lock().unwrap().insert(id, Handle { pid, master: master_for_map });
 
     let code = exit_rx.await.unwrap_or(255);
     // Deliver all output first. Give up only on output a background process
-    // keeps open: its sender has been waiting on an empty input for 2s.
+    // keeps open: its sender has been waiting on an empty input for 2s. Then
+    // report how much each stream carried: the host reads exactly that much
+    // (see pb::Exited), so nothing depends on how the vsock ends.
     let drained = tokio::task::spawn_blocking(move || {
-        for b in outputs {
+        let mut bytes = [0u64; 3];
+        for (kind, b) in outputs {
             loop {
-                match b.sent().recv_timeout(Duration::from_millis(50)) {
+                match b.sent.recv_timeout(Duration::from_millis(50)) {
                     Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(_) if b.input_idle() > Duration::from_secs(2) => break,
                     Err(_) => {}
                 }
             }
-            // A raw stream's eof tells the host this output is complete.
-            b.end();
+            bytes[kind] = b.written.load(Ordering::Acquire);
         }
+        bytes
     });
-    let _ = drained.await;
+    let bytes = drained.await.unwrap_or_default();
     sessions().lock().unwrap().remove(&id);
-    let _ = tx.send(Ok(RunEvent { event: Some(run_event::Event::Exited(pb::Exited { code })) })).await;
+    let exited = pb::Exited { code, tty_bytes: bytes[0], stdout_bytes: bytes[1], stderr_bytes: bytes[2] };
+    let _ = tx.send(Ok(RunEvent { event: Some(run_event::Event::Exited(exited)) })).await;
     Ok(())
-}
-
-/// A stream to the host whose output is delivered before Exited.
-enum Output {
-    Framed(framed::Bridge),
-    Raw(RawBridge),
-}
-
-impl Output {
-    fn sent(&self) -> &std::sync::mpsc::Receiver<()> {
-        match self {
-            Output::Framed(b) => &b.sent,
-            Output::Raw(b) => &b.sent,
-        }
-    }
-
-    fn input_idle(&self) -> Duration {
-        match self {
-            Output::Framed(b) => b.input_idle(),
-            Output::Raw(b) => b.input_idle(),
-        }
-    }
-
-    /// Raw: shut down the write side (eof for the host), also when a background
-    /// process still holds the output open. Framed: the host stops on its own.
-    fn end(&self) {
-        if let Output::Raw(b) = self {
-            unsafe { libc::shutdown(b.sock.as_raw_fd(), libc::SHUT_WR) };
-        }
-    }
 }
 
 /// A raw (dial-back) stream: bytes from `local_in` go to the host, bytes from
 /// the host go to `local_out`. No framing: the connection is guest-initiated,
-/// which a stalled host reader can't freeze (#36), and the host reads it
-/// directly.
+/// which a stalled host reader can't freeze (#36), the host reads it directly,
+/// and its end is reported on the control channel (pb::Exited).
 struct RawBridge {
     sent: std::sync::mpsc::Receiver<()>,
     reading_since: Arc<Mutex<Option<Instant>>>,
-    sock: Arc<File>,
+    /// Bytes written to the host so far.
+    written: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl RawBridge {
@@ -303,11 +254,15 @@ impl RawBridge {
 
 fn raw_bridge(sock: File, local_in: Option<File>, local_out: Option<File>) -> std::io::Result<RawBridge> {
     use std::io::{Read, Write};
-    let sock = Arc::new(sock);
     let reading_since = Arc::new(Mutex::new(None));
+    let written = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (sent_tx, sent) = std::sync::mpsc::channel();
+    // A stream that only carries output stays open until the host has read
+    // what Exited reports and closed its end (rpc::wait_for_host_close). One
+    // that also carries input (the tty) stays open until then anyway.
+    let output_only = local_out.is_none();
     if let Some(mut input) = local_in {
-        let (mut to_host, sock2, since) = (sock.try_clone()?, sock.clone(), reading_since.clone());
+        let (mut to_host, since, count) = (sock.try_clone()?, reading_since.clone(), written.clone());
         std::thread::spawn(move || {
             let mut buf = vec![0u8; 256 * 1024];
             loop {
@@ -319,9 +274,12 @@ fn raw_bridge(sock: File, local_in: Option<File>, local_out: Option<File>) -> st
                 if n == 0 || to_host.write_all(&buf[..n]).is_err() {
                     break;
                 }
+                count.fetch_add(n as u64, Ordering::Release);
             }
-            unsafe { libc::shutdown(sock2.as_raw_fd(), libc::SHUT_WR) };
             let _ = sent_tx.send(());
+            if output_only {
+                crate::rpc::wait_for_host_close(to_host);
+            }
         });
     } else {
         let _ = sent_tx.send(());
@@ -333,7 +291,7 @@ fn raw_bridge(sock: File, local_in: Option<File>, local_out: Option<File>) -> st
             // Dropping `output` closes the child's stdin (eof).
         });
     }
-    Ok(RawBridge { sent, reading_since, sock })
+    Ok(RawBridge { sent, reading_since, written })
 }
 
 /// LANG, LANGUAGE and LC_* from /etc/default/locale (Debian, Ubuntu) or

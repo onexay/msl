@@ -1,57 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-//! vsock:1026: connections to a Unix socket inside a distro, for msld's
-//! connect socket (VS Code managed pipes, #32).
+//! A Unix socket inside a distro for `msl --connect` (VS Code's managed pipes,
+//! #32; MiniInit.OpenStream).
 //!
-//! Request: [version u8 = 1][uid u32 BE][id len u16 BE][id][path len u16 BE][path].
-//! Reply: [status u8] (0 = ok) and, on error, [len u16 BE][message]; after an
-//! ok the connection is a flow-controlled bridge (framed.rs).
-//!
-//! Only `<home>/.vscode-server/msl/<name>.sock` of the requesting user is
+//! Only `<home>/.vscode-server/msl/<name>.sock` of the distro's default user is
 //! allowed, so this can't become a proxy to docker.sock or systemd. The connect
 //! itself runs on a throwaway thread that has joined the distro's mount
 //! namespace and taken the user's uid/gids: symlinks resolve inside the distro
 //! and the kernel checks permissions as that user.
 
 use std::fs::File;
-use std::io::{Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 
-pub const CONNECT_PORT: u32 = 1026;
-const VERSION: u8 = 1;
-
-struct Request {
-    uid: u32,
-    id: String,
-    path: String,
-}
-
-fn read_request(r: &mut impl Read) -> std::io::Result<Request> {
-    let mut b1 = [0u8; 1];
-    r.read_exact(&mut b1)?;
-    if b1[0] != VERSION {
-        return Err(std::io::Error::other("unsupported request version"));
-    }
-    let mut b4 = [0u8; 4];
-    r.read_exact(&mut b4)?;
-    let uid = u32::from_be_bytes(b4);
-    let mut string = || -> std::io::Result<String> {
-        let mut b2 = [0u8; 2];
-        r.read_exact(&mut b2)?;
-        let n = u16::from_be_bytes(b2) as usize;
-        if n > 4096 {
-            return Err(std::io::Error::other("field too long"));
-        }
-        let mut v = vec![0u8; n];
-        r.read_exact(&mut v)?;
-        String::from_utf8(v).map_err(|_| std::io::Error::other("not UTF-8"))
-    };
-    let id = string()?;
-    let path = string()?;
-    Ok(Request { uid, id, path })
-}
-
-/// The only sockets msld may reach: `<home>/.vscode-server/msl/<name>.sock`.
+/// The only sockets that may be reached: `<home>/.vscode-server/msl/<name>.sock`.
 pub fn allowed(path: &str, home: &str) -> bool {
     let home = home.trim_end_matches('/');
     let Some(name) = path.strip_prefix(&format!("{home}/.vscode-server/msl/")) else { return false };
@@ -110,68 +71,16 @@ fn connect_as(pid: i32, uid: u32, gid: u32, groups: Vec<u32>, path: String) -> s
 
 /// A Unix socket in a running distro, as `uid`, within the allowlist (OpenStream).
 pub fn open_unix(uid: u32, id: &str, path: &str) -> Result<UnixStream, String> {
-    open(&Request { uid, id: id.to_string(), path: path.to_string() })
-}
-
-fn open(req: &Request) -> Result<UnixStream, String> {
-    let pid = crate::miniinit::distro_init_pid(&req.id).ok_or("the distro is not running")?;
+    let pid = crate::miniinit::distro_init_pid(id).ok_or("the distro is not running")?;
     let root = format!("/proc/{pid}/root");
     let passwd = std::fs::read_to_string(format!("{root}/etc/passwd")).map_err(|e| format!("/etc/passwd: {e}"))?;
-    let (name, gid, home) = passwd_entry(&passwd, req.uid).ok_or(format!("no user with uid {}", req.uid))?;
-    if !allowed(&req.path, &home) {
-        return Err(format!("{}: not allowed (only {home}/.vscode-server/msl/*.sock)", req.path));
+    let (name, gid, home) = passwd_entry(&passwd, uid).ok_or(format!("no user with uid {uid}"))?;
+    if !allowed(path, &home) {
+        return Err(format!("{path}: not allowed (only {home}/.vscode-server/msl/*.sock)"));
     }
     let mut groups = groups_of(&std::fs::read_to_string(format!("{root}/etc/group")).unwrap_or_default(), &name);
     groups.push(gid);
-    connect_as(pid, req.uid, gid, groups, req.path.clone()).map_err(|e| format!("{}: {e}", req.path))
-}
-
-fn handle(mut conn: File) {
-    let req = match read_request(&mut conn) {
-        Ok(r) => r,
-        Err(e) => return reply_err(&mut conn, &e.to_string()),
-    };
-    let stream = match open(&req) {
-        Ok(s) => s,
-        Err(e) => {
-            crate::sys::log(&format!("connect: {e}"));
-            return reply_err(&mut conn, &e);
-        }
-    };
-    if conn.write_all(&[0]).is_err() {
-        return;
-    }
-    let (Ok(a), Ok(b)) = (stream.try_clone(), stream.try_clone()) else { return };
-    let to_file = |s: UnixStream| File::from(OwnedFd::from(s));
-    let _ = crate::framed::bridge(conn, Some(to_file(a)), Some(to_file(b)));
-    drop(stream);
-}
-
-fn reply_err(conn: &mut File, msg: &str) {
-    let m = &msg.as_bytes()[..msg.len().min(1024)];
-    let mut out = vec![1u8];
-    out.extend_from_slice(&(m.len() as u16).to_be_bytes());
-    out.extend_from_slice(m);
-    let _ = conn.write_all(&out);
-}
-
-pub fn spawn_listener() -> std::io::Result<()> {
-    let listener = tokio_vsock::VsockListener::bind(tokio_vsock::VsockAddr::new(tokio_vsock::VMADDR_CID_ANY, CONNECT_PORT))?;
-    tokio::spawn(async move {
-        loop {
-            let Ok((conn, _)) = listener.accept().await else { continue };
-            let fd = unsafe { libc::dup(conn.as_raw_fd()) };
-            drop(conn);
-            if fd < 0 {
-                continue;
-            }
-            crate::sys::set_blocking(fd);
-            crate::sys::set_cloexec(fd, true);
-            let conn = unsafe { File::from_raw_fd(fd) };
-            std::thread::spawn(move || handle(conn));
-        }
-    });
-    Ok(())
+    connect_as(pid, uid, gid, groups, path.to_string()).map_err(|e| format!("{path}: {e}"))
 }
 
 #[cfg(test)]
@@ -208,19 +117,5 @@ mod tests {
         assert_eq!(passwd_entry(passwd, 1001), None);
         let group = "sudo:x:27:akshay\ndocker:x:999:bob,akshay\nadm:x:4:syslog\n";
         assert_eq!(groups_of(group, "akshay"), vec![27, 999]);
-    }
-
-    #[test]
-    fn parses_request() {
-        let mut b = vec![1u8];
-        b.extend_from_slice(&1000u32.to_be_bytes());
-        for s in ["6dcf52f2-09a6", "/home/a/.vscode-server/msl/x.sock"] {
-            b.extend_from_slice(&(s.len() as u16).to_be_bytes());
-            b.extend_from_slice(s.as_bytes());
-        }
-        let r = read_request(&mut &b[..]).unwrap();
-        assert_eq!((r.uid, r.id.as_str(), r.path.as_str()), (1000, "6dcf52f2-09a6", "/home/a/.vscode-server/msl/x.sock"));
-        b[0] = 2;
-        assert!(read_request(&mut &b[..]).is_err());
     }
 }

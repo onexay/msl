@@ -6,7 +6,7 @@
 //! Stage 2: base mounts, host shares, data disk, Rosetta binfmt, MiniInit gRPC.
 
 use crate::pb::{self, mini_init_server::MiniInit};
-use crate::rpc::{DataPort, status};
+use crate::rpc::status;
 use crate::{archive, config, reaper, sys};
 use nix::mount::MsFlags;
 use nix::unistd::{chdir, chroot};
@@ -17,7 +17,8 @@ use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
@@ -312,9 +313,6 @@ pub fn main() -> sys::Result<()> {
         });
         if let Err(e) = crate::net::spawn_forwarder() {
             sys::log(&format!("forwarder: {e}"));
-        }
-        if let Err(e) = crate::connect::spawn_listener() {
-            sys::log(&format!("connect: {e}"));
         }
         let incoming = crate::rpc::incoming(CONTROL_PORT)?;
         sys::log(&format!("mini-init ready on vsock:{CONTROL_PORT} ({:?})", t0.elapsed()));
@@ -685,6 +683,23 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
     Ok(pb::AttachDiskReply { device: dev, repaired: repaired.join("; ") })
 }
 
+/// A writer that counts the bytes it passes on (an export's length, see pb::Exited).
+struct Counter {
+    inner: std::fs::File,
+    n: Arc<AtomicU64>,
+}
+
+impl std::io::Write for Counter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let k = self.inner.write(buf)?;
+        self.n.fetch_add(k as u64, Ordering::Release);
+        Ok(k)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// A dial-back stream from a request, if it has a usable one.
 fn req_stream(s: Option<pb::HostStream>) -> Option<pb::HostStream> {
     s.filter(|s| !s.token.is_empty() && s.port != 0)
@@ -856,27 +871,15 @@ impl MiniInit for MiniInitService {
         if if own { !is_empty_root(&dir.join("rootfs")) } else { dir.exists() } {
             return Err(Status::already_exists("distribution directory already exists"));
         }
-        let stream = req_stream(req_import.stream);
-        let dp = if stream.is_none() { Some(DataPort::bind().map_err(status)?) } else { None };
+        let stream = req_stream(req_import.stream).ok_or_else(|| Status::invalid_argument("no stream"))?;
         let (tx, rx) = tokio::sync::mpsc::channel(2);
-        if let Some(dp) = &dp {
-            tx.send(Ok(pb::ImportDistroEvent { event: Some(Event::DataPort(dp.port)) })).await.map_err(status)?;
-        }
         tokio::spawn(async move {
             let res = async {
-                // Raw from a stream we dial back, or framed from the host's connection.
-                let conn = match (dp, &stream) {
-                    (Some(dp), _) => dp.accept().await.map_err(status)?,
-                    (None, Some(s)) => crate::rpc::dial_host(s.port, &s.token).await.map_err(status)?,
-                    (None, None) => unreachable!(),
-                };
-                let raw = stream.is_some();
+                let conn = crate::rpc::dial_host(stream.port, &stream.token).await.map_err(status)?;
                 let rootfs = dir.join("rootfs");
                 let d2 = dir.clone();
                 blocking(move || {
-                    let source: Box<dyn std::io::Read + Send> =
-                        if raw { Box::new(conn) } else { Box::new(crate::framed::receiver(conn).map_err(status)?.0) };
-                    let n = archive::unpack(source, &rootfs).map_err(|e| {
+                    let n = archive::unpack(conn, &rootfs).map_err(|e| {
                         if own { clear_root(&rootfs) } else { let _ = std::fs::remove_dir_all(&d2); }
                         Status::invalid_argument(e)
                     })?;
@@ -902,30 +905,18 @@ impl MiniInit for MiniInitService {
             return Err(Status::not_found("distribution root filesystem not found"));
         }
         let format = pb::ExportFormat::try_from(req.format).unwrap_or(pb::ExportFormat::Tar);
-        let stream = req_stream(req.stream);
-        let dp = if stream.is_none() { Some(DataPort::bind().map_err(status)?) } else { None };
+        let stream = req_stream(req.stream).ok_or_else(|| Status::invalid_argument("no stream"))?;
         let (tx, rx) = tokio::sync::mpsc::channel(2);
-        if let Some(dp) = &dp {
-            tx.send(Ok(pb::ExportDistroEvent { event: Some(Event::DataPort(dp.port)) })).await.map_err(status)?;
-        }
         tokio::spawn(async move {
             let res = async {
-                let conn = match (dp, &stream) {
-                    (Some(dp), _) => dp.accept().await.map_err(status)?,
-                    (None, Some(s)) => crate::rpc::dial_host(s.port, &s.token).await.map_err(status)?,
-                    (None, None) => unreachable!(),
-                };
-                let raw = stream.is_some();
+                let conn = crate::rpc::dial_host(stream.port, &stream.token).await.map_err(status)?;
                 blocking(move || {
-                    if raw {
-                        // Dropping the stream at the end is the host's eof.
-                        let n = archive::pack(&rootfs, format, conn).map_err(status)?;
-                        return Ok(pb::ExportDistroDone { entries: n });
-                    }
-                    let (sink, bridge) = crate::framed::sender(conn).map_err(status)?;
-                    let n = archive::pack(&rootfs, format, sink).map_err(status)?; // drops the sink
-                    let _ = bridge.sent.recv(); // everything handed to the host
-                    Ok(pb::ExportDistroDone { entries: n })
+                    let counter = Counter { inner: conn.try_clone().map_err(status)?, n: Arc::new(AtomicU64::new(0)) };
+                    let bytes = counter.n.clone();
+                    let n = archive::pack(&rootfs, format, counter).map_err(status)?;
+                    // msl reads exactly `bytes`, then closes; close ours only after that.
+                    std::thread::spawn(move || crate::rpc::wait_for_host_close(conn));
+                    Ok(pb::ExportDistroDone { entries: n, bytes: bytes.load(Ordering::Acquire) })
                 })
                 .await
             }
@@ -935,7 +926,10 @@ impl MiniInit for MiniInitService {
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 
-    async fn open_stream(&self, req: Request<pb::OpenStreamRequest>) -> Result<Response<pb::Empty>, Status> {
+    type OpenStreamStream = EventStream<pb::OpenStreamEvent>;
+
+    async fn open_stream(&self, req: Request<pb::OpenStreamRequest>) -> Result<Response<Self::OpenStreamStream>, Status> {
+        use pb::open_stream_event::Event;
         let req = req.into_inner();
         check_id(&req.distro_id)?;
         let to_host = req_stream(req.stream).ok_or_else(|| Status::invalid_argument("no stream"))?;
@@ -961,8 +955,16 @@ impl MiniInit for MiniInitService {
             crate::rpc::dial_host(from_host.port, &from_host.token)
         )
         .map_err(status)?;
-        crate::rpc::relay(target, inp, out).map_err(status)?;
-        Ok(Response::new(pb::Empty {}))
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        crate::rpc::relay(target, inp, out, done_tx).map_err(status)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(2);
+        tx.send(Ok(pb::OpenStreamEvent { event: Some(Event::Opened(pb::Empty {})) })).await.map_err(status)?;
+        tokio::spawn(async move {
+            if let Ok(n) = done_rx.await {
+                let _ = tx.send(Ok(pb::OpenStreamEvent { event: Some(Event::Done(n)) })).await;
+            }
+        });
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 
     async fn delete_distro(&self, req: Request<pb::DistroRef>) -> Result<Response<pb::Empty>, Status> {

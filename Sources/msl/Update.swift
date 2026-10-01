@@ -67,6 +67,7 @@ enum Installation {
             fail("Update failed: \(error.localizedDescription)", ErrorCode.service)
         }
         stopService()  // the old msld notices its executable was replaced and exits
+        ManageIDE.refreshInstalled()
         out(Messages.operationCompleted)
         exit(0)
     }

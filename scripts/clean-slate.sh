@@ -129,7 +129,7 @@ for d in "$HOME/.msl/distros" "$HOME/MSL"; do
   echo "-- ${d#$HOME/}:"
   if [ -d "$d" ]; then ls -A "$d" | sed 's/^/  /'; [ -n "$(ls -A "$d")" ] || echo "  (empty)"; else echo "  (missing)"; fi
 done
-echo "-- processes:"; pgrep -lf 'bin/msld|msl-bridge' || echo "(no msld)"
+echo "-- processes:"; pgrep -lf 'bin/msld|msl --connect' || echo "(no msld)"
 
 step "done; log: $LOG"
 }

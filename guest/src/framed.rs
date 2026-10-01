@@ -88,23 +88,11 @@ enum Item {
     Eof,
 }
 
-/// Completion signals for a bridge.
+/// Completion signal for a bridge.
 pub struct Bridge {
-    /// Fires once everything read from `local_in` has been sent (and eof sent).
-    pub sent: std::sync::mpsc::Receiver<()>,
     /// Fires when the whole bridge is finished.
     #[allow(dead_code)]
     pub done: std::sync::mpsc::Receiver<()>,
-    reading_since: Arc<Mutex<Option<std::time::Instant>>>,
-}
-
-impl Bridge {
-    /// How long the sender has been waiting on its local input with nothing
-    /// pending (not waiting for credit). Used to give up on output that a
-    /// background process keeps open.
-    pub fn input_idle(&self) -> std::time::Duration {
-        self.reading_since.lock().unwrap().map(|t| t.elapsed()).unwrap_or_default()
-    }
 }
 
 /// Bridge a framed vsock connection with local endpoints: bytes read from
@@ -118,7 +106,6 @@ pub fn bridge(vsock: File, local_in: Option<File>, local_out: Option<File>) -> i
     let vsock = Arc::new(vsock);
     let credit = Arc::new(Credit { state: Mutex::new((WINDOW, false)), cv: Condvar::new() });
     let queue = Arc::new((Mutex::new(VecDeque::<Item>::new()), Condvar::new()));
-    let (sent_tx, sent_rx) = std::sync::mpsc::channel();
     let (done_tx, done_rx) = std::sync::mpsc::channel();
     // Finished when: our sender is done, and the peer's data has been delivered.
     let remaining = Arc::new(Mutex::new(2u8));
@@ -143,21 +130,16 @@ pub fn bridge(vsock: File, local_in: Option<File>, local_out: Option<File>) -> i
         }
     };
 
-    let reading_since = Arc::new(Mutex::new(None));
     // Sender: local_in -> data frames (within credit) -> eof.
     {
         let writer = writer.clone();
         let credit = credit.clone();
         let call_finish = call_finish.clone();
-        let reading_since = reading_since.clone();
         std::thread::spawn(move || {
             if let Some(mut input) = local_in {
                 let mut buf = vec![0u8; MAX_FRAME];
                 'outer: loop {
-                    *reading_since.lock().unwrap() = Some(std::time::Instant::now());
-                    let r = input.read(&mut buf);
-                    *reading_since.lock().unwrap() = None;
-                    let n = match r {
+                    let n = match input.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => n,
                     };
@@ -172,7 +154,6 @@ pub fn bridge(vsock: File, local_in: Option<File>, local_out: Option<File>) -> i
                 }
             }
             let _ = write_frame(&writer, EOF, &[]);
-            let _ = sent_tx.send(());
             call_finish();
         });
     }
@@ -249,17 +230,19 @@ pub fn bridge(vsock: File, local_in: Option<File>, local_out: Option<File>) -> i
         }
     });
 
-    Ok(Bridge { sent: sent_rx, done: done_rx, reading_since })
+    Ok(Bridge { done: done_rx })
 }
 
-/// A pipe whose read end is sent to the peer (`sink` is the write end, e.g. for tar).
+/// A pipe whose read end is sent to the peer (`sink` is the write end).
+#[cfg(test)]
 pub fn sender(vsock: File) -> io::Result<(File, Bridge)> {
     let (r, w) = std::io::pipe()?;
     let b = bridge(vsock, Some(File::from(std::os::fd::OwnedFd::from(r))), None)?;
     Ok((File::from(std::os::fd::OwnedFd::from(w)), b))
 }
 
-/// A pipe fed with the peer's bytes (`source` is the read end, e.g. for untar).
+/// A pipe fed with the peer's bytes (`source` is the read end).
+#[cfg(test)]
 pub fn receiver(vsock: File) -> io::Result<(File, Bridge)> {
     let (r, w) = std::io::pipe()?;
     let b = bridge(vsock, None, Some(File::from(std::os::fd::OwnedFd::from(w))))?;

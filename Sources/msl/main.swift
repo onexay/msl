@@ -118,34 +118,39 @@ func request(_ r: Request, fds: [Int32] = []) -> Reply {
     }
 }
 
-/// A `direct` request: msld hands over the guest's stream (`.stream`) and msl
+/// A tar-stream request: msld hands over the guest's stream (`.stream`) and msl
 /// moves the data itself, writing `file` to it (`sending`) or reading it into
-/// `file`, then gets the final reply. An older msld uses `file` itself.
+/// `file`, then gets the final reply.
 func streamRequest(_ r: Request, file: Int32, sending: Bool) -> Reply {
     signal(SIGPIPE, SIG_IGN)
     let c = connect()
-    do { try c.send(r, fds: [file]) } catch { fail("Lost connection to msld: \(error)", ErrorCode.service) }
+    do { try c.send(r) } catch { fail("Lost connection to msld: \(error)", ErrorCode.service) }
     let done = DispatchGroup()
+    let end = Streams.Expect()
     while true {
         let reply: Reply
         let fds: [Int32]
         do { (reply, fds) = try c.receive(Reply.self) } catch { fail("Lost connection to msld.", ErrorCode.service) }
-        if case .stream = reply, let s = fds.first {
+        switch reply {
+        case .stream:
+            guard let s = fds.first else { continue }
             if sending {
                 Streams.copy(from: file, to: s, endWrite: true, group: done)
             } else {
-                Streams.copy(from: s, to: file, group: done)
+                Streams.copy(from: s, to: file, group: done, expect: end)
             }
-            continue
+        case .streamEnd(let bytes):
+            end.set(bytes)
+        default:
+            done.wait()
+            return reply
         }
-        done.wait()  // an export is complete once its stream ends (msld already has the guest's result)
-        return reply
     }
 }
 
 func expectOK(_ reply: Reply) {
     switch reply {
-    case .ok, .installed, .distros, .versionInfo, .exited, .mounted, .status, .streams, .stream: return
+    case .ok, .installed, .distros, .versionInfo, .exited, .mounted, .status, .streams, .stream, .ended, .streamEnd: return
     case .failure(let m, let c): fail(m, c)
     }
 }
@@ -159,34 +164,6 @@ func distros() -> [DistroSummary] {
 }
 
 // MARK: - run
-
-extension TTY {
-    /// The descriptors to hand to msld. On macOS, /dev/tty is an alias the kernel
-    /// resolves to the *calling* process's controlling terminal on each read and
-    /// write; msld has none, so a passed /dev/tty descriptor reads nothing (the
-    /// installer's `msl --install … < /dev/tty` hung at the first prompt). Such
-    /// descriptors are replaced with the real terminal device.
-    static func passable(_ fds: [Int32]) -> [Int32] {
-        var alias = stat()
-        guard stat("/dev/tty", &alias) == 0 else { return fds }
-        var real: Int32?
-        return fds.map { fd in
-            var st = stat()
-            guard fstat(fd, &st) == 0, st.st_rdev == alias.st_rdev else { return fd }
-            if real == nil, let path = controllingTerminal() { real = open(path, O_RDWR | O_NOCTTY | O_CLOEXEC) }
-            return real.flatMap { $0 >= 0 ? $0 : nil } ?? fd
-        }
-    }
-
-    /// e.g. "/dev/ttys003", from the kernel's record of this process.
-    static func controllingTerminal() -> String? {
-        var info = proc_bsdinfo()
-        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(getpid(), PROC_PIDTBSDINFO, 0, &info, size) == size,
-              info.e_tdev != UInt32(bitPattern: -1), let name = devname(dev_t(bitPattern: info.e_tdev), S_IFCHR) else { return nil }
-        return "/dev/" + String(cString: name)
-    }
-}
 
 func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
     let tty = (isatty(0) != 0, isatty(1) != 0, isatty(2) != 0)
@@ -204,10 +181,9 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
             if let v = host[name] { req.mslenvValues[name] = v }
         }
     }
-    req.direct = true
     let c = connect()
     do {
-        try c.send(debugShell ? Request.debugShell(req) : Request.run(req), fds: TTY.passable([0, 1, 2]))
+        try c.send(debugShell ? Request.debugShell(req) : Request.run(req))
     } catch {
         fail("Lost connection to msld: \(error)", ErrorCode.service)
     }
@@ -233,9 +209,9 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
         on(sig) { try? c.send(ClientEvent.signal(sig)) }
     }
 
-    // A direct run: msld hands over the session's streams, then reports the exit.
-    // (An older msld relays our stdio itself and only sends the exit.)
-    let done = DispatchGroup()
+    // msld hands over each process's streams (the distro's first-run setup, then
+    // the command), then reports the exit; msl moves the bytes itself.
+    var current: (done: DispatchGroup, stop: Streams.Stop, ends: [Streams.Expect?])?
     while true {
         let reply: Reply
         let fds: [Int32]
@@ -245,19 +221,35 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
         }
         switch reply {
         case .streams(let ttyStream, let stdin, let stdout, let stderr):
+            let done = DispatchGroup(), stop = Streams.Stop()
+            var ends: [Streams.Expect?] = [nil, nil, nil]  // tty, stdout, stderr
             var it = fds.makeIterator()
             if ttyStream, let s = it.next() {
-                // Not half-closed at our eof: it also carries the output (see OpenStreamRequest).
-                if tty.0 { Streams.copy(from: 0, to: s) }
-                Streams.copy(from: s, to: tty.1 ? 1 : 2, group: done)
+                // Not half-closed at our eof: it also carries the output.
+                if tty.0 { Streams.copy(from: 0, to: s, stop: stop) }
+                ends[0] = Streams.Expect()
+                Streams.copy(from: s, to: tty.1 ? 1 : 2, group: done, expect: ends[0])
             }
-            if stdin, let s = it.next() { Streams.copy(from: 0, to: s, endWrite: true) }
-            if stdout, let s = it.next() { Streams.copy(from: s, to: 1, group: done) }
-            if stderr, let s = it.next() { Streams.copy(from: s, to: 2, group: done) }
+            if stdin, let s = it.next() { Streams.copy(from: 0, to: s, endWrite: true, stop: stop) }
+            if stdout, let s = it.next() {
+                ends[1] = Streams.Expect()
+                Streams.copy(from: s, to: 1, group: done, expect: ends[1])
+            }
+            if stderr, let s = it.next() {
+                ends[2] = Streams.Expect()
+                Streams.copy(from: s, to: 2, group: done, expect: ends[2])
+            }
+            current = (done, stop, ends)
+        case .ended(let ttyBytes, let stdoutBytes, let stderrBytes):
+            // The process has exited: stop reading our stdin for it, take
+            // exactly the output it wrote, then the next process (or the exit).
+            if let cur = current {
+                cur.stop.set()
+                for (e, n) in zip(cur.ends, [ttyBytes, stdoutBytes, stderrBytes]) { e?.set(n) }
+                cur.done.wait()
+            }
+            current = nil
         case .exited(let code):
-            // The guest ends each output stream once everything is delivered;
-            // as msld's relay did, stop waiting on one that has gone quiet.
-            Streams.drain(done)
             TTY.restore()
             exit(code)
         case .failure(let m, let code):
@@ -270,51 +262,77 @@ func run(_ spec: RunSpec, debugShell: Bool = false) -> Never {
     }
 }
 
-/// Copying between msl's stdio and a direct run's streams (vsock fds from msld).
+/// Copying between msl's stdio and a process's streams (vsock fds from msld).
 enum Streams {
-    /// When an output copy last read data, and how many are writing now.
-    nonisolated(unsafe) static var lastRead = Date()
-    nonisolated(unsafe) static var writing = 0
-    static let activityLock = NSLock()
+    /// Ends a copy blocked reading its source (a session's stdin, when the next
+    /// session starts): setting it closes the write end of a pipe the copy polls.
+    final class Stop: @unchecked Sendable {
+        private var fds: [Int32] = [-1, -1]
+        init() { _ = pipe(&fds) }
+        var fd: Int32 { fds[0] }
+        func set() { if fds[1] >= 0 { close(fds[1]); fds[1] = -1 } }
+    }
 
-    /// Wait for the output copies in `group`. Give up only when none has read
-    /// anything for 2 s and none is writing (a slow reader such as a paused
-    /// `less` keeps us here): the process has exited, so such a stream is one
-    /// the guest won't finish.
-    static func drain(_ group: DispatchGroup) {
-        while group.wait(timeout: .now() + 0.1) == .timedOut {
-            if activityLock.withLock({ writing == 0 && Date().timeIntervalSince(lastRead) > 2 }) { return }
+    /// How many bytes an output stream carries, which the guest reports over
+    /// msld (Reply.ended / .streamEnd) once it has written them all. The vsock's
+    /// own end isn't reliable on VZ: a guest close can drop the tail, and a
+    /// half-close can go missing. The copy reads with plain blocking reads; if
+    /// it already has everything when the count arrives, `set` shuts down the
+    /// source's read side, which ends the blocked read.
+    final class Expect: @unchecked Sendable {
+        private let lock = NSLock()
+        private var bytes: UInt64?
+        private var got: UInt64 = 0
+        private var source: Int32 = -1
+        /// The copy is reading `fd`.
+        fileprivate func start(_ fd: Int32) { lock.withLock { source = fd } }
+        /// `n` more bytes copied; true once that's everything.
+        fileprivate func add(_ n: Int) -> Bool { lock.withLock { got += UInt64(n); return complete } }
+        fileprivate var isComplete: Bool { lock.withLock { complete } }
+        /// The copy has closed its source.
+        fileprivate func finish() { lock.withLock { source = -1 } }
+        private var complete: Bool { bytes.map { got >= $0 } ?? false }
+        func set(_ n: UInt64) {
+            lock.withLock {
+                bytes = n
+                if complete && source >= 0 { shutdown(source, SHUT_RD) }
+            }
         }
     }
 
-    /// Copy `from` -> `to` on a thread until eof. `endWrite`: shut down the
-    /// write side of `to` at eof (stdin's eof for the process). An output stream
-    /// whose destination is gone (`msl … | head`) is closed, so the process gets
-    /// SIGPIPE as it would locally. `group` is left when the copy ends.
+    /// Copy `from` -> `to` on a thread. An input copy (`stop`) runs until eof
+    /// or `stop`, and with `endWrite` shuts down the write side of `to` at eof
+    /// (stdin's eof for the process). An output copy (`expect`) runs until it
+    /// has the expected bytes (or eof), then closes `from`: the guest closes its
+    /// end only after that. An output whose destination is gone (`msl … | head`)
+    /// is closed too, so the process gets SIGPIPE as it would locally. `group`
+    /// is left when the copy ends.
     @discardableResult
-    static func copy(from: Int32, to: Int32, endWrite: Bool = false, group: DispatchGroup? = nil) -> Thread {
+    static func copy(from: Int32, to: Int32, endWrite: Bool = false, group: DispatchGroup? = nil, stop: Stop? = nil, expect: Expect? = nil) -> Thread {
         group?.enter()
+        expect?.start(from)
         let t = Thread {
             var buf = [UInt8](repeating: 0, count: 256 * 1024)
-            outer: while true {
+            outer: while expect?.isComplete != true {
+                if let stop {
+                    var p = [pollfd(fd: from, events: Int16(POLLIN), revents: 0), pollfd(fd: stop.fd, events: Int16(POLLIN), revents: 0)]
+                    if poll(&p, 2, -1) < 0 && errno == EINTR { continue }
+                    if p[1].revents != 0 && p[0].revents == 0 { group?.leave(); return }  // stopped: no eof for the stream
+                }
                 let n = read(from, &buf, buf.count)
                 if n < 0 && errno == EINTR { continue }
                 if n <= 0 { break }
-                let output = group != nil
-                if output { activityLock.withLock { lastRead = Date(); writing += 1 } }
-                defer { if output { activityLock.withLock { writing -= 1 } } }
                 var off = 0
                 while off < n {
                     let w = buf.withUnsafeBytes { write(to, $0.baseAddress! + off, n - off) }
                     if w < 0 && errno == EINTR { continue }
-                    if w <= 0 {
-                        if group != nil { close(from) }  // our reader is gone: the guest's writes fail
-                        break outer
-                    }
+                    if w <= 0 { break outer }
                     off += w
                 }
+                if expect?.add(n) == true { break }
             }
             if endWrite { shutdown(to, SHUT_WR) }
+            if let expect { expect.finish(); close(from) }
             group?.leave()
         }
         t.start()
@@ -435,7 +453,7 @@ case .export(let name, let file, let format):
     }
     let fd = openOutput(file)
     if file != "-" { out(Messages.exportProgress) }
-    expectOK(streamRequest(.export(name: name, format: format ?? "tar", direct: true), file: fd, sending: false))
+    expectOK(streamRequest(.export(name: name, format: format ?? "tar"), file: fd, sending: false))
     if file != "-" { out(Messages.operationCompleted) }
 
 case .importTar(let name, let location, let file, let version, let vhd):
@@ -449,7 +467,7 @@ case .importTar(let name, let location, let file, let version, let vhd):
     }
     let fd = openInput(file)
     out(Messages.importProgress)
-    expectOK(streamRequest(.importTar(name: name, location: absolutePath(location), direct: true), file: fd, sending: true))
+    expectOK(streamRequest(.importTar(name: name, location: absolutePath(location)), file: fd, sending: true))
     out(Messages.operationCompleted)
 
 case .install(let spec):
@@ -473,7 +491,7 @@ case .install(let spec):
         out(Messages.installing(entry.FriendlyName))
     }
     let fd = openInput(file)
-    let reply = streamRequest(.installFromFile(name: name, location: spec.location.map(absolutePath), sourceDescription: file, vhdSize: spec.vhdSize, direct: true),
+    let reply = streamRequest(.installFromFile(name: name, location: spec.location.map(absolutePath), sourceDescription: file, vhdSize: spec.vhdSize),
                               file: fd, sending: true)
     expectOK(reply)
     guard case .installed(let name) = reply else { exit(failureExit) }
@@ -534,9 +552,14 @@ case .connect(let req):
         exit(failureExit)
     }
     // One stream each way: ending ours never cuts the target's reply short.
-    let done = DispatchGroup()
+    // The target's output ends with the byte count msld relays (.streamEnd).
+    let done = DispatchGroup(), end = Streams.Expect()
     Streams.copy(from: 0, to: fds[0], endWrite: true)
-    Streams.copy(from: fds[1], to: 1, group: done)
+    Streams.copy(from: fds[1], to: 1, group: done, expect: end)
+    while case .streamEnd(let bytes)? = try? c.receive(Reply.self).0 {
+        end.set(bytes)
+        break
+    }
     done.wait()
     exit(0)
 

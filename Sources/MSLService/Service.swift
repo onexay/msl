@@ -74,7 +74,6 @@ public final class Service: @unchecked Sendable {
         _ = executableInode
         handleTermination()
         log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)\(launchd != nil ? " (launchd)" : "")")
-        serveConnect()
         startIdleMonitor()
         while true {
             let c = accept(lfd, nil, nil)
@@ -237,22 +236,22 @@ public final class Service: @unchecked Sendable {
             files.syncLinks()
             if let disk = d.disk { removeDisk(disk, location: d.location) }  // as WSL deletes ext4.vhdx
             return .ok
-        case .export(let name, let format, let direct):
+        case .export(let name, let format):
             let d = try find(name)
-            try export(d, format: format, to: fds[0], direct: direct == true ? conn : nil)
+            try export(d, format: format, conn: conn)
             return .ok
         case .connect(let distro, let unix, let tcp):
             return try connectStream(distro: distro, unix: unix, tcp: tcp, conn: conn)
-        case .importTar(let name, let location, let vhdSize, let direct):
+        case .importTar(let name, let location, let vhdSize):
             guard Registry.isValidName(name) else {
                 throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
             }
             guard registry.find(name: name) == nil else {
                 throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
             }
-            _ = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0], direct: direct == true ? conn : nil)
+            _ = try importDistro(name: name, location: location, vhdSize: vhdSize, conn: conn)
             return .ok
-        case .installFromFile(let name, let location, _, let vhdSize, let direct):
+        case .installFromFile(let name, let location, _, let vhdSize):
             if let name {
                 guard Registry.isValidName(name) else {
                     throw ServiceError(Messages.invalidDistributionName(name), code: ErrorCode.invalidName)
@@ -261,7 +260,7 @@ public final class Service: @unchecked Sendable {
                     throw ServiceError(Messages.distroNameAlreadyExists, code: ErrorCode.alreadyExists)
                 }
             }
-            let rec = try importDistro(name: name, location: location, vhdSize: vhdSize, from: fds[0], direct: direct == true ? conn : nil)
+            let rec = try importDistro(name: name, location: location, vhdSize: vhdSize, conn: conn)
             return .installed(name: rec.name)
         case .exportDisk(let name, let path):
             try exportDisk(try find(name), to: URL(fileURLWithPath: path))
@@ -283,10 +282,8 @@ public final class Service: @unchecked Sendable {
             try manage(try find(name), op)
             return .ok
         case .run(let r):
-            guard fds.count == 3 else { throw ServiceError("missing stdio", code: ErrorCode.invalidArgument) }
-            return .exited(try run(r, stdio: fds, conn: conn))
+            return .exited(try run(r, conn: conn))
         case .debugShell(let r):
-            guard fds.count == 3 else { throw ServiceError("missing stdio", code: ErrorCode.invalidArgument) }
             try bootVM()
             let agent = try guest.agent(port: VMHost.controlPort)  // mini-init also serves Agent
             var req = Msl_V1_RunRequest()
@@ -295,11 +292,14 @@ public final class Service: @unchecked Sendable {
             apply(r, to: &req)
             let events = EventRouter(conn: conn)
             defer { events.finish() }
-            return .exited(try session(agent: agent, request: req, stdio: fds, events: events, direct: r.direct == true ? conn : nil))
+            return .exited(try session(agent: agent, request: req, conn: conn, events: events))
         }
     }
 
-    func directSession(agent: Msl_V1_Agent.Client<Transport>, request: Msl_V1_RunRequest, conn: IPCConnection, events: EventRouter) throws -> Int32 {
+    /// Run one process: the guest dials its streams back to one-shot host ports,
+    /// msl gets their fds (`.streams`) and moves the bytes itself; msld only sets
+    /// up, forwards resize/signal events and reports the exit.
+    func session(agent: Msl_V1_Agent.Client<Transport>, request: Msl_V1_RunRequest, conn: IPCConnection, events: EventRouter) throws -> Int32 {
         defer { events.detach() }
         var token = [UInt8](repeating: 0, count: 16)
         arc4random_buf(&token, token.count)
@@ -327,6 +327,7 @@ public final class Service: @unchecked Sendable {
                         try conn.send(Reply.streams(tty: wanted.tty, stdin: wanted.stdin, stdout: wanted.stdout, stderr: wanted.stderr), fds: fds)
                     case .exited(let e):
                         exit = e.code
+                        try conn.send(Reply.ended(tty: e.ttyBytes, stdout: e.stdoutBytes, stderr: e.stderrBytes))
                     case .none:
                         break
                     }
@@ -363,29 +364,52 @@ public final class Service: @unchecked Sendable {
         let mini = try guest.miniInit
         let toHost = Msl_V1_HostStream.with { $0.token = Data(token); $0.port = out.port }
         let fromHost = Msl_V1_HostStream.with { $0.token = Data(token); $0.port = inp.port }
-        do {
-            _ = try blocking {
-                try await mini.openStream(.with {
-                    $0.stream = toHost
-                    $0.fromHost = fromHost
-                    $0.distroID = d.id
-                    $0.uid = d.defaultUid
-                    if let unix { $0.unixPath = unix }
-                    if let tcp { $0.tcpPort = UInt32(tcp) }
-                })
+        let request = Msl_V1_OpenStreamRequest.with {
+            $0.stream = toHost
+            $0.fromHost = fromHost
+            $0.distroID = d.id
+            $0.uid = d.defaultUid
+            if let unix { $0.unixPath = unix }
+            if let tcp { $0.tcpPort = UInt32(tcp) }
+        }
+        // The RPC runs while msl uses the streams: `opened` hands them over,
+        // `done` tells msl how much the target sent (see Reply.streamEnd).
+        let opened = DispatchSemaphore(value: 0)
+        let failure = ResultBox<Void>()
+        let call = Task.detached {
+            do {
+                try await mini.openStream(request) { response in
+                    for try await event in response.messages {
+                        switch event.event {
+                        case .opened:
+                            let fds = [try inp.wait(), try out.wait()]
+                            defer { fds.forEach { close($0) } }
+                            try conn.send(Reply.streams(tty: false, stdin: true, stdout: true, stderr: false), fds: fds)
+                            opened.signal()
+                        case .done(let n):
+                            try? conn.send(Reply.streamEnd(bytes: n))
+                        case .none:
+                            break
+                        }
+                    }
+                }
+            } catch {
+                failure.result = .failure(error)
+                opened.signal()
             }
-        } catch let e as RPCError {
+        }
+        opened.wait()
+        if case .failure(let error)? = failure.result {
             vm.unlisten(port: out.port)
             vm.unlisten(port: inp.port)
-            throw ServiceError(e.message, code: ErrorCode.service)
+            let message = (error as? RPCError)?.message ?? (error as? ServiceError)?.message ?? "\(error)"
+            throw ServiceError(message, code: ErrorCode.service)
         }
-        let fds = [try inp.wait(), try out.wait()]
-        try conn.send(Reply.streams(tty: false, stdin: true, stdout: true, stderr: false), fds: fds)
-        fds.forEach { close($0) }
         idle.beginSession(distro: d.id)
         defer { idle.endSession(distro: d.id) }
-        // msl holds the connection open for as long as it uses the stream.
+        // msl holds the connection open for as long as it uses the streams.
         while (try? conn.receive(ClientEvent.self)) != nil {}
+        call.cancel()
         return .ok
     }
 
@@ -614,7 +638,7 @@ public final class Service: @unchecked Sendable {
     /// Import a rootfs tar as a new distro on its own disk: `<location>/ext4.img`
     /// (the location defaults to msl's `distros/<id>`). With MSL_LEGACY_STORE
     /// set (tests), it goes to the shared data.img instead, as before #50.
-    func importDistro(name: String?, location: String?, vhdSize: UInt64?, from input: Int32, direct: IPCConnection? = nil) throws -> DistroRecord {
+    func importDistro(name: String?, location: String?, vhdSize: UInt64?, conn: IPCConnection) throws -> DistroRecord {
         let id = UUID().uuidString.lowercased()
         let folder = URL(fileURLWithPath: location ?? paths.root.appendingPathComponent("distros/\(id)").path).standardizedFileURL
         var rec = DistroRecord(id: id, name: name ?? "", location: folder.path)
@@ -636,26 +660,13 @@ public final class Service: @unchecked Sendable {
         try bootVM()
         try ownDisks.ensureAttached(rec)
         let mini = try guest.miniInit
-        let vm = self.vm
         let done: Msl_V1_ImportDistroDone
-        let stream = direct.map { handOff(to: $0) }
+        let stream = handOff(to: conn)
         do {
             done = try blocking {
-                try await mini.importDistro(.with { $0.id = id; if let s = stream { $0.stream = s } }) { response in
-                    var pumping = false
-                    let finished = Completion()
+                try await mini.importDistro(.with { $0.id = id; $0.stream = stream }) { response in
                     for try await event in response.messages {
-                        switch event.event {
-                        case .dataPort(let port):
-                            let v = try vm.connect(port: port)
-                            pumping = true
-                            let b = FramedBridge(vsock: v, localIn: input, localOut: nil)
-                            Task { await b.sent.wait(); finished.signal() }
-                        case .done(let d):
-                            if pumping { await finished.wait() }
-                            return d
-                        case .none: break
-                        }
+                        if case .done(let d) = event.event { return d }
                     }
                     throw ServiceError(Messages.importFailed, code: ErrorCode.importFailed)
                 }
@@ -721,7 +732,7 @@ public final class Service: @unchecked Sendable {
         }
     }
 
-    func export(_ d: DistroRecord, format: String, to output: Int32, direct: IPCConnection? = nil) throws {
+    func export(_ d: DistroRecord, format: String, conn: IPCConnection) throws {
         let fmt: Msl_V1_ExportFormat
         switch format {
         case "", "tar": fmt = .tar
@@ -732,23 +743,13 @@ public final class Service: @unchecked Sendable {
         try bootVM()
         try ownDisks.ensureAttached(d)
         let mini = try guest.miniInit
-        let vm = self.vm
-        let stream = direct.map { handOff(to: $0) }
+        let stream = handOff(to: conn)
         _ = try blocking {
-            try await mini.exportDistro(.with { $0.id = d.id; $0.format = fmt; if let s = stream { $0.stream = s } }) { response in
-                var pumping = false
-                let finished = Completion()
+            try await mini.exportDistro(.with { $0.id = d.id; $0.format = fmt; $0.stream = stream }) { response in
                 for try await event in response.messages {
-                    switch event.event {
-                    case .dataPort(let port):
-                        let v = try vm.connect(port: port)
-                        pumping = true
-                        let b = FramedBridge(vsock: v, localIn: nil, localOut: output)
-                        Task { await b.delivered.wait(); finished.signal() }
-                    case .done:
-                        if pumping { await finished.wait() }
+                    if case .done(let done) = event.event {
+                        try conn.send(Reply.streamEnd(bytes: done.bytes))
                         return true
-                    case .none: break
                     }
                 }
                 return false
@@ -783,7 +784,7 @@ public final class Service: @unchecked Sendable {
         return try guest.agent(port: reply.agentPort)
     }
 
-    func run(_ r: RunRequest, stdio: [Int32], conn: IPCConnection) throws -> Int32 {
+    func run(_ r: RunRequest, conn: IPCConnection) throws -> Int32 {
         var d = try resolveDistro(r.spec)
         let agent = try startDistro(d)
         let events = EventRouter(conn: conn)
@@ -801,7 +802,7 @@ public final class Service: @unchecked Sendable {
             // WSL_DISTRO_NAME only here: Ubuntu's wsl-setup uses `set -u`.
             oobe.env = r.env.merging(["WSL_DISTRO_NAME": d.name, "MSL_MACOS_USER": NSUserName()]) { $1 }
             apply(r, to: &oobe)
-            let code = try session(agent: agent, request: oobe, stdio: stdio, events: events)
+            let code = try session(agent: agent, request: oobe, conn: conn, events: events)
             guard code == 0 else { return code }
             try registry.update(id: d.id) {
                 $0.oobePending = false
@@ -828,7 +829,7 @@ public final class Service: @unchecked Sendable {
         req.mslenvValues = r.mslenvValues
         req.macHome = r.macHome
         apply(r, to: &req)
-        return try session(agent: agent, request: req, stdio: stdio, events: events, direct: r.direct == true ? conn : nil)
+        return try session(agent: agent, request: req, conn: conn, events: events)
     }
 
     private func apply(_ r: RunRequest, to req: inout Msl_V1_RunRequest) {
@@ -841,64 +842,6 @@ public final class Service: @unchecked Sendable {
 
     /// Run one process: bridge msl's stdio to the guest streams, forward
     /// resize/signal events, return the exit code.
-    /// Run one process. With `direct` (the msl connection of a RunRequest.direct),
-    /// the guest dials its streams back to one-shot host ports and msl gets their
-    /// fds: msld only sets up and reports the exit. Otherwise msld relays msl's
-    /// `stdio` through framed bridges.
-    func session(agent: Msl_V1_Agent.Client<Transport>, request: Msl_V1_RunRequest, stdio: [Int32], events: EventRouter, direct: IPCConnection? = nil) throws -> Int32 {
-        if let direct { return try directSession(agent: agent, request: request, conn: direct, events: events) }
-        let vm = self.vm
-        let stop = StopFlag()
-        let bridges = BridgeSet()
-        defer { events.detach() }
-
-        let code: Int32 = try blocking {
-            try await agent.run(request) { response in
-                var exit: Int32 = 255
-                for try await event in response.messages {
-                    switch event.event {
-                    case .started(let s):
-                        events.attach(agent: agent, session: s.sessionID)
-                        func open(_ port: UInt32) throws -> Int32? { port == 0 ? nil : try vm.connect(port: port) }
-                        if let tty = try open(s.ttyPort) {
-                            let sink = request.stdoutTty ? stdio[1] : request.stderrTty ? stdio[2] : stdio[1]
-                            bridges.add(FramedBridge(vsock: tty, localIn: request.stdinTty ? stdio[0] : nil, localOut: sink, stop: stop), output: true)
-                        }
-                        if let sin = try open(s.stdinPort) {
-                            bridges.add(FramedBridge(vsock: sin, localIn: stdio[0], localOut: nil, stop: stop), output: false)
-                        }
-                        if let sout = try open(s.stdoutPort) {
-                            bridges.add(FramedBridge(vsock: sout, localIn: nil, localOut: stdio[1]), output: true)
-                        }
-                        if let serr = try open(s.stderrPort) {
-                            bridges.add(FramedBridge(vsock: serr, localIn: nil, localOut: stdio[2]), output: true)
-                        }
-                    case .exited(let e):
-                        exit = e.code
-                    case .none:
-                        break
-                    }
-                }
-                return exit
-            }
-        }
-        // Deliver all output (however slow the reader); stop only waiting on a
-        // stream the guest gave up on (a background process keeps it open).
-        for b in bridges.outputs {
-            while !b.delivered.isSignaled && !b.quiet(for: 2) { usleep(20_000) }
-        }
-        stop.set()
-        bridges.all.forEach { $0.abort() }
-        return code
-    }
-}
-
-final class BridgeSet: @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [(FramedBridge, Bool)] = []
-    func add(_ b: FramedBridge, output: Bool) { lock.withLock { items.append((b, output)) } }
-    var outputs: [FramedBridge] { lock.withLock { items.filter(\.1).map(\.0) } }
-    var all: [FramedBridge] { lock.withLock { items.map(\.0) } }
 }
 
 /// Reads resize/signal events from one msl connection (a single reader for the

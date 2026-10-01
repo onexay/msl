@@ -16,11 +16,6 @@ final class FramedBridge: @unchecked Sendable {
     static let maxFrame = 64 << 10
     static let creditBatch = 128 << 10
 
-    /// Everything read from `localIn` has been sent (eof sent).
-    let sent = Completion()
-    /// All of the peer's data has been written to `localOut` (peer eof reached).
-    let delivered = Completion()
-
     private let vsock: Int32
     private let wlock = NSLock()
     private let creditCond = NSCondition()
@@ -29,18 +24,15 @@ final class FramedBridge: @unchecked Sendable {
     private let queueCond = NSCondition()
     private var queue: [[UInt8]?] = []  // nil = peer eof
     private let stateLock = NSLock()
-    private var lastFrame = Date()
     private var remaining = 2     // sender + local writer
     private var threadsLeft = 3   // + receiver; the socket is closed when all are done
     private var closed = false
 
-    /// - localIn: read and send to the guest (nil: send eof at once). With
-    ///   `stop`, the sender can be abandoned (e.g. a client stdin).
+    /// - localIn: read and send to the guest (nil: send eof at once).
     /// - localOut: receives the guest's bytes. At the guest's eof it is
     ///   `shutdown(SHUT_WR)` if `shutdownOnEOF` (sockets).
     /// - ownsLocal: close localIn/localOut when finished.
-    init(vsock: Int32, localIn: Int32?, localOut: Int32?, stop: StopFlag? = nil,
-         shutdownOnEOF: Bool = false, ownsLocal: Bool = false) {
+    init(vsock: Int32, localIn: Int32?, localOut: Int32?, shutdownOnEOF: Bool = false, ownsLocal: Bool = false) {
         self.vsock = vsock
         let finishLocal: () -> Void = {
             guard ownsLocal else { return }
@@ -52,7 +44,6 @@ final class FramedBridge: @unchecked Sendable {
             if let input = localIn {
                 var buf = [UInt8](repeating: 0, count: Self.maxFrame)
                 outer: while true {
-                    if let stop, !stop.waitReadable(input) { break }
                     let n = buf.withUnsafeMutableBytes { read(input, $0.baseAddress!, $0.count) }
                     if n < 0 && errno == EINTR { continue }
                     if n <= 0 { break }
@@ -65,7 +56,6 @@ final class FramedBridge: @unchecked Sendable {
                 }
             }
             _ = writeFrame(2, [])
-            sent.signal()
             finishOne(finishLocal)
             threadDone()
         }
@@ -90,7 +80,6 @@ final class FramedBridge: @unchecked Sendable {
                     owed = 0
                 }
             }
-            delivered.signal()
             finishOne(finishLocal)
             threadDone()
         }
@@ -98,7 +87,6 @@ final class FramedBridge: @unchecked Sendable {
         Thread.detachNewThread { [self] in  // receiver: always drains the socket
             var eof = false
             while let (kind, payload) = readFrame() {
-                stateLock.withLock { lastFrame = Date() }
                 switch kind {
                 case 0: push(payload)
                 case 1 where payload.count == 4:
@@ -117,16 +105,6 @@ final class FramedBridge: @unchecked Sendable {
             threadDone()
         }
     }
-
-    /// Nothing from the guest for `seconds` and nothing left to write: the guest
-    /// gave up on this stream (e.g. a background process holds the output open).
-    func quiet(for seconds: TimeInterval) -> Bool {
-        let idle = stateLock.withLock { Date().timeIntervalSince(lastFrame) > seconds }
-        return idle && queueCond.withLock { queue.isEmpty }
-    }
-
-    /// Tear the connection down now.
-    func abort() { shutdownSocket() }
 
     /// shutdown() only while we still own the fd (never on a reused number).
     private func shutdownSocket() {

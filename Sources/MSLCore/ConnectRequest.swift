@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// The header line on msld's connect socket (MSLService/Connect.swift):
-/// `CONNECT distro=<name> unix=<absolute path>` or `CONNECT distro=<name> tcp=<port>`.
+/// `msl --connect <distro> unix=<absolute path>|tcp=<port>`: a byte stream to a
+/// Unix socket or a localhost TCP port in a distro (VS Code's managed pipes).
 public struct ConnectRequest: Equatable, Sendable {
     public enum Target: Equatable, Sendable {
         case unix(String)
@@ -16,12 +16,9 @@ public struct ConnectRequest: Equatable, Sendable {
         self.target = target
     }
 
-    public init?(line: String) {
-        let prefix = "CONNECT distro="
-        guard line.hasPrefix(prefix) else { return nil }
-        let rest = line.dropFirst(prefix.count)
-        guard let sp = rest.firstIndex(of: " "), sp > rest.startIndex else { return nil }
-        let arg = rest[rest.index(after: sp)...]
+    /// `target` is `unix=<absolute path>` or `tcp=<port>`.
+    public init?(distro: String, target arg: String) {
+        guard !distro.isEmpty else { return nil }
         if arg.hasPrefix("unix="), arg.dropFirst(5).hasPrefix("/") {
             target = .unix(String(arg.dropFirst(5)))
         } else if arg.hasPrefix("tcp="), let port = UInt16(arg.dropFirst(4)), port > 0 {
@@ -29,6 +26,6 @@ public struct ConnectRequest: Equatable, Sendable {
         } else {
             return nil
         }
-        distro = String(rest[..<sp])
+        self.distro = distro
     }
 }
