@@ -3,7 +3,7 @@
 //! over one-shot vsock data ports.
 
 use crate::pb::{self, RunEvent, RunRequest, ShellType, run_event};
-use crate::rpc::{DataPort, status};
+use crate::rpc::{DataPort, dial_host, status};
 use crate::{config, framed, reaper, users};
 use std::collections::HashMap;
 use std::fs::File;
@@ -11,7 +11,8 @@ use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tonic::Status;
 
@@ -133,27 +134,40 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
     } else {
         None
     };
-    let bind = |need: bool| -> Result<Option<DataPort>, Status> { if need { DataPort::bind().map(Some).map_err(status) } else { Ok(None) } };
-    let tty_dp = bind(any_tty)?;
-    let in_dp = bind(!req.stdin_tty)?;
-    let out_dp = bind(!req.stdout_tty)?;
-    let err_dp = bind(!req.stderr_tty)?;
-
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let port = |d: &Option<DataPort>| d.as_ref().map(|d| d.port).unwrap_or(0);
-    let started = pb::Started { session_id: id, tty_port: port(&tty_dp), stdin_port: port(&in_dp), stdout_port: port(&out_dp), stderr_port: port(&err_dp) };
-    tx.send(Ok(RunEvent { event: Some(run_event::Event::Started(started)) })).await.map_err(status)?;
-
-    async fn accept(d: Option<DataPort>) -> Result<Option<File>, Status> {
-        match d {
-            Some(d) => d.accept().await.map(Some).map_err(status),
-            None => Ok(None),
+    // Raw streams the host asked us to dial (guest-initiated), or data ports the
+    // host connects to (framed).
+    let dial_back = req.dial_back.clone().filter(|d| !d.token.is_empty());
+    let (tty_conn, in_conn, out_conn, err_conn) = if let Some(d) = &dial_back {
+        async fn dial(port: u32, token: &[u8]) -> Result<Option<File>, Status> {
+            if port == 0 { Ok(None) } else { dial_host(port, token).await.map(Some).map_err(status) }
         }
-    }
-    let (tty_conn, in_conn, out_conn, err_conn) = tokio::try_join!(accept(tty_dp), accept(in_dp), accept(out_dp), accept(err_dp))?;
+        let t = &d.token;
+        let conns = tokio::try_join!(dial(d.tty_port, t), dial(d.stdin_port, t), dial(d.stdout_port, t), dial(d.stderr_port, t))?;
+        let started = pb::Started { session_id: id, ..Default::default() };
+        tx.send(Ok(RunEvent { event: Some(run_event::Event::Started(started)) })).await.map_err(status)?;
+        conns
+    } else {
+        let bind = |need: bool| -> Result<Option<DataPort>, Status> { if need { DataPort::bind().map(Some).map_err(status) } else { Ok(None) } };
+        let tty_dp = bind(any_tty)?;
+        let in_dp = bind(!req.stdin_tty)?;
+        let out_dp = bind(!req.stdout_tty)?;
+        let err_dp = bind(!req.stderr_tty)?;
+        let port = |d: &Option<DataPort>| d.as_ref().map(|d| d.port).unwrap_or(0);
+        let started = pb::Started { session_id: id, tty_port: port(&tty_dp), stdin_port: port(&in_dp), stdout_port: port(&out_dp), stderr_port: port(&err_dp) };
+        tx.send(Ok(RunEvent { event: Some(run_event::Event::Started(started)) })).await.map_err(status)?;
+        async fn accept(d: Option<DataPort>) -> Result<Option<File>, Status> {
+            match d {
+                Some(d) => d.accept().await.map(Some).map_err(status),
+                None => Ok(None),
+            }
+        }
+        tokio::try_join!(accept(tty_dp), accept(in_dp), accept(out_dp), accept(err_dp))?
+    };
+    let raw = dial_back.is_some();
 
-    // Child stdio: the PTY slave for tty fds, pipes for the others. Every stream
-    // to the host goes through a flow-controlled bridge (see framed.rs).
+    // Child stdio: the PTY slave for tty fds, pipes for the others. Each stream
+    // to the host is a raw copy (dial-back) or a flow-controlled bridge (framed.rs).
     let slave_stdio = |p: &Option<nix::pty::OpenptyResult>| -> Result<Stdio, Status> {
         let s = p.as_ref().unwrap().slave.try_clone().map_err(status)?;
         Ok(Stdio::from(s))
@@ -192,23 +206,30 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
         File::from(x.into())
     }
     // Streams whose output we must deliver before reporting the exit.
-    let mut outputs: Vec<framed::Bridge> = Vec::new();
+    let mut outputs: Vec<Output> = Vec::new();
+    let bridge = |conn: File, local_in: Option<File>, local_out: Option<File>| -> Result<Output, Status> {
+        if raw {
+            raw_bridge(conn, local_in, local_out).map(Output::Raw).map_err(status)
+        } else {
+            framed::bridge(conn, local_in, local_out).map(Output::Framed).map_err(status)
+        }
+    };
     let mut master_for_map = None;
     if let (Some(p), Some(conn)) = (pty, tty_conn) {
         drop(p.slave);
         master_for_map = Some(p.master.try_clone().map_err(status)?);
         let m_in = File::from(p.master.try_clone().map_err(status)?);
         let m_out = File::from(p.master);
-        outputs.push(framed::bridge(conn, Some(m_in), Some(m_out)).map_err(status)?);
+        outputs.push(bridge(conn, Some(m_in), Some(m_out))?);
     }
     if let (Some(conn), Some(sin)) = (in_conn, child.stdin.take()) {
-        framed::bridge(conn, None, Some(file(sin))).map_err(status)?;
+        bridge(conn, None, Some(file(sin)))?;
     }
     if let (Some(conn), Some(sout)) = (out_conn, child.stdout.take()) {
-        outputs.push(framed::bridge(conn, Some(file(sout)), None).map_err(status)?);
+        outputs.push(bridge(conn, Some(file(sout)), None)?);
     }
     if let (Some(conn), Some(serr)) = (err_conn, child.stderr.take()) {
-        outputs.push(framed::bridge(conn, Some(file(serr)), None).map_err(status)?);
+        outputs.push(bridge(conn, Some(file(serr)), None)?);
     }
     sessions().lock().unwrap().insert(id, Handle { pid, master: master_for_map });
 
@@ -218,18 +239,101 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
     let drained = tokio::task::spawn_blocking(move || {
         for b in outputs {
             loop {
-                match b.sent.recv_timeout(std::time::Duration::from_millis(50)) {
+                match b.sent().recv_timeout(Duration::from_millis(50)) {
                     Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(_) if b.input_idle() > std::time::Duration::from_secs(2) => break,
+                    Err(_) if b.input_idle() > Duration::from_secs(2) => break,
                     Err(_) => {}
                 }
             }
+            // A raw stream's eof tells the host this output is complete.
+            b.end();
         }
     });
     let _ = drained.await;
     sessions().lock().unwrap().remove(&id);
     let _ = tx.send(Ok(RunEvent { event: Some(run_event::Event::Exited(pb::Exited { code })) })).await;
     Ok(())
+}
+
+/// A stream to the host whose output is delivered before Exited.
+enum Output {
+    Framed(framed::Bridge),
+    Raw(RawBridge),
+}
+
+impl Output {
+    fn sent(&self) -> &std::sync::mpsc::Receiver<()> {
+        match self {
+            Output::Framed(b) => &b.sent,
+            Output::Raw(b) => &b.sent,
+        }
+    }
+
+    fn input_idle(&self) -> Duration {
+        match self {
+            Output::Framed(b) => b.input_idle(),
+            Output::Raw(b) => b.input_idle(),
+        }
+    }
+
+    /// Raw: shut down the write side (eof for the host), also when a background
+    /// process still holds the output open. Framed: the host stops on its own.
+    fn end(&self) {
+        if let Output::Raw(b) = self {
+            unsafe { libc::shutdown(b.sock.as_raw_fd(), libc::SHUT_WR) };
+        }
+    }
+}
+
+/// A raw (dial-back) stream: bytes from `local_in` go to the host, bytes from
+/// the host go to `local_out`. No framing: the connection is guest-initiated,
+/// which a stalled host reader can't freeze (#36), and the host reads it
+/// directly.
+struct RawBridge {
+    sent: std::sync::mpsc::Receiver<()>,
+    reading_since: Arc<Mutex<Option<Instant>>>,
+    sock: Arc<File>,
+}
+
+impl RawBridge {
+    fn input_idle(&self) -> Duration {
+        self.reading_since.lock().unwrap().map(|t| t.elapsed()).unwrap_or_default()
+    }
+}
+
+fn raw_bridge(sock: File, local_in: Option<File>, local_out: Option<File>) -> std::io::Result<RawBridge> {
+    use std::io::{Read, Write};
+    let sock = Arc::new(sock);
+    let reading_since = Arc::new(Mutex::new(None));
+    let (sent_tx, sent) = std::sync::mpsc::channel();
+    if let Some(mut input) = local_in {
+        let (mut to_host, sock2, since) = (sock.try_clone()?, sock.clone(), reading_since.clone());
+        std::thread::spawn(move || {
+            let mut buf = vec![0u8; 256 * 1024];
+            loop {
+                *since.lock().unwrap() = Some(Instant::now());
+                let n = input.read(&mut buf);
+                *since.lock().unwrap() = None;
+                // EIO from a PTY master: the slave side is closed.
+                let Ok(n) = n else { break };
+                if n == 0 || to_host.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+            }
+            unsafe { libc::shutdown(sock2.as_raw_fd(), libc::SHUT_WR) };
+            let _ = sent_tx.send(());
+        });
+    } else {
+        let _ = sent_tx.send(());
+    }
+    if let Some(mut output) = local_out {
+        let mut from_host = sock.try_clone()?;
+        std::thread::spawn(move || {
+            let _ = std::io::copy(&mut from_host, &mut output);
+            // Dropping `output` closes the child's stdin (eof).
+        });
+    }
+    Ok(RawBridge { sent, reading_since, sock })
 }
 
 /// LANG, LANGUAGE and LC_* from /etc/default/locale (Debian, Ubuntu) or

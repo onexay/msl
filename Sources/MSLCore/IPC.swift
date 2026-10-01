@@ -19,6 +19,10 @@ public struct RunRequest: Codable, Sendable {
     public var mslenv: String = ""
     public var mslenvValues: [String: String] = [:]
     public var macHome: String = ""
+    /// The session's streams come back as fds (Reply.streams) that msl reads and
+    /// writes itself; msld isn't in the data path. msl still passes its stdio
+    /// fds, so an older msld (which ignores this) relays as before.
+    public var direct: Bool?
     public init(spec: RunSpec, macCwd: String, env: [String: String], stdinTTY: Bool, stdoutTTY: Bool, stderrTTY: Bool, rows: UInt16, cols: UInt16) {
         self.spec = spec; self.macCwd = macCwd; self.env = env
         self.stdinTTY = stdinTTY; self.stdoutTTY = stdoutTTY; self.stderrTTY = stderrTTY
@@ -81,6 +85,10 @@ public enum Reply: Codable, Sendable {
     case installed(name: String)
     /// A run finished with this exit code.
     case exited(Int32)
+    /// A direct run's streams (RunRequest.direct), as fds in this order, each
+    /// present only when true: tty (both directions), stdin, stdout, stderr.
+    /// Output streams end with eof once the guest has delivered everything.
+    case streams(tty: Bool, stdin: Bool, stdout: Bool, stderr: Bool)
     case mounted(device: String, mountPoint: String)
 }
 

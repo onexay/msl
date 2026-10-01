@@ -293,7 +293,44 @@ public final class Service: @unchecked Sendable {
             apply(r, to: &req)
             let events = EventRouter(conn: conn)
             defer { events.finish() }
-            return .exited(try session(agent: agent, request: req, stdio: fds, events: events))
+            return .exited(try session(agent: agent, request: req, stdio: fds, events: events, direct: r.direct == true ? conn : nil))
+        }
+    }
+
+    func directSession(agent: Msl_V1_Agent.Client<Transport>, request: Msl_V1_RunRequest, conn: IPCConnection, events: EventRouter) throws -> Int32 {
+        defer { events.detach() }
+        var token = [UInt8](repeating: 0, count: 16)
+        arc4random_buf(&token, token.count)
+        let anyTTY = request.stdinTty || request.stdoutTty || request.stderrTty
+        let wanted = (tty: anyTTY, stdin: !request.stdinTty, stdout: !request.stdoutTty, stderr: !request.stderrTty)
+        let streams = [wanted.tty, wanted.stdin, wanted.stdout, wanted.stderr].map { $0 ? vm.acceptStream(token: token) : nil }
+        var dial = request
+        dial.dialBack = .with {
+            $0.token = Data(token)
+            $0.ttyPort = streams[0]?.port ?? 0
+            $0.stdinPort = streams[1]?.port ?? 0
+            $0.stdoutPort = streams[2]?.port ?? 0
+            $0.stderrPort = streams[3]?.port ?? 0
+        }
+        let req = dial
+        return try blocking {
+            try await agent.run(req) { response in
+                var exit: Int32 = 255
+                for try await event in response.messages {
+                    switch event.event {
+                    case .started(let s):
+                        events.attach(agent: agent, session: s.sessionID)
+                        let fds = try streams.compactMap { try $0?.wait() }
+                        defer { fds.forEach { close($0) } }
+                        try conn.send(Reply.streams(tty: wanted.tty, stdin: wanted.stdin, stdout: wanted.stdout, stderr: wanted.stderr), fds: fds)
+                    case .exited(let e):
+                        exit = e.code
+                    case .none:
+                        break
+                    }
+                }
+                return exit
+            }
         }
     }
 
@@ -733,7 +770,7 @@ public final class Service: @unchecked Sendable {
         req.mslenvValues = r.mslenvValues
         req.macHome = r.macHome
         apply(r, to: &req)
-        return try session(agent: agent, request: req, stdio: stdio, events: events)
+        return try session(agent: agent, request: req, stdio: stdio, events: events, direct: r.direct == true ? conn : nil)
     }
 
     private func apply(_ r: RunRequest, to req: inout Msl_V1_RunRequest) {
@@ -746,7 +783,12 @@ public final class Service: @unchecked Sendable {
 
     /// Run one process: bridge msl's stdio to the guest streams, forward
     /// resize/signal events, return the exit code.
-    func session(agent: Msl_V1_Agent.Client<Transport>, request: Msl_V1_RunRequest, stdio: [Int32], events: EventRouter) throws -> Int32 {
+    /// Run one process. With `direct` (the msl connection of a RunRequest.direct),
+    /// the guest dials its streams back to one-shot host ports and msl gets their
+    /// fds: msld only sets up and reports the exit. Otherwise msld relays msl's
+    /// `stdio` through framed bridges.
+    func session(agent: Msl_V1_Agent.Client<Transport>, request: Msl_V1_RunRequest, stdio: [Int32], events: EventRouter, direct: IPCConnection? = nil) throws -> Int32 {
+        if let direct { return try directSession(agent: agent, request: request, conn: direct, events: events) }
         let vm = self.vm
         let stop = StopFlag()
         let bridges = BridgeSet()

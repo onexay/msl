@@ -55,6 +55,26 @@ pub struct DataPort {
     pub port: u32,
 }
 
+/// Connect to a host vsock port (CID 2) and write `token` first: a session
+/// stream the host asked for (RunRequest.dial_back). Returned as a *blocking*
+/// `File`, like DataPort::accept.
+pub async fn dial_host(port: u32, token: &[u8]) -> std::io::Result<File> {
+    use tokio::io::AsyncWriteExt;
+    const VMADDR_CID_HOST: u32 = 2;
+    let mut stream = tokio::time::timeout(DATA_ACCEPT_TIMEOUT, VsockStream::connect(VsockAddr::new(VMADDR_CID_HOST, port)))
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "host did not accept the stream"))??;
+    stream.write_all(token).await?;
+    let fd = unsafe { libc::dup(stream.as_raw_fd()) };
+    drop(stream);
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    sys::set_blocking(fd);
+    sys::set_cloexec(fd, true);
+    Ok(unsafe { File::from_raw_fd(fd) })
+}
+
 impl DataPort {
     pub fn bind() -> std::io::Result<Self> {
         let listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, VMADDR_PORT_ANY))?;

@@ -283,6 +283,25 @@ message RunRequest {
   map<string, string> mslenv_values = 15;
   // macOS home directory (for mslpath -w of Linux-only paths).
   string mac_home = 16;
+  // Set: the guest connects to these host ports itself (guest-initiated vsock
+  // connections, which a stalled host reader can't freeze, #36) and the
+  // streams carry raw bytes, with no framing. Unset: the guest announces data
+  // ports in Started and the host connects (framed, framed.rs).
+  DialBack dial_back = 17;
+}
+
+// Host vsock ports (CID 2) for a session's streams; 0 = not used. The guest
+// writes `token` first on each connection, so the host can tell its agent from
+// any other process in the VM. tty carries the PTY master (both directions).
+// Once the process has exited and its output is delivered (or a background
+// process keeps it open for 2 s), the guest shuts down the write side of each
+// output stream before it reports Exited.
+message DialBack {
+  bytes token = 1;
+  uint32 tty_port = 2;
+  uint32 stdin_port = 3;
+  uint32 stdout_port = 4;
+  uint32 stderr_port = 5;
 }
 
 message RunEvent {
