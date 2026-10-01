@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 import Foundation
+import MSLCore
 import MSLProtocol
 
 /// Localhost forwarding (WSL's `localhostForwarding`): every TCP port listening
-/// on the guest's loopback/any address is bound on the Mac's 127.0.0.1 and ::1,
-/// and each connection is relayed over vsock to the guest forwarder, which
-/// connects to 127.0.0.1:<port> inside the VM.
+/// on the guest's loopback/any address is bound on the Mac's 127.0.0.1 and ::1.
+/// msld binds the ports and opens a vsock stream to the guest forwarder (which
+/// connects to 127.0.0.1:<port> inside the VM) for each connection; msl-portd,
+/// like WSL's wslrelay.exe, accepts the connections and copies their bytes.
 final class PortForwarder: @unchecked Sendable {
     static let guestForwarderPort: UInt32 = 1025
 
     private let vm: VMHost
     private let guest: GuestClients
     private let lock = NSLock()
-    private var listeners: [UInt32: (fds: [Int32], stop: StopFlag)] = [:]
+    private var ports: Set<UInt32> = []
+    private var relay: Relay?
     private var task: Task<Void, Never>?
 
     init(vm: VMHost, guest: GuestClients) {
@@ -38,55 +41,67 @@ final class PortForwarder: @unchecked Sendable {
     }
 
     func stopAll() {
-        let all = lock.withLock { () -> [(fds: [Int32], stop: StopFlag)] in
-            defer { listeners.removeAll() }
-            return Array(listeners.values)
+        let r = lock.withLock { () -> Relay? in
+            ports.removeAll()
+            defer { relay = nil }
+            return relay
         }
-        for l in all { l.stop.set() }
+        r?.end()
     }
 
-    var forwarded: [UInt32] { lock.withLock { listeners.keys.sorted() } }
+    var forwarded: [UInt32] { lock.withLock { ports.sorted() } }
 
     private func reconcile(_ want: Set<UInt32>) {
-        let (add, remove) = lock.withLock { () -> (Set<UInt32>, [UInt32]) in
-            let have = Set(listeners.keys)
-            return (want.subtracting(have), Array(have.subtracting(want)))
+        lock.lock()
+        defer { lock.unlock() }
+        for p in ports.subtracting(want) {
+            ports.remove(p)
+            try? relay?.conn.send(PortRelayMessage.unlisten(port: UInt16(p)))
+            log("localhost forwarding: stopped port \(p)")
         }
-        for p in remove {
-            if let l = lock.withLock({ listeners.removeValue(forKey: p) }) {
-                l.stop.set()
-                log("localhost forwarding: stopped port \(p)")
-            }
-        }
-        for p in add where p > 0 && p < 65536 {
+        for p in want.subtracting(ports) where p > 0 && p < 65536 {
             let fds = [Self.listen(port: UInt16(p), v6: false), Self.listen(port: UInt16(p), v6: true)].compactMap { $0 }
             guard !fds.isEmpty else {
                 log("localhost forwarding: port \(p) is in use on macOS; skipped")
                 continue
             }
-            let stop = StopFlag()
-            lock.withLock { listeners[p] = (fds, stop) }
-            for fd in fds { acceptLoop(fd, port: UInt16(p), stop: stop) }
+            defer { fds.forEach { close($0) } }
+            if relay == nil {
+                do { relay = try Relay(forwarder: self) } catch {
+                    log("localhost forwarding: can't start msl-portd: \(error)")
+                    return
+                }
+            }
+            guard (try? relay?.conn.send(PortRelayMessage.listen(port: UInt16(p)), fds: fds)) != nil else { continue }
+            ports.insert(p)
             log("localhost forwarding: port \(p)")
+        }
+        if ports.isEmpty, let r = relay {
+            relay = nil
+            r.end()  // msl-portd exits once its connections have ended
         }
     }
 
-    private func acceptLoop(_ lfd: Int32, port: UInt16, stop: StopFlag) {
-        Thread.detachNewThread { [self] in
-            defer { close(lfd) }
-            while stop.waitReadable(lfd) {
-                let c = accept(lfd, nil, nil)
-                if c < 0 { continue }
-                var one: Int32 = 1
-                setsockopt(c, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
-                Thread.detachNewThread { [self] in
-                    guard let v = try? vm.connect(port: Self.guestForwarderPort) else { close(c); return }
-                    var hdr = port.bigEndian
-                    guard write(v, &hdr, 2) == 2 else { close(c); close(v); return }
-                    _ = FramedBridge(vsock: v, localIn: c, localOut: c, shutdownOnEOF: true, ownsLocal: true)
-                }
-            }
+    /// msl-portd ended while it was still the relay: forward the ports again.
+    fileprivate func relayEnded(_ r: Relay) {
+        let again = lock.withLock { () -> Set<UInt32>? in
+            guard relay === r else { return nil }
+            relay = nil
+            defer { ports.removeAll() }
+            return ports
         }
+        guard let again else { return }
+        log("localhost forwarding: msl-portd ended; starting it again")
+        reconcile(again)
+    }
+
+    /// A connection msl-portd accepted: a framed vsock stream to the guest
+    /// forwarder, with the port header written.
+    fileprivate func open(port: UInt16) -> Int32? {
+        guard let v = try? vm.connect(port: Self.guestForwarderPort) else { return nil }
+        var hdr = port.bigEndian
+        guard write(v, &hdr, 2) == 2 else { close(v); return nil }
+        return v
     }
 
     /// Listen on 127.0.0.1:port or [::1]:port; nil if unavailable (e.g. in use on the Mac).
@@ -118,4 +133,74 @@ final class PortForwarder: @unchecked Sendable {
         }
         return fd
     }
+}
+
+/// A running msl-portd and its control socket.
+private final class Relay: @unchecked Sendable {
+    let conn: IPCConnection
+    let pid: pid_t
+    private let lock = NSLock()
+    private var streams: [UInt64: Int32] = [:]  // our descriptors of the vsock streams msl-portd has
+
+    init(forwarder: PortForwarder) throws {
+        var pair: [Int32] = [-1, -1]
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0 else { throw ServiceError("socketpair: \(String(cString: strerror(errno)))", code: ErrorCode.vm) }
+        defer { close(pair[1]) }
+        _ = fcntl(pair[0], F_SETFD, FD_CLOEXEC)
+        let exe = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("msl-portd").path
+        var actions = posix_spawn_file_actions_t(nil as OpaquePointer?)
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+        posix_spawn_file_actions_addinherit_np(&actions, 1)
+        posix_spawn_file_actions_addinherit_np(&actions, 2)
+        posix_spawn_file_actions_adddup2(&actions, pair[1], portRelayControlFD)
+        var attr = posix_spawnattr_t(nil as OpaquePointer?)
+        posix_spawnattr_init(&attr)
+        defer { posix_spawnattr_destroy(&attr) }
+        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT))  // nothing else of msld's
+        var pid: pid_t = 0
+        let argv: [UnsafeMutablePointer<CChar>?] = [strdup(exe), nil]
+        defer { argv.forEach { free($0) } }
+        let rc = posix_spawn(&pid, exe, &actions, &attr, argv, environ)
+        guard rc == 0 else {
+            close(pair[0])
+            throw ServiceError("\(exe): \(String(cString: strerror(rc)))", code: ErrorCode.vm)
+        }
+        self.pid = pid
+        conn = IPCConnection(fd: pair[0])
+        Thread.detachNewThread { [self, weak forwarder] in
+            while let (msg, fds) = try? conn.receive(PortRelayMessage.self) {
+                fds.forEach { Darwin.close($0) }
+                switch msg {
+                case .connect(let id, let port):
+                    Thread.detachNewThread { [self] in
+                        guard let v = forwarder?.open(port: port) else {
+                            try? conn.send(PortRelayMessage.refused(id: id))
+                            return
+                        }
+                        lock.withLock { streams[id] = v }  // see PortRelayMessage.closed
+                        if (try? conn.send(PortRelayMessage.connected(id: id), fds: [v])) == nil { closeStream(id) }
+                    }
+                case .closed(let id):
+                    closeStream(id)
+                default:
+                    break
+                }
+            }
+            var status: Int32 = 0
+            while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+            lock.withLock { streams.values.forEach { Darwin.close($0) }; streams.removeAll() }
+            forwarder?.relayEnded(self)
+        }
+    }
+
+    private func closeStream(_ id: UInt64) {
+        if let v = lock.withLock({ streams.removeValue(forKey: id) }) { Darwin.close(v) }
+    }
+
+    /// End the control socket's msld -> msl-portd direction: msl-portd stops
+    /// accepting and exits after its last connection, still reporting the
+    /// connections that end until then.
+    func end() { shutdown(conn.fd, SHUT_WR) }
 }
