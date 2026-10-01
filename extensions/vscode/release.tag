@@ -1,1 +1,1 @@
-vscode-0.1.1
+vscode-0.2.0

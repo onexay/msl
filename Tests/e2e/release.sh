@@ -23,12 +23,12 @@ echo "cli-path names the installed msl: $([ "$(cat $MSL_HOME/cli-path 2>/dev/nul
 echo "\$ $P/bin/msl --version"; $P/bin/msl --version | head -1
 $P/bin/msl --install Debian --no-launch | tail -1
 echo "run from installed copy: $($P/bin/msl -d Debian -e cat /etc/debian_version)"
-echo "msld path: $(ps -axo command | grep '[l]ibexec/msl/msld' | head -1)"
+echo "msld path: $(ps -axo command | grep "^$P/libexec/msl/msld" | head -1)"
 echo "\$ msl --update (channel = dist/update.json, 0.1.1)"
 MSL_UPDATE_URL=file://$ROOT/dist/update.json $P/bin/msl --update
 echo "\$ msl --version"; $P/bin/msl --version | head -1
 echo "distro survives the update: $($P/bin/msl -d Debian -e cat /etc/debian_version)"
-echo "msld now running: $(ps -axo command | grep '[l]ibexec/msl/msld' | head -1)"
+echo "msld now running: $(ps -axo command | grep "^$P/libexec/msl/msld" | head -1)"
 echo "\$ msl --update again"; MSL_UPDATE_URL=file://$ROOT/dist/update.json $P/bin/msl --update
 echo "\$ msl --uninstall   (HOME=$IH)"; HOME=$IH $P/bin/msl --uninstall
 echo "argv.json restored: $(cmp -s $IH/argv.orig $IH/.vscode/argv.json && echo yes || echo NO)"
