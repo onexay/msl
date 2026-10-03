@@ -4,7 +4,7 @@
 set -eu
 case $0 in
   */install.sh|install.sh)
-    HERE=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd || true)
+    HERE=$(CDPATH='' cd "$(dirname "$0")" 2>/dev/null && pwd || true)
     if [ -n "$HERE" ] && [ -f "$HERE/scripts/install.sh" ]; then
       exec sh "$HERE/scripts/install.sh" "$@"
     fi
