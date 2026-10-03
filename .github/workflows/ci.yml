@@ -1,0 +1,109 @@
+# Unit tests and lints. The e2e suites (tests/e2e) need a real VM, which hosted
+# runners can't start; run them locally (see CONTRIBUTING.md).
+name: MSLd
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: Host (Swift)
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select Xcode for the minimum macOS
+        id: xcode
+        run: |
+          MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
+          # The newest released Xcode for the minimum macOS; never a beta (the
+          # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
+          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
+          sudo xcode-select -s "$XC"
+          xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
+          swift --version
+          echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+      # The dependencies (swift-nio, BoringSSL, swift-certificates, ...) take ~4 of
+      # the job's ~6 minutes to fetch and compile, and change only with
+      # Package.resolved. The package check stays uncached (clean builds).
+      - name: Cache SwiftPM checkouts and the debug build
+        uses: actions/cache@v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-
+      - run: swift build --build-tests
+      - run: swift test --skip-build
+
+  # Check the package against the committed dependency pins. The manual Release
+  # workflow rebuilds with the Latest kernel and extension releases before publishing.
+  # Keep this package job on the Xcode matching msl's minimum macOS: a newer
+  # Swift runtime can link libraries the minimum macOS lacks. xcode-27 is the
+  # GitHub macOS 27 image (preview).
+  package:
+    name: Pinned dependency package check
+    if: github.event_name == 'push'  # PRs skip ~10 min of macOS package validation
+    runs-on: xcode-27
+    env: { GH_TOKEN: "${{ github.token }}" }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select Xcode for the minimum macOS
+        run: |
+          MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
+          # The newest released Xcode for the minimum macOS; never a beta (the
+          # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
+          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
+          sudo xcode-select -s "$XC"
+          xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
+          xcodebuild -version && swift --version
+      - name: Guest toolchain
+        run: rustup target add aarch64-unknown-linux-musl && brew install protobuf
+      - name: Package
+        run: |
+          V=$(python3 scripts/next-version.py)
+          MSL_RELEASE_BASE_URL=https://github.com/${{ github.repository }}/releases/download/v$V \
+          MSL_UPDATE_CHANNEL_URL=https://github.com/${{ github.repository }}/releases/latest/download/update.json \
+            scripts/package.sh "$V"
+          { echo "commit ${{ github.sha }}"; echo "version $V"; xcodebuild -version | head -1; swift --version 2>&1 | head -1; } > dist/build-info.txt
+          cat dist/build-info.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package
+          path: |
+            dist/msl-*-macos-arm64.tar.gz
+            dist/msl-*-macos-arm64.tar.gz.sha256
+            dist/update.json
+            dist/build-info.txt
+          if-no-files-found: error
+
+  guest:
+    name: Guest (Rust)
+    runs-on: ubuntu-24.04-arm
+    defaults: { run: { working-directory: guest } }
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+      - name: Unit tests (native Linux, as scripts/test-guest.sh)
+        run: cargo test --target aarch64-unknown-linux-gnu --config 'build.target="aarch64-unknown-linux-gnu"'
+      - name: Static musl build (what ships in the initrd)
+        run: cargo build --release
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version numbers agree
+        run: scripts/check-version.sh
+      - name: Links in Markdown files point to existing files and headings
+        run: scripts/check-links.py
+      - name: shellcheck
+        run: |
+          shellcheck -S warning install.sh scripts/*.sh
+          shellcheck -S error tests/e2e/*.sh

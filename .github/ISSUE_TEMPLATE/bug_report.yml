@@ -1,0 +1,41 @@
+name: Bug report
+description: msl does something wrong, or differently from wsl.exe
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected (what wsl.exe does, if relevant), and what happened instead.
+      placeholder: |
+        $ msl -d Ubuntu -e ...
+        expected: ...
+        got: ...
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations: { required: true }
+  - type: textarea
+    id: version
+    attributes:
+      label: msl --version
+      render: text
+    validations: { required: true }
+  - type: textarea
+    id: status
+    attributes:
+      label: msl --status
+      render: text
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: Ubuntu 24.04 (msl --install Ubuntu)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from ~/Library/Application Support/msl/msld.log and console.log. Remove anything private.
+      render: text

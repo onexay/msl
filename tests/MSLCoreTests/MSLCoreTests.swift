@@ -1,0 +1,589 @@
+// SPDX-License-Identifier: Apache-2.0
+import Foundation
+import Testing
+
+@testable import MSLCore
+
+@Suite struct ArgumentsTests {
+    func run(_ a: [String]) throws -> RunSpec {
+        guard case .run(let s) = try Arguments.parse(a) else { Issue.record("not a run: \(a)"); return RunSpec() }
+        return s
+    }
+
+    @Test func noArgsIsDefaultShell() throws {
+        let s = try run([])
+        #expect(s.commandLine == nil && s.argv.isEmpty && s.distribution == nil)
+    }
+
+    @Test func runOptionsThenCommand() throws {
+        let s = try run(["-d", "Ubuntu", "-u", "root", "--cd", "/tmp", "ls", "-la"])
+        #expect(s.distribution == "Ubuntu")
+        #expect(s.user == "root")
+        #expect(s.cd == "/tmp")
+        #expect(s.commandLine == "ls -la")
+        #expect(s.shellType == .standard)
+    }
+
+    @Test func tildeOnlyAsFirstArgument() throws {
+        #expect(try run(["~"]).cd == "~")
+        #expect(try run(["echo", "~"]).commandLine == "echo ~")
+    }
+
+    @Test func execTakesArgvVerbatim() throws {
+        let s = try run(["-d", "D", "-e", "echo", "a b", "-d"])
+        #expect(s.shellType == .none)
+        #expect(s.argv == ["echo", "a b", "-d"])
+        #expect(s.commandLine == nil)
+    }
+
+    @Test func doubleDashPassesRestAsCommand() throws {
+        #expect(try run(["--", "-x", "y"]).commandLine == "-x y")
+        #expect(try run(["--shell-type", "none", "--", "ls", "/"]).argv == ["ls", "/"])
+        #expect(try run(["--shell-type", "login", "--", "env"]).shellType == .login)
+    }
+
+    @Test func commandLineQuotesWhitespaceOnly() {
+        #expect(Arguments.joinCommandLine(["echo", "a b", "$HOME", "", "it's x"]) == "echo 'a b' $HOME '' 'it'\\''s x'")
+    }
+
+    @Test func errors() {
+        #expect(throws: ArgumentError.missingValue("-d")) { try Arguments.parse(["-d"]) }
+        #expect(throws: ArgumentError.invalid("--bogus")) { try Arguments.parse(["--bogus"]) }
+        #expect(throws: ArgumentError.missingValue("-e")) { try Arguments.parse(["-e"]) }
+        #expect(throws: ArgumentError.invalid("-x")) { try Arguments.parse(["--list", "-x"]) }
+        #expect(throws: ArgumentError.invalid("extra")) { try Arguments.parse(["--terminate", "a", "extra"]) }
+    }
+
+    @Test func management() throws {
+        #expect(try Arguments.parse(["-l", "-v"]) == .list({ var l = ListSpec(); l.verbose = true; return l }()))
+        #expect(try Arguments.parse(["--list", "--running", "--quiet"]) == .list({ var l = ListSpec(); l.running = true; l.quiet = true; return l }()))
+        #expect(try Arguments.parse(["-t", "Ubuntu"]) == .terminate("Ubuntu"))
+        #expect(try Arguments.parse(["-s", "Ubuntu"]) == .setDefault("Ubuntu"))
+        #expect(try Arguments.parse(["--shutdown", "--force"]) == .shutdown(force: true))
+        #expect(try Arguments.parse(["--export", "U", "-", "--format", "tar.gz"]) == .export(distribution: "U", file: "-", format: "tar.gz"))
+        #expect(try Arguments.parse(["--import", "U", "/loc", "f.tar", "--version", "2"])
+            == .importTar(distribution: "U", location: "/loc", file: "f.tar", version: 2, vhd: false))
+        #expect(try Arguments.parse(["-v"]) == .version)
+        #expect(try Arguments.parse(["--system"]) == .unsupported("--system"))
+        #expect(try Arguments.parse(["--debug-shell"]) == .debugShell)
+        #expect(try Arguments.parse(["--unmount"]) == .unmount(nil))
+        #expect(try Arguments.parse(["--update", "--pre-release"]) == .update(preRelease: true))
+        #expect(try Arguments.parse(["--uninstall"]) == .uninstall)
+        #expect(versionIsNewer("0.10.0", than: "0.9.3") && !versionIsNewer("0.1.0", than: "0.1.0") && versionIsNewer("1.0", than: "0.9.9"))
+        guard case .mount(let m) = try Arguments.parse(["--mount", "d.img", "--vhd", "--name", "data", "-t", "xfs", "-o", "ro", "--partition", "2"]) else { Issue.record("mount"); return }
+        #expect(m.disk == "d.img" && m.vhd && m.name == "data" && m.type == "xfs" && m.options == "ro" && m.partition == 2)
+    }
+
+    @Test func install() throws {
+        guard case .install(let i) = try Arguments.parse(["--install", "--from-file", "u.wsl", "--name", "U2", "-n", "--location", "/x"]) else {
+            Issue.record("not install"); return
+        }
+        #expect(i.fromFile == "u.wsl" && i.name == "U2" && i.noLaunch && i.location == "/x")
+        guard case .install(let j) = try Arguments.parse(["--install", "Ubuntu"]) else { Issue.record("not install"); return }
+        #expect(j.distribution == "Ubuntu" && j.vhdSize == nil)
+        guard case .install(let k) = try Arguments.parse(["--install", "Debian", "--vhd-size", "64GB"]) else { Issue.record("not install"); return }
+        #expect(k.vhdSize == 64 << 30)
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--install", "Debian", "--vhd-size", "lots"]) }
+    }
+
+    @Test func diskImages() throws {
+        #expect(try Arguments.parse(["--import-in-place", "D", "/x/ext4.img"]) == .importInPlace(distribution: "D", file: "/x/ext4.img"))
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--import-in-place", "D"]) }
+        #expect(throws: ArgumentError.self) { try Arguments.parse(["--import-in-place", "D", "f", "extra"]) }
+        #expect(try Arguments.parse(["--export", "D", "d.img", "--vhd"]) == .export(distribution: "D", file: "d.img", format: "vhd"))
+        #expect(try Arguments.parse(["--import", "D", "loc", "d.img", "--vhd"]) == .importTar(distribution: "D", location: "loc", file: "d.img", version: nil, vhd: true))
+    }
+}
+
+@Suite struct ListFormatTests {
+    let d = [
+        DistroSummary(name: "Ubuntu-24.04", id: "a", running: true, version: 2, isDefault: true),
+        DistroSummary(name: "Debian", id: "b", running: false, version: 2, isDefault: false),
+    ]
+
+    @Test func plain() {
+        #expect(ListFormat.render(d, ListSpec()).text == "Modern Subsystem for Linux Distributions:\nUbuntu-24.04 (Default)\nDebian")
+    }
+
+    @Test func verbose() {
+        var s = ListSpec(); s.verbose = true
+        #expect(ListFormat.render(d, s).text == """
+              NAME            STATE           VERSION
+            * Ubuntu-24.04    Running         2
+              Debian          Stopped         2
+            """)
+    }
+
+    @Test func runningAndEmpty() {
+        var s = ListSpec(); s.running = true; s.quiet = true
+        #expect(ListFormat.render(d, s).text == "Ubuntu-24.04")
+        #expect(ListFormat.render([], s).text == Messages.noRunningDistro)
+        #expect(ListFormat.render([], ListSpec()).isError)
+    }
+}
+
+@Suite struct MessagesTests {
+    @Test func errorCodeOnlyWhenRequested() {
+        #expect(Messages.failure("Oops.", "Msl/X", environment: [:]) == "Oops.")
+        #expect(Messages.failure("Oops.", "Msl/X", environment: ["MSL_ERROR_CODES": "1"]) == "Oops.\nError code: Msl/X")
+    }
+}
+
+@Suite struct RegistryTests {
+    @Test func namesAndDefault() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("msl-reg-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let r = Registry(url: url)
+        try r.mutate { $0.distros.append(DistroRecord(id: "1", name: "Ubuntu", location: "/x")) }
+        #expect(r.find(name: "ubuntu")?.id == "1")
+        #expect(r.defaultDistro?.name == "Ubuntu")
+        #expect(Registry(url: url).all.count == 1)  // persisted
+        #expect(Registry.isValidName("Ubuntu-24.04_x"))
+        #expect(!Registry.isValidName("bad name") && !Registry.isValidName("a/b") && !Registry.isValidName(""))
+    }
+
+    /// A registry.json from before own disks (#50) must still load: a decode
+    /// failure would start from an empty registry and overwrite it.
+    @Test func decodesRegistryWithoutDisks() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("msl-reg-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("""
+            {"defaultId":"a","distros":[{"createdAt":"2026-09-01T10:00:00Z","defaultUid":1000,"id":"a",
+            "location":"/x/a","name":"Debian","oobeCommand":"","oobePending":false,"version":2}]}
+            """.utf8).write(to: url)
+        let r = Registry(url: url)
+        #expect(r.all.count == 1 && r.all[0].disk == nil && r.all[0].defaultUid == 1000)
+        try r.mutate { $0.distros[0].disk = DistroDiskInfo(path: "/x/a/ext4.img", uuid: "u") }
+        #expect(Registry(url: url).all[0].disk == DistroDiskInfo(path: "/x/a/ext4.img", uuid: "u"))
+    }
+}
+
+@Suite struct DistroDiskTests {
+    @Test func sizing() {
+        let gib: UInt64 = 1 << 30
+        #expect(DistroDisk.initialSize(requested: nil, configured: nil, volumeCapacity: 1000 * gib) == 256 * gib)
+        #expect(DistroDisk.initialSize(requested: 20 * gib, configured: 64 * gib, volumeCapacity: 1000 * gib) == 20 * gib)
+        #expect(DistroDisk.initialSize(requested: nil, configured: 64 * gib, volumeCapacity: 1000 * gib) == 64 * gib)
+        #expect(DistroDisk.initialSize(requested: 1 * gib, configured: nil, volumeCapacity: nil) == DataDisk.minimum)
+        #expect(DistroDisk.initialSize(requested: 8 << 40, configured: nil, volumeCapacity: nil) == 8 << 40)
+        #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "16GB", volumeCapacity: nil) == .grow(16 * gib))
+        #expect(DistroDisk.checkGrow(current: 8 * gib, requested: "8TB", volumeCapacity: nil) == .grow(8 << 40))
+        #expect(DistroDisk.bootDiskLimit([:]) == 19 && DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "1"]) == 1)
+        #expect(DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "0"]) == 0 && DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "20"]) == 19)
+        #expect(DistroDisk.bootDiskLimit(["MSL_BOOT_DISKS": "x"]) == 19)
+    }
+
+    @Test func superblock() {
+        var sb = [UInt8](repeating: 0, count: 1024)
+        sb[0x04] = 0x00; sb[0x05] = 0x00; sb[0x06] = 0x10  // 0x100000 blocks
+        sb[0x18] = 2                                       // 4 KiB
+        sb[0x38] = 0x53; sb[0x39] = 0xEF
+        sb[0x3A] = 1
+        for i in 0..<16 { sb[0x68 + i] = UInt8(i * 17) }
+        let p = DistroDisk.parseSuperblock(sb)
+        #expect(p == DistroDisk.Superblock(size: 4 << 30, uuid: "00112233-4455-6677-8899-aabbccddeeff", clean: true))
+        sb[0x38] = 0
+        #expect(DistroDisk.parseSuperblock(sb) == nil)
+        #expect(DistroDisk.parseSuperblock([1, 2, 3]) == nil)
+    }
+}
+
+@Suite struct IPCTests {
+    @Test func framesAndFdPassing() throws {
+        var sv: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sv) == 0)
+        let a = IPCConnection(fd: sv[0]), b = IPCConnection(fd: sv[1])
+        var p: [Int32] = [0, 0]
+        #expect(pipe(&p) == 0)
+        try a.send(Request.terminate(name: "U"), fds: [p[1]])
+        let (req, fds) = try b.receive(Request.self)
+        guard case .terminate(let n) = req else { Issue.record("wrong request"); return }
+        #expect(n == "U" && fds.count == 1)
+        // The passed fd is a working duplicate of the pipe's write end.
+        #expect(write(fds[0], "hi", 2) == 2)
+        var buf = [UInt8](repeating: 0, count: 2)
+        #expect(read(p[0], &buf, 2) == 2 && buf == Array("hi".utf8))
+        close(fds[0]); close(p[0]); close(p[1])
+    }
+}
+
+@Suite struct ConfigTests {
+    @Test func mslconfig() {
+        let c = MSLConfig.parse("""
+            [msl2]
+            memory=8GB
+            processors = 4
+            vmIdleTimeout=-1
+            memory2 = x
+            processors=abc
+            nestedVirtualization=false
+            [general]
+            instanceIdleTimeout=5000
+            """, path: "t")
+        #expect(c.memoryBytes == 8 << 30)
+        #expect(c.processors == 4)
+        #expect(c.vmIdleTimeoutMs == -1)
+        #expect(c.instanceIdleTimeoutMs == 5000)
+        #expect(!c.nestedVirtualization && MSLConfig().nestedVirtualization)
+        #expect(c.warnings == ["Invalid integer 'abc' for .mslconfig entry 'msl2.processors' in t:6"])
+        let w = MSLConfig.parse("[wsl2]\nprocessors = 2\nmemory = lots\n", path: "w")  // .wslconfig section name
+        #expect(w.processors == 2)
+        #expect(w.warnings == ["Invalid memory string 'lots' for .mslconfig entry 'wsl2.memory' in w:3"])
+        #expect(MSLConfig.parseSize("512MB") == 512 << 20 && MSLConfig.parseSize("1024") == 1024 && MSLConfig.parseSize("x") == nil)
+    }
+
+    /// An ONC RPC call (first fragment, no record mark) with AUTH_SYS or AUTH_NONE.
+    static func rpcCall(xid: UInt32 = 7, prog: UInt32 = 100_003, proc: UInt32 = 1, uid: UInt32? = 501) -> [UInt8] {
+        var w: [UInt32] = [xid, 0, 2, prog, 3, proc]
+        if let uid {
+            let name = Array("mac".utf8) + [0]  // padded to 4
+            let body: [UInt32] = [0 /* stamp */, 3] + [UInt32(name[0]) << 24 | UInt32(name[1]) << 16 | UInt32(name[2]) << 8] + [uid, 20, 0 /* no gids */]
+            w += [1, UInt32(body.count * 4)] + body
+        } else {
+            w += [0, 0]
+        }
+        w += [0, 0]  // verifier AUTH_NONE
+        return w.flatMap { [UInt8($0 >> 24), UInt8($0 >> 16 & 0xff), UInt8($0 >> 8 & 0xff), UInt8($0 & 0xff)] }
+    }
+
+    @Test func nfsViewFilter() {
+        let call = Self.rpcCall
+        #expect(RPCFilter.check(call(7, 100_003, 1, 501), owner: 501, mountAllowed: false) == .allow)       // the owner
+        #expect(RPCFilter.check(call(7, 100_003, 6, 0), owner: 501, mountAllowed: false) == .allow)         // the kernel (read-ahead)
+        #expect(RPCFilter.check(call(9, 100_003, 3, 502), owner: 501, mountAllowed: false) == .deny(xid: 9, why: "uid 502"))
+        #expect(RPCFilter.check(call(4, 100_005, 1, 0), owner: 501, mountAllowed: false) == .deny(xid: 4, why: "MOUNT outside msld's own mount"))
+        #expect(RPCFilter.check(call(4, 100_005, 1, 0), owner: 501, mountAllowed: true) == .allow)
+        #expect(RPCFilter.check(call(5, 100_003, 0, nil), owner: 501, mountAllowed: false) == .allow)       // NULL ping, AUTH_NONE
+        #expect(RPCFilter.check(call(5, 100_003, 1, nil), owner: 501, mountAllowed: false) == .deny(xid: 5, why: "AUTH_NONE for procedure 1"))
+        #expect(RPCFilter.check([1, 2, 3], owner: 501, mountAllowed: false) == .deny(xid: 0, why: "short record"))
+        // MSG_DENIED / AUTH_ERROR / AUTH_TOOWEAK, one last fragment of 20 bytes.
+        #expect(RPCFilter.denial(xid: 9) == [0x80, 0, 0, 20, 0, 0, 0, 9, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 5])
+        #expect(MSLConfig.parse("").fileViewTransport == .unix)
+        #expect(MSLConfig.parse("[msl2]\nfileViewTransport = TCP\n").fileViewTransport == .tcp)
+        #expect(MSLConfig.parse("[msl2]\nfileViewTransport = smb\n", path: "t").warnings == ["Invalid value 'smb' for .mslconfig entry 'msl2.fileviewtransport' in t:2 (unix or tcp)"])
+    }
+
+    @Test func dataDiskSizing() {
+        let gib: UInt64 = 1 << 30
+        // New disk: 256 GiB, capped at the Mac volume; an explicit size wins.
+        #expect(DataDisk.initialSize(configured: nil, volumeCapacity: 1000 * gib) == 256 * gib)
+        #expect(DataDisk.initialSize(configured: nil, volumeCapacity: 228 * gib + 12345) == 228 * gib)
+        #expect(DataDisk.initialSize(configured: 64 * gib, volumeCapacity: 228 * gib) == 64 * gib)
+        #expect(DataDisk.initialSize(configured: nil, volumeCapacity: nil) == 256 * gib)
+        // Grow only, up to the volume's capacity.
+        #expect(DataDisk.checkGrow(current: 256 * gib, requested: "300GB", volumeCapacity: 1000 * gib) == .grow(300 * gib))
+        #expect(DataDisk.checkGrow(current: 256 * gib, requested: "256GB", volumeCapacity: 1000 * gib) == .unchanged)
+        guard case .refused(let shrink) = DataDisk.checkGrow(current: 256 * gib, requested: "128GB", volumeCapacity: 1000 * gib),
+              case .refused(let big) = DataDisk.checkGrow(current: 256 * gib, requested: "2TB", volumeCapacity: 1000 * gib),
+              case .refused(let bad) = DataDisk.checkGrow(current: 256 * gib, requested: "lots", volumeCapacity: nil) else {
+            Issue.record("expected refusals"); return
+        }
+        #expect(shrink.contains("can only grow") && big.contains("more than the macOS disk holds") && bad.contains("Invalid size"))
+        // [msl2] defaultVhdSize, as in .wslconfig; below 4 GB is a warning.
+        #expect(MSLConfig.parse("[msl2]\ndefaultVhdSize = 64GB\n").defaultVhdSize == 64 * gib)
+        let small = MSLConfig.parse("[wsl2]\ndefaultVhdSize = 1GB\n", path: "t")
+        #expect(small.defaultVhdSize == nil && small.warnings == ["Invalid size '1GB' for .mslconfig entry 'wsl2.defaultvhdsize' in t:2 (minimum 4GB)"])
+    }
+
+    @Test func manifest() throws {
+        let json = """
+            {"ModernDistributions": {
+              "Ubuntu": [{"Name":"Ubuntu","FriendlyName":"Ubuntu","Default":true,"Arm64Url":{"Url":"u","Sha256":"h"}},
+                         {"Name":"Ubuntu-24.04","FriendlyName":"Ubuntu 24.04 LTS","Arm64Url":{"Url":"u2","Sha256":"h2"}}],
+              "archlinux": [{"Name":"archlinux","FriendlyName":"Arch Linux","Amd64Url":{"Url":"a","Sha256":"x"}}]},
+             "Default": "Ubuntu"}
+            """
+        let m = try Manifest.parse(Data(json.utf8))
+        #expect(m.resolve(nil)?.Name == "Ubuntu")
+        #expect(m.resolve("ubuntu-24.04")?.Name == "Ubuntu-24.04")
+        #expect(m.resolve("nope") == nil)
+        #expect(m.installable.map(\.Name) == ["Ubuntu", "Ubuntu-24.04"])  // amd64-only arch is not listed
+        #expect(m.onlineListing().contains("Ubuntu-24.04    Ubuntu 24.04 LTS"))
+    }
+
+    @Test func x86Deferred() throws {
+        let json = """
+            {"ModernDistributions": {
+              "Ubuntu": [{"Name":"Ubuntu","FriendlyName":"Ubuntu","Arm64Url":{"Url":"u","Sha256":"h"},"Amd64Url":{"Url":"u","Sha256":"h"}}],
+              "archlinux": [{"Name":"archlinux","FriendlyName":"Arch Linux","Amd64Url":{"Url":"a","Sha256":"x"}}]}}
+            """
+        let m = try Manifest.parse(Data(json.utf8))
+        let arch = try #require(m.resolve("archlinux"))
+        let ubuntu = try #require(m.resolve("Ubuntu"))
+
+        // Deferred (#40): hidden and refused even with Rosetta installed.
+        #expect(!Manifest.x86Supported)
+        let offered = Manifest.x86Available(rosetta: true)
+        #expect(!offered)
+        #expect(!m.onlineListing(rosetta: offered).contains("archlinux"))
+        #expect(JSONOutput.online(m, rosetta: offered).distributions.map(\.name) == ["Ubuntu"])
+        #expect(Manifest.installRefusal(arch, rosetta: true) == "'archlinux' is only available for x86_64, which msl doesn't support yet.")
+        #expect(Manifest.installRefusal(ubuntu, rosetta: false) == nil)
+
+        // Turned back on: offered and installable only with Rosetta.
+        #expect(Manifest.x86Available(rosetta: true, supported: true))
+        #expect(!Manifest.x86Available(rosetta: false, supported: true))
+        #expect(Manifest.installRefusal(arch, rosetta: true, supported: true) == nil)
+        #expect(Manifest.installRefusal(arch, rosetta: false, supported: true)?.contains("needs Rosetta") == true)
+    }
+}
+
+@Suite struct StatusTests {
+    let base = VMSettings(memoryBytes: 8 << 30, processors: 4, kernel: "6.18.15-msl (bundled)", kernelCommandLine: "console=hvc0",
+                          localhostForwarding: true, dnsTunneling: true, vmIdleTimeoutMs: 60_000, instanceIdleTimeoutMs: -1)
+
+    @Test func runningWithPendingChanges() {
+        var next = base
+        next.memoryBytes = 4 << 30
+        next.dnsTunneling = false
+        next.nestedVirtualization = true
+        let s = VMStatus(running: true, uptimeSeconds: 125, effective: base, configured: next, configPath: "/Users/u/.mslconfig", configExists: true)
+        let text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(text.hasPrefix("Default Distribution: Ubuntu\nDefault Version: 2\n"))
+        #expect(text.contains("Virtual machine: Running (up 2m 5s)"))
+        let row = { (k: String) in text.split(separator: "\n").first { $0.hasPrefix("  \(k):") }.map { $0.split(separator: ":", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces) } }
+        #expect(row("Memory") == "8 GB")
+        #expect(row("Distribution idle timeout") == "never")
+        #expect(text.contains("Pending changes in ~/.mslconfig (applied after 'msl --shutdown'):"))
+        #expect(text.contains("Memory: 8 GB → 4 GB") && text.contains("DNS tunneling: on → off"))
+        #expect(row("Nested virtualization") == "off" && text.contains("Nested virtualization: off → on"))
+    }
+
+    @Test func diskRowsAndLowMacSpace() {
+        let gib: UInt64 = 1 << 30
+        var s = VMStatus(running: true, uptimeSeconds: 5, effective: base, configured: base, configPath: "/Users/u/.mslconfig", configExists: true,
+                         disk: DiskStatus(maxBytes: 256 * gib, macUsedBytes: 4 * gib + gib / 2, macFreeBytes: 10 * gib, distroFreeBytes: 250 * gib))
+        var text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(text.contains("  Shared disk:") && text.contains("256 GB max, 4.5 GB used on macOS (data.img)"))
+        #expect(text.contains("macOS free space:") && text.contains("Shared disk free:") && !text.contains("Distribution disks"))
+        #expect(text.contains("Warning: distributions see 250 GB free, but macOS has only 10 GB free."))
+        s.disk?.macFreeBytes = 40 * gib  // less than the distros see, but not low: normal for a sparse disk
+        text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(!text.contains("Warning:"))
+        s.disk = nil  // no distro left on data.img
+        #expect(!StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("isk"))
+        s.ownDisks = OwnDisksStatus(count: 2, maxBytes: 512 * gib, macUsedBytes: 3 * gib, macFreeBytes: 100 * gib)
+        text = StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u")
+        #expect(text.contains("Distribution disks:") && text.contains("2 disks, 3 GB used on macOS (512 GB max)"))
+        #expect(text.contains("macOS free space:") && !text.contains("Shared disk") && !text.contains("Warning:"))
+        s.ownDisks?.macFreeBytes = 8 * gib
+        #expect(StatusFormat.render(defaultDistro: "Ubuntu", s, home: "/Users/u").contains("Warning: the distributions' disks can grow by 509 GB, but macOS has only 8 GB free."))
+    }
+
+    @Test func stoppedShowsNextStart() {
+        let s = VMStatus(running: false, uptimeSeconds: nil, effective: nil, configured: base, configPath: "/Users/u/.mslconfig", configExists: false)
+        let text = StatusFormat.render(defaultDistro: "Debian", s, home: "/Users/u")
+        #expect(text.contains("Virtual machine: Stopped"))
+        #expect(text.contains("~/.mslconfig (not present; defaults)"))
+        #expect(!text.contains("Pending"))
+        #expect(StatusFormat.bytes(1536 << 20) == "1.5 GB" && StatusFormat.timeout(500) == "500 ms")
+    }
+}
+
+@Suite struct JSONOutputTests {
+    let distros = [DistroSummary(name: "Ubuntu", id: "u-1", running: true, version: 2, isDefault: true),
+                   DistroSummary(name: "Debian", id: "d-1", running: false, version: 2, isDefault: false)]
+
+    @Test func parsesJSONFlagOnlyForQueries() throws {
+        #expect(try Arguments.parseInvocation(["--list", "-v", "--json"]) == Invocation(command: .list({ var s = ListSpec(); s.verbose = true; return s }()), json: true))
+        #expect(try Arguments.parseInvocation(["--json", "--status"]) == Invocation(command: .status, json: true))
+        #expect(try Arguments.parseInvocation(["-v", "--json"]).json)
+        #expect(try Arguments.parseInvocation(["--list"]).json == false)
+        // Other commands reject it, however it's placed.
+        #expect(throws: ArgumentError.jsonUnsupported) { try Arguments.parseInvocation(["--terminate", "Ubuntu", "--json"]) }
+        #expect(throws: ArgumentError.jsonUnsupported) { try Arguments.parseInvocation(["--json", "-e", "ls"]) }
+        #expect(throws: ArgumentError.jsonUnsupported) { try Arguments.parseInvocation(["--json"]) }
+        // Inside a Linux command line it belongs to the program.
+        let run = try Arguments.parseInvocation(["-d", "Ubuntu", "-e", "jq", "--json"])
+        #expect(run.json == false)
+        if case .run(let spec) = run.command { #expect(spec.argv == ["jq", "--json"]) } else { Issue.record("expected run") }
+    }
+
+    @Test func listFollowsFiltersAndWSLErrors() throws {
+        var spec = ListSpec()
+        #expect(JSONOutput.list(distros, spec)?.distributions.map(\.name) == ["Ubuntu", "Debian"])
+        spec.running = true
+        let running = try #require(JSONOutput.list(distros, spec))
+        #expect(running.distributions == [.init(name: "Ubuntu", id: "u-1", state: "Running", version: 2, default: true)])
+        // Nothing installed is an error (as in wsl.exe); nothing running is an empty list.
+        #expect(JSONOutput.list([], ListSpec()) == nil)
+        #expect(JSONOutput.list([distros[1]], spec)?.distributions == [])
+        let text = JSONOutput.encode(running, pretty: false)
+        #expect(text == #"{"distributions":[{"default":true,"id":"u-1","name":"Ubuntu","state":"Running","version":2}],"schema":1}"#)
+    }
+
+    @Test func onlineMarksArchitectures() throws {
+        let json = """
+            {"ModernDistributions": {"Ubuntu": [
+              {"Name": "Ubuntu", "FriendlyName": "Ubuntu", "Default": true, "Arm64Url": {"Url": "u", "Sha256": "s"}, "Amd64Url": {"Url": "u", "Sha256": "s"}}],
+             "arch": [{"Name": "archlinux", "FriendlyName": "Arch Linux", "Amd64Url": {"Url": "u", "Sha256": "s"}}]},
+             "Default": "Ubuntu"}
+            """
+        let m = try Manifest.parse(Data(json.utf8))
+        #expect(JSONOutput.online(m, rosetta: false).distributions.map(\.name) == ["Ubuntu"])
+        let all = JSONOutput.online(m, rosetta: true).distributions
+        #expect(all[0] == .init(name: "Ubuntu", friendlyName: "Ubuntu", architectures: ["arm64", "x86_64"], emulated: false, default: true))
+        #expect(all[1].emulated && all[1].architectures == ["x86_64"] && !all[1].default)
+    }
+
+    @Test func statusHasRawValuesAndPendingChanges() {
+        let a = VMSettings(memoryBytes: 8 << 30, processors: 4, kernel: "k", kernelCommandLine: "c",
+                           localhostForwarding: true, dnsTunneling: true, vmIdleTimeoutMs: 60_000, instanceIdleTimeoutMs: 15_000)
+        var b = a
+        b.memoryBytes = 4 << 30
+        b.dnsTunneling = false
+        let s = VMStatus(running: true, uptimeSeconds: 1.5, effective: a, configured: b, configPath: "/x/.mslconfig", configExists: true)
+        let j = JSONOutput.status(defaultDistro: "Ubuntu", s, warnings: ["bad key"])
+        #expect(j.vm.uptimeMs == 1500 && j.vm.settings == a && j.warnings == ["bad key"])
+        #expect(j.vm.pendingChanges == [.init(setting: "dnsTunneling", from: "true", to: "false"),
+                                        .init(setting: "memoryBytes", from: "\(8 << 30)", to: "\(4 << 30)")])
+        // Stopped: no uptime field at all, no pending changes.
+        let stopped = JSONOutput.status(defaultDistro: "Ubuntu", VMStatus(running: false, uptimeSeconds: nil, effective: nil, configured: b, configPath: "/x", configExists: false), warnings: [])
+        let text = JSONOutput.encode(stopped, pretty: false)
+        #expect(!text.contains("uptimeMs") && !text.contains("null") && text.contains(#""schema":1"#) && stopped.vm.pendingChanges.isEmpty)
+    }
+
+    @Test func errorShape() {
+        let text = JSONOutput.encode(JSONOutput.Failure(error: .init(message: "No.", code: ErrorCode.noDistros)), pretty: false)
+        #expect(text == #"{"error":{"code":"Msl/Service/MSL_E_DEFAULT_DISTRO_NOT_FOUND","message":"No."},"schema":1}"#)
+    }
+}
+
+@Suite struct ConnectRequestTests {
+    @Test func parsesTargets() throws {
+        #expect(ConnectRequest(distro: "Ubuntu-26.04", target: "unix=/home/a/.vscode-server/msl/x.sock")
+            == ConnectRequest(distro: "Ubuntu-26.04", target: .unix("/home/a/.vscode-server/msl/x.sock")))
+        #expect(ConnectRequest(distro: "Debian", target: "tcp=8080")?.target == .tcp(8080))
+        #expect(ConnectRequest(distro: "D", target: "unix=/a b/c.sock")?.target == .unix("/a b/c.sock"))
+        #expect(try Arguments.parse(["--connect", "Debian", "tcp=8080"]) == .connect(ConnectRequest(distro: "Debian", target: .tcp(8080))))
+    }
+
+    @Test func rejectsMalformed() {
+        for bad in ["", "unix=relative", "tcp=0", "tcp=70000", "tcp=x", "path=/x", "/x"] {
+            #expect(ConnectRequest(distro: "D", target: bad) == nil, "\(bad)")
+        }
+        #expect(ConnectRequest(distro: "", target: "tcp=1") == nil)
+    }
+}
+
+@Suite struct ArgvJSONTests {
+    let id = "onexay.msl"
+    // VS Code's generated argv.json (with its comments).
+    let stock = """
+        // This configuration file allows you to pass permanent command line arguments to VS Code.
+        {
+        \t// Use software rendering instead of hardware accelerated rendering.
+        \t// "disable-hardware-acceleration": true,
+
+        \t// Allows to disable crash reporting.
+        \t"enable-crash-reporter": true,
+
+        \t// Unique id used for correlating crash reports sent from this instance.
+        \t// Do not edit this value.
+        \t"crash-reporter-id": "93407bc0-be8a-4446-bbfc-da98a524e011"
+        }
+
+        """
+
+    func parses(_ s: String) -> Bool {
+        // Strip comments the simple way (none of the fixtures have // in strings) and parse.
+        let json = s.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("//") { return "" }
+            if let r = line.range(of: " // ") { return String(line[..<r.lowerBound]) }  // trailing comment
+            return String(line)
+        }.joined(separator: "\n")
+        return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) != nil
+    }
+
+    @Test func enablesInStockFileAndKeepsEverythingElse() throws {
+        let out = try ArgvJSON.enabling(id, in: stock)
+        #expect(ArgvJSON.isEnabled(id, in: out))
+        #expect(parses(out))
+        #expect(out.contains("\"crash-reporter-id\": \"93407bc0-be8a-4446-bbfc-da98a524e011\","))
+        #expect(out.contains("// \"disable-hardware-acceleration\": true,"))
+        #expect(out.hasPrefix("// This configuration file"))
+        #expect(try ArgvJSON.enabling(id, in: out) == out, "idempotent")
+    }
+
+    @Test func roundTripRestoresTheFile() throws {
+        for text in [stock, stock.replacingOccurrences(of: "e011\"\n}", with: "e011\"\n\n}"),
+                     "{\n\t\"a\": 1 // last\n\t// \"b\": 2\n}\n"] {
+            let on = try ArgvJSON.enabling(id, in: text)
+            #expect(parses(on), "\(on)")
+            #expect(try ArgvJSON.disabling(id, in: on) == text, "\(text)")
+        }
+    }
+
+    @Test func appendsToAnExistingList() throws {
+        let text = "{\n\t\"enable-proposed-api\": [\"other.ext\"], // mine\n\t\"x\": 1\n}\n"
+        let on = try ArgvJSON.enabling(id, in: text)
+        #expect(on.contains("[\"other.ext\", \"onexay.msl\"], // mine"))
+        #expect(parses(on))
+        let off = try ArgvJSON.disabling(id, in: on)
+        #expect(off == "{\n\t\"enable-proposed-api\": [\"other.ext\"], // mine\n\t\"x\": 1\n}\n")
+        let empty = try ArgvJSON.enabling(id, in: "{ \"enable-proposed-api\": [] }")
+        #expect(empty == "{ \"enable-proposed-api\": [\"onexay.msl\"] }")
+    }
+
+    @Test func missingEmptyAndTrailingComma() throws {
+        for text in [nil, "", "  \n", "{}", "{\n}\n", "{\n\t\"a\": true,\n}\n"] as [String?] {
+            let on = try ArgvJSON.enabling(id, in: text)
+            #expect(ArgvJSON.isEnabled(id, in: on), "\(String(describing: text))")
+        }
+        #expect(parses(try ArgvJSON.enabling(id, in: "{\n\t\"a\": true\n}")))
+    }
+
+    @Test func removesTheMemberWhenItIsFirstOrMiddle() throws {
+        let text = "{\n\t\"enable-proposed-api\": [\"onexay.msl\"],\n\t\"a\": true\n}\n"
+        #expect(try ArgvJSON.disabling(id, in: text) == "{\n\t\"a\": true\n}\n")
+        #expect(try ArgvJSON.disabling(id, in: "{\n\t\"a\": 1\n}\n") == "{\n\t\"a\": 1\n}\n", "absent: unchanged")
+    }
+
+    @Test func ignoresLookalikesInCommentsAndStrings() throws {
+        let text = "{\n\t// \"enable-proposed-api\": [\"onexay.msl\"]\n\t\"note\": \"enable-proposed-api\"\n}\n"
+        #expect(!ArgvJSON.isEnabled(id, in: text))
+        let on = try ArgvJSON.enabling(id, in: text)
+        #expect(ArgvJSON.isEnabled(id, in: on) && parses(on))
+    }
+
+    @Test func refusesWhatItCannotEdit() {
+        #expect(throws: ArgvJSON.EditError.notAnObject) { try ArgvJSON.enabling(id, in: "[1, 2]") }
+        #expect(throws: ArgvJSON.EditError.notAnArray) { try ArgvJSON.enabling(id, in: "{ \"enable-proposed-api\": \"x\" }") }
+    }
+}
+
+
+@Suite struct ManageIDEArgumentTests {
+    @Test func parses() throws {
+        #expect(try Arguments.parse(["--manage-ide"]) == .manageIDE(ManageIDESpec()))
+        #expect(try Arguments.parse(["--manage-ide", "--ide", "all", "--install"]) == .manageIDE(ManageIDESpec(ide: "all", action: .install)))
+        #expect(try Arguments.parse(["--manage-ide", "--uninstall", "--ide", "VSCodium"]) == .manageIDE(ManageIDESpec(ide: "vscode-oss", action: .uninstall)))
+        #expect(try Arguments.parse(["--manage-ide", "--ide", "cursor"]) == .manageIDE(ManageIDESpec(ide: "cursor")))
+    }
+
+    @Test func rejects() {
+        for bad in [["--manage-ide", "--install"], ["--manage-ide", "--ide", "emacs", "--install"], ["--manage-ide", "--ide"],
+                    ["--manage-ide", "--ide", "all", "--install", "--uninstall"], ["--manage-ide", "--bogus"]] {
+            #expect(throws: ArgumentError.self, "\(bad)") { try Arguments.parse(bad) }
+        }
+    }
+}
+
+
+@Suite struct MinimumMacOSTests {
+    @Test func refusesOlderMacOS() {
+        #expect(MSLBuild.unsupportedMacOS(OperatingSystemVersion(majorVersion: 26, minorVersion: 6, patchVersion: 0))
+            == "msl needs macOS 27 or later (this is macOS 26.6).")
+        #expect(MSLBuild.unsupportedMacOS(OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)) == nil)
+    }
+
+    /// Package.swift's platform, scripts/install.sh's check and MSLBuild.minimumMacOS move together.
+    @Test func sameMinimumEverywhere() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let package = try String(contentsOf: root.appendingPathComponent("Package.swift"), encoding: .utf8)
+        let install = try String(contentsOf: root.appendingPathComponent("scripts/install.sh"), encoding: .utf8)
+        let n = MSLBuild.minimumMacOS
+        #expect(package.contains(".macOS(\"\(n).0\")"))
+        #expect(install.contains("-ge \(n) ]") && install.contains("needs macOS \(n) or later"))
+    }
+}

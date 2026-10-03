@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Networking helpers: listening-port watcher, the localhost forwarder, and
+//! /etc/hosts generation.
+
+use std::collections::BTreeSet;
+use std::time::Duration;
+use tokio::sync::watch;
+
+pub const FORWARDER_PORT: u32 = 1025;
+/// The ~/.msl/distros file server (loopback only; excluded from localhost forwarding).
+pub const NFS_PORT: u16 = 21049;
+
+/// Parse /proc/net/tcp{,6}: LISTEN sockets on any/loopback addresses.
+pub fn listening_ports(tcp: &str, tcp6: &str) -> BTreeSet<u32> {
+    let mut out = BTreeSet::new();
+    let v4_ok = ["00000000", "0100007F"]; // 0.0.0.0, 127.0.0.1 (little-endian hex)
+    let v6_ok = ["00000000000000000000000000000000", "00000000000000000000000001000000"]; // ::, ::1
+    for (text, ok) in [(tcp, &v4_ok[..]), (tcp6, &v6_ok[..])] {
+        for line in text.lines().skip(1) {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            if f.len() < 4 || f[3] != "0A" {
+                continue; // not LISTEN
+            }
+            if let Some((addr, port)) = f[1].split_once(':') {
+                if ok.contains(&addr) {
+                    if let Ok(p) = u32::from_str_radix(port, 16) {
+                        out.insert(p);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Publish the set of listening ports whenever it changes. The kernel wakes
+/// the watcher on every listen and every listener closing (portwatch.rs); if
+/// that can't be set up (a custom kernel without CONFIG_CGROUP_BPF), it falls
+/// back to rescanning every 500 ms.
+pub fn spawn_port_watcher() -> watch::Receiver<Vec<u32>> {
+    let (tx, rx) = watch::channel(Vec::new());
+    let scan = move || {
+        let tcp = std::fs::read_to_string("/proc/net/tcp").unwrap_or_default();
+        let tcp6 = std::fs::read_to_string("/proc/net/tcp6").unwrap_or_default();
+        let ports: Vec<u32> = listening_ports(&tcp, &tcp6).into_iter().filter(|p| *p != NFS_PORT as u32).collect();
+        tx.send_if_modified(|cur| {
+            if *cur != ports {
+                *cur = ports;
+                true
+            } else {
+                false
+            }
+        });
+    };
+    let events = crate::portwatch::Events::attach()
+        .and_then(|e| tokio::io::unix::AsyncFd::with_interest(e, tokio::io::Interest::READABLE));
+    match events {
+        Ok(events) => {
+            tokio::spawn(async move {
+                scan();
+                loop {
+                    let Ok(mut ready) = events.readable().await else { break };
+                    ready.clear_ready();
+                    if !events.get_ref().drain() {
+                        continue;
+                    }
+                    scan();
+                    // A listener closing is reported just before the kernel
+                    // unhashes it: look once more when it's surely gone.
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    scan();
+                }
+            });
+        }
+        Err(e) => {
+            crate::sys::log(&format!("port watcher: no kernel events ({e}); polling every 500 ms"));
+            tokio::spawn(async move {
+                loop {
+                    scan();
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            });
+        }
+    }
+    rx
+}
+
+/// vsock:1025 -> 127.0.0.1:<port> (or [::1]) relay for localhost forwarding
+/// and the ~/.msl/distros file server. After a 2-byte port header the connection is a
+/// flow-controlled bridge (framed.rs).
+pub fn spawn_forwarder() -> std::io::Result<()> {
+    let listener = tokio_vsock::VsockListener::bind(tokio_vsock::VsockAddr::new(tokio_vsock::VMADDR_CID_ANY, FORWARDER_PORT))?;
+    tokio::spawn(async move {
+        loop {
+            let Ok((conn, _)) = listener.accept().await else { continue };
+            let fd = unsafe { libc::dup(std::os::fd::AsRawFd::as_raw_fd(&conn)) };
+            drop(conn);
+            if fd < 0 {
+                continue;
+            }
+            crate::sys::set_blocking(fd);
+            crate::sys::set_cloexec(fd, true);
+            let mut conn = unsafe { <std::fs::File as std::os::fd::FromRawFd>::from_raw_fd(fd) };
+            std::thread::spawn(move || {
+                use std::io::Read;
+                let mut hdr = [0u8; 2];
+                if conn.read_exact(&mut hdr).is_err() {
+                    return;
+                }
+                let port = u16::from_be_bytes(hdr);
+                let tcp = std::net::TcpStream::connect(("127.0.0.1", port)).or_else(|_| std::net::TcpStream::connect(("::1", port)));
+                let Ok(tcp) = tcp else { return };
+                let _ = tcp.set_nodelay(true);
+                let (Ok(a), Ok(b)) = (tcp.try_clone(), tcp.try_clone()) else { return };
+                let to_file = |s: std::net::TcpStream| std::fs::File::from(std::os::fd::OwnedFd::from(s));
+                let _ = crate::framed::bridge(conn, Some(to_file(a)), Some(to_file(b)));
+                drop(tcp);
+            });
+        }
+    });
+    Ok(())
+}
+
+/// Default gateway from /proc/net/route (the vmnet gateway, i.e. the Mac).
+pub fn default_gateway() -> Option<String> {
+    let routes = std::fs::read_to_string("/proc/net/route").ok()?;
+    for line in routes.lines().skip(1) {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() > 2 && f[1] == "00000000" {
+            let g = u32::from_str_radix(f[2], 16).ok()?.to_le_bytes();
+            return Some(format!("{}.{}.{}.{}", g[0], g[1], g[2], g[3]));
+        }
+    }
+    None
+}
+
+/// /etc/hosts in the style WSL generates, with the Mac's own /etc/hosts entries.
+pub fn generate_hosts(hostname: &str, gateway: Option<&str>, mac_hosts: &str) -> String {
+    let mut s = String::from(
+        "# This file was automatically generated by msl. To stop automatic generation of this file, add the following entry to /etc/wsl.conf:\n# [network]\n# generateHosts = false\n",
+    );
+    s.push_str("127.0.0.1\tlocalhost\n");
+    s.push_str(&format!("127.0.1.1\t{hostname}.\t{hostname}\n"));
+    if let Some(gw) = gateway {
+        s.push_str(&format!("{gw}\thost.internal\n"));
+    }
+    for line in mac_hosts.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let mut f = t.split_whitespace();
+        let addr = f.next().unwrap_or("");
+        let names: Vec<&str> = f.take_while(|n| !n.starts_with('#')).collect();
+        // Loopback/localhost entries are Mac-specific; keep the rest.
+        if names.is_empty() || addr.starts_with("127.") || addr == "::1" || addr == "255.255.255.255" || addr.starts_with("fe80::") {
+            continue;
+        }
+        s.push_str(&format!("{addr}\t{}\n", names.join(" ")));
+    }
+    s.push_str("\n# The following lines are desirable for IPv6 capable hosts\n::1     ip6-localhost ip6-loopback\nfe00::0 ip6-localnet\nff00::0 ip6-mcastprefix\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters\n");
+    s
+}
+
+/// A valid Linux hostname from the Mac's name (like WSL sanitises the Windows name).
+pub fn sanitize_hostname(name: &str) -> String {
+    let s: String = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .collect();
+    let s = s.trim_matches('-');
+    let s = if s.len() > 63 { &s[..63] } else { s };
+    if s.is_empty() { "msl".into() } else { s.to_string() }
+}
+
+#[cfg(test)]
+#[path = "../../tests/guest/net.rs"]
+mod tests;

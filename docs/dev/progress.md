@@ -1,0 +1,738 @@
+# MSL development log
+
+Entries are in chronological order, with the newest at the bottom. Times use India Standard Time (IST). Entries before 01:10 were reconstructed from session history.
+
+## 2026-09-23 / 24 — planning
+- **~23:50** Planning started. Researched WSL2 internals (open-source repo) and Apple's virtualization stack (Containerization 0.46, `container` 1.1, VZ on macOS 26 and 27).
+- **~00:20** Decisions:
+  - one shared utility VM with per-distro namespaces;
+  - Apple-only virtualization, no GPU;
+  - binary name `msl`;
+  - no running macOS binaries from inside distros;
+  - Rust guest (not Go);
+  - unmodified WSL `.wsl` images, plus a compat layer.
+- **~00:35** Plan approved. Written to `docs/PLAN.md`.
+
+## 2026-09-24 — milestone 0 spike
+- **00:40** Toolchain: rustup 1.98.1 with `aarch64-unknown-linux-musl`, protobuf. zig and cargo-zigbuild removed, because `rust-lld` links static musl directly.
+- **00:50** `guest/` (Rust `msl-guest`, 660 KB) and `spike/` (Swift VM runner) written. Ubuntu 24.04 and Debian WSL tarballs downloaded (checksums OK).
+- **00:52** First boot: VM up in 0.13 s, guest control channel in 41 ms, vmnet works with ad-hoc signing, Rosetta binfmt registered.
+- **00:55** Imports (Ubuntu 4.5 s, Debian 1.0 s). systemd running as PID 1 in the distro namespaces; distro start takes 11–22 ms.
+- **00:58** virtiofs reports files as owned by the calling UID, so the idmap work was dropped. Ubuntu OOBE runs with `WSL_DISTRO_NAME` set.
+- **01:00** Fixes: cgroup cleanup on stop; `net.ifnames=0` (udev was renaming the shared NIC); the readiness race.
+- **01:02** Custom kernel (Apple config + USB/quota/nfsd) built in about 3 min using Apple's `container`.
+- **01:05** USB hot-attach works end to end (`/dev/sda` → mkfs/mount/write → detach/reattach). Spike complete; results in `docs/spike-results.md`.
+
+## 2026-09-24 — milestone 1 (core lifecycle)
+- **2026-09-24 01:13 IST** Started. Checked current versions: tonic 0.14.6 / prost 0.14 / tokio 1.53 / tokio-vsock 0.7.2 (guest); grpc-swift-2 2.4.3 / nio-transport 2.10 (UDS targets) / grpc-swift-protobuf 2.4.1 (host). Pulled WSL's exact CLI strings from `Resources.resw` for output fidelity. Next: `proto/msl/v1/msl.proto`.
+- **01:20** `proto/msl/v1/msl.proto` written. `MiniInit` (VM-level) and `Agent` (per distro) services; tar and stdio bytes go over one-shot vsock data ports announced in stream events.
+- **01:20** Guest rewritten on tokio (current-thread) + tonic 0.14: MiniInit (import/export in tar, tar.gz, tar.xz and zstd; start/stop/delete/list/shutdown) and Agent (Run with PTY or pipes, Resize, Signal, Info).
+  - Pipe stdio passes the vsock socket straight to the child, with no copying.
+  - A process starts only after the host has connected to its streams.
+  - The distro counts as ready only after systemd's bus socket exists.
+  - Binary: **1.4 MB**.
+- **01:20** Guest unit tests: 3/3 passing on Linux (`scripts/test-guest.sh`, via Apple `container`).
+- **01:30** Host package set up: `Package.swift`, Swift gRPC code generated (`scripts/gen-proto.sh`), and MSLCore written (wsl-compatible parser, message catalogue, registry, IPC with fd passing through a C shim, list formatting). The CLT toolchain can't discover swift-testing tests, so the tests run as an executable: `swift run msl-core-tests` → **47 checks, 0 failures**.
+- **01:41** `msld` and `msl` built and working end to end. Two host bugs found and fixed: (1) pinning the vmnet subnet stops DHCP answering the kernel's `ip=dhcp`, so the pin is dropped until milestone 4 (static guest addressing); (2) grpc-swift sent the socket path as the HTTP/2 `:authority`, which tonic/hyper rejects with RST_STREAM, so it is now set to `msl-guest`. `msl --install --from-file debian.wsl` works. All commands and output are now logged to `LOG.md` via `scripts/logrun`.
+- **01:53** Fixed `msld` event handling. Each run session used to start its own reader for resize/signal events, so after the first-run setup two threads read the same socket, corrupted the frames and hung up the shell. Now there is one `EventRouter` per connection.
+- **01:53** PTY harness bug: it matched prompts against output it had already seen, so it sent the second password early and `passwd` flushed it. Fixed, and the harness now has a 180 s limit.
+- **01:53** **Milestone 1 e2e suite (`Tests/e2e/m1.sh`): 40/40 passing.** Covered: install (`--from-file`, `--name`, `--no-launch`, duplicate rejection); Ubuntu's own `wsl-setup` OOBE through a real PTY; default user; `-l` / `-l -v` / `-l -q` / `--running`; `-s`; `--status`; `-e`; exit codes; cwd translation; `--cd ~`; `msl ~`; `-u`; stdin/stdout/stderr pipes; `--shell-type login`; export (tar.gz, stdout); import (file, stdin); setuid and ownership preserved; `--unregister`; `-t`; `--shutdown [--force]`; error messages and codes.
+
+## 2026-09-24 — milestone 2 (distros and config)
+- **01:59** Pre-M2 audit of `LOG.md` for "Windows" text: none comes from msl itself. Debian's `/usr/lib/wsl/oobe.sh` prints *"does not need to match your Windows username"* and `aka.ms/wslusers`. Ubuntu's `wsl-setup` only has hidden powershell calls. Decision: msl's own OOBE replaces Debian's script (first M2 task). Fixed an unclosed fence in `LOG.md`.
+- **02:10** Guest compat layer:
+  - runtime systemd masks in `/run/systemd/system` (`wsl-pro-service`, `console-getty`, `getty@tty1`), so the image is never modified;
+  - built-in OOBE (`/run/msl/init msl-oobe`) replaces Debian's `oobe.sh`, with neutral wording and the Mac user name prefilled.
+- **02:10** wsl.conf keys supported: `[boot] command`, `[automount] enabled/root/mountFsTab`, `[network] generateResolvConf`.
+- **02:10** Host:
+  - `.mslconfig` (`memory`, `processors`, `kernel`, `kernelCommandLine`, `vmIdleTimeout`, `instanceIdleTimeout`) with WSL-style warnings;
+  - online install from Microsoft's `DistributionInfo.json` (arm64 entries, SHA-256 verified, cached in `~/Library/Caches/msl`) and `-l -o`;
+  - `--manage` (`--set-default-user`, `--move`, `--set-sparse`; `--resize` and `--compact` deferred);
+  - idle timeouts.
+  - Removed the async semaphore waits that the Swift 6 checker flagged.
+- **02:10** Guest bug fixed: `stop` and the distro watcher both waited on the same supervisor PID, and the reaper gives the status to only one of them, so `stop` always sat out its 10 s timeout. `msl -t` went from about 10 s to **0.12 s**. This also unblocked the VM idle timeout.
+- **02:10** **Milestone 2 e2e (`Tests/e2e/m2.sh`): 25/25. M1 regression: 40/40. Unit tests: guest 4/4, host 58/58.**
+
+## 2026-09-24 — milestone 3 (host integration)
+- **02:12** Started. Scope: cwd translation moves into the guest (so it honours `[automount] root`), `mslpath` (`-u/-w/-m/-a`), `MSLENV` (Mac → Linux, with `/p` and `/l`).
+- **02:15** Implemented:
+  - `mslpath`: `-u` (default), `-w`, `-m`, `-a` and combined flags. Linux-only paths map to `~/MSL/<distro>/…`, the milestone 4 file view. It is exposed as the `/usr/bin/mslpath` → `/run/msl/init` symlink, like WSL's `/usr/bin/wslpath`.
+  - `MSLENV`: Mac → Linux, with `/p` and `/l` translation; `/w` entries are skipped.
+  - cwd translation moved into the guest, so `[automount] root` changes the cwd, `mslpath` and `MSLENV` together.
+- **02:15** **Milestone 3 e2e (`Tests/e2e/m3.sh`): 24/24 on the first run.** Regressions: M1 40/40, M2 25/25. Unit tests: guest 7/7, host 58/58.
+
+## 2026-09-24 — milestone 4 (networking and files)
+- **02:18** Started. Order: hostname and hosts generation → localhost forwarding (port watcher + vsock relay) → a design check for `~/MSL/<distro>`.
+  - Decision: no subnet pinning. WSL's NAT address also changes between boots, and pinning breaks vmnet DHCP (M1 finding).
+- **02:25** Hostname and hosts generation work (hostname `supernova` from the Mac's name, WSL-style `/etc/hosts` with `host.internal`). Localhost forwarding works over IPv4 and IPv6 (a Python http.server in Ubuntu answers `curl localhost:8765` on the Mac).
+- **02:25** `~/MSL/<distro>` design verified. A normal macOS user can `mount_nfs` a userspace NFSv3 server (tested with nfsserve's mirrorfs: `mounted by the Mac user`, reads and writes both ways).
+  - Implemented: nfsserve (BSD-3) in mini-init on guest loopback :21049; msld mounts it at `<msl>/files` (nobrowse, soft) through a private vsock bridge; `~/MSL/<name>` symlinks.
+  - New files take their parent directory's owner.
+  - Verified: `echo > ~/MSL/Ubuntu-24.04/home/tester/note.txt` gives `tester:tester`.
+- **02:25** Finding: the vmnet gateway's DNS does not resolve Mac-only names (`supernova.local`), so VPN split-DNS would likely fail too. Implementing the DNS tunneling equivalent: a guest stub at 10.255.255.254:53 relays over vsock to msld, which resolves with `DNSServiceQueryRecord` (mDNSResponder).
+- **02:36** M4 e2e hung: vCPU 0 hit an RCU stall about 31 s after boot, so mini-init stopped answering and every msld request blocked on it. Suspected trigger: concurrent export → import over vsock, or NFS load. Reproducing in isolation next.
+- **02:52** **Root cause found (a latent bug since M1):** Virtualization.framework's vsock device blocks when the host doesn't read a connection promptly, which freezes every vsock connection and vCPU 0. Repro: `msl -e sh -c 'head -c 200000000 /dev/zero' | (sleep 30; cat)` leaves the VM unresponsive, even after the reader drains. The export|import pipe in the M4 e2e hit the same thing. Idle boot (DNS tunneling on or off) and export or import alone are fine.
+- **02:52** Fix: credit-based framing (`data`/`credit`/`eof`, 1 MB window) on every guest↔host byte stream (session stdio/tty, export, import, forwarder, NFS bridge). Receivers always drain their vsock socket, and backpressure moves to the real producer.
+- **03:03** Implemented `FramedBridge` (Swift) and `framed.rs` (Rust). Session stdio now goes through pipes relayed by the agent instead of handing the vsock socket to the child. Verified: slow reader → VM stays responsive; export|import pipe of 1.3 GB completes in 4 s.
+- **03:03** Second bug found by stress-testing (10/60 `msl cat` runs had empty output): both bridges `shutdown()` an fd *number* after the owning object had closed it, hitting whichever connection reused the number. Fixed in both. Now 0/60.
+- **03:03** **Milestone 4 e2e (`Tests/e2e/m4.sh`): 33/33.** New regression checks: paused reader, no lost output in 30 short sessions. Regressions: M1 40/40, M2 25/25, M3 24/24. Unit tests: guest 12/12, host 58/58.
+- **03:06** Wrote `docs/vsock-flow-control.md`: the VZ vsock limitation, evidence, isolation experiments, the credit-framing design, the fd-reuse bug, and alternatives (unbounded buffering, SO_RCVBUF, SIGSTOP/SIGCONT, TCP over vmnet, virtio-console, virtiofs file transfer, VZCustomVirtioDevice, libkrun, waiting for Apple). Linked from PLAN.md.
+- **03:15** Checked Apple Containerization. Its stdio relay has the same naive read→blocking-write pattern, but `container exec … | (sleep 30; cat)` does **not** freeze and applies real backpressure (producer done at 21 s, host RSS +27 MB for 200 MB). Experiment in msl: a guest-dialled vsock connection (`AF_VSOCK` → host `VZVirtioSocketListener`), unframed, host not reading for 20 s → VM responsive, sender blocked until read. **The VZ flaw is specific to host-initiated `connect(toPort:)` connections.** Doc updated; 'reverse the connection direction' added as the leading alternative. The experiment hook was removed afterwards.
+
+## 2026-09-24 — milestone 5 (remainder)
+- **03:20** Started. Order: --debug-shell → --mount/--unmount → x86_64 distros via Rosetta → memory reclaim → --manage --resize/--compact → --update → packaging (notarisation scripted; needs the user's Developer ID).
+- **03:36** Done: `--debug-shell` (BusyBox 1.37 static in the initrd; mini-init also serves Agent) and `--mount/--unmount` (USB hot-attach, shared `/mnt/msl` propagated as a slave mount into running distros, disks identified by `diskseq` so a re-attached `sda` isn't missed). The user asked not to install Rosetta: none was installed (it was already present); x86_64 distro testing dropped, and the code path only activates if Rosetta is already installed. Found and fixed: overwriting a running msld in place breaks its signature, so VZ refuses to start VMs ('Internal Virtualization error'). Fix: atomic install in build.sh, a strict self-signature check, and exit after --shutdown when replaced.
+- **03:46** Memory reclaim investigated and dropped: VZ's traditional balloon does not return ballooned pages to macOS (guest MemFree 17 GB → 0.49 GB while inflated; host footprint 3989 → 3987 MB). Memory comes back when the VM exits (vmIdleTimeout). autoMemoryReclaim is accepted and documented as having no effect. --manage --compact works (FITRIM; 1 GiB returned), trim-on-shutdown added. --manage --resize refuses honestly: the ContainerizationEXT4 formatter uses sparse_super2, so online ext4 resize is impossible (follow-up: static resize2fs).
+- **04:01** Done:
+  - `--update` (release manifest, verified download, atomic replace, old msld hands over);
+  - `--uninstall` (keeps data);
+  - `scripts/package.sh` (tarball, .pkg, update.json, Homebrew formula; xattrs stripped; the .pkg expands with 0 AppleDouble files and valid signatures);
+  - `scripts/notarize.sh` (not run: needs a Developer ID).
+- **04:01** Release path test (`Tests/e2e/release.sh`): install the 0.1.0 tarball into a scratch prefix, run Debian, `--update` → 0.1.1 (the distro survives), up to date, `--uninstall` (0 files left, data kept).
+- **04:01** **Milestone 5 e2e (`Tests/e2e/m5.sh`): 20/20.** Full regression: M1 40/40, M2 25/25 (2 expectations updated for intentional changes), M3 24/24, M4 33/33, release ✓. Unit tests: guest 12/12, host 63/63. Docs: `docs/memory-reclaim.md`, PLAN open items, README.
+- **04:15** Planned **milestone 6: x86_64 emulation with qemu-user** (docs/PLAN.md). Rosetta check: general-purpose Rosetta ends after macOS 27, but Apple keeps Rosetta for Intel binaries in Linux VMs. Feasibility measured: Debian qemu-user 10.0.13 (static-pie, 14 MB) runs x86_64 BusyBox in the msl VM; SHA-256 of 64 MB: native 0.38 s, Rosetta 0.35 s, qemu 0.70 s. Xcode 27.0 is installed but its license isn't accepted (needs the user's sudo); the swift-testing move waits for that.
+- **04:19** Xcode 27.0 license accepted; Xcode is now the active toolchain (Swift 6.4). Host tests moved from the `msl-core-tests` executable back to a swift-testing target: `swift test` gives 16 tests in 5 suites, all passing. Full build under Swift 6.4 has no warnings; smoke test (install, run, debug shell) OK.
+- **04:45** User feedback: the NFS view wasn't in Finder (it was mounted `nobrowse`), then showed as "127.0.0.1". Reworked:
+  - one browsable mount per distro (`127.0.0.1:/<name>` at `~/MSL/<name>`), because Finder names a network volume after its export path, so Locations shows each distro by name;
+  - distro logos from `wsl-distribution.conf` `[shortcut] icon` (.ico → .icns via ImageIO) as volume icons; verified with NSWorkspace (Debian swirl, Ubuntu logo);
+  - macOS metadata (`.DS_Store`, AppleDouble `._*`, `.VolumeIcon.icns`, `Icon\r`) kept in guest memory (`nfsview.rs`). Refusing it had broken `ditto`/Finder copies of files with xattrs; now copies work and Linux never sees the files.
+- **04:45** Bugs found:
+  - `isNFS` used `URL.resolvingSymlinksInPath`, which strips `/private`, so mounts under /tmp weren't recognised. Fixed with realpath plus getmntinfo (which never touches a possibly stale mount).
+  - The guest dropped an export before the Mac unmounted it (stale mount on unregister). Now unmount first.
+  - m1–m3 leaked test symlinks into the real `~/MSL`. Removed, and every suite now sets MSL_VIEW_DIR.
+- **04:45** Error-code lines are now hidden unless `MSL_ERROR_CODES=1` (user's choice).
+- **04:45** Regression: M1 40/40, M2 25/25, M3 24/24, M4 45/45, M5 20/20; `swift test` 17/17.
+
+## 2026-09-24 04:53 — `msl --status` shows effective VM settings
+- `--status` keeps wsl.exe's two lines, then adds the VM state (running with uptime, or stopped) and the settings: memory, CPUs, kernel, kernel command line, localhost forwarding, DNS tunneling, idle timeouts and the settings file. Any `.mslconfig` change waiting for `msl --shutdown` is listed as a pending diff.
+- `VMHost.resolve(_:)` is the single place that applies defaults. The VM boots from it, and `--status` reports from it, so the two always match. New in MSLCore: `VMSettings`, `VMStatus`, `StatusFormat`, and `Reply.status`.
+- Tests: `swift test` 19/19 (new StatusTests), e2e m1 40/40, m2 25/25.
+- Found: a long `MSL_HOME` path (over the 104-byte Unix-socket limit) makes the VM fail to start with `io(48)`. The default location is not affected.
+
+## 2026-09-24 05:04: VS Code integration recorded for later
+- The WSL extension is Windows-only. Options (SSH ProxyCommand entries, a thin extension on top of Remote-SSH, why a full resolver extension is blocked, `code .`) are written up in docs/vscode-integration.md and listed as M7 (proposal) in PLAN.
+
+## 2026-09-24 05:08: published to GitHub (private)
+- Created the private repo github.com/onexay/msl and pushed `main` (1 commit, 100 files). LOG.md and build outputs are git-ignored.
+- Published the kernel as release `kernel-6.18.15-msl` (Image, config, release.sha256). `scripts/build.sh` fetches it through `kernel/fetch.sh` (gh + checksum) when `kernel/out/Image` is missing. Tested from a fresh clone: Image OK, config OK.
+
+## 2026-09-24 10:18: interactive installer replaces Homebrew
+- New `install.sh` (POSIX sh, repo root). It checks for Apple silicon and macOS 26+, then asks for a prefix (default `~/.local`, no sudo; `/usr/local` uses sudo). It downloads the latest `v*` release through `gh` or the GitHub API with GITHUB_TOKEN, and parses the JSON with macOS's own JavaScript. It verifies the SHA-256, asks before stopping a running msld, swaps each tree in with a rename, and restarts msld the same way `--update` does. It then offers to add msl to PATH in the shell's rc file and to install a first distro. Prompts come from /dev/tty, so `curl | sh` stays interactive. Also supports `--yes`, `--prefix`, `--version`, `--from` and `--no-path`.
+- Removed the Homebrew formula (packaging/). `scripts/package.sh` now also writes `<tarball>.sha256`.
+- Tested in a scratch HOME and prefix: interactive install through a PTY, the PATH line, the file tree, a reinstall with msld running (the old msld exits), a bad checksum (refused) and `--uninstall`. Not yet tested: the GitHub download path, because there is no `v0.1.0` release yet.
+
+## 2026-09-24 10:24: release scheme and v0.1.0
+- The kernel has its own releases, `kernel-<linux>-msl.<n>`. The tag lives in `kernel/release.tag`, which `kernel/fetch.sh` reads. `kernel/publish.sh` publishes with `--latest=false` and rewrites `release.sha256`. `kernel-6.18.15-msl` was re-published as `kernel-6.18.15-msl.1` and the old tag deleted.
+- msl releases are `v<version>`, made with `scripts/publish.sh` and marked Latest. It requires a clean, pushed tree, checks the bundled kernel against `kernel/release.sha256`, and names the kernel tag in the notes. Published **v0.1.0**: tarball + .sha256, .pkg, update.json.
+- install.sh download path tested: via gh (latest), via curl + GITHUB_TOKEN piped with no gh (same binary), no auth (clear error), unknown version (clear error).
+- Known: `msl --update` uses `releases/latest/download/update.json`, which needs the repo to be public (there's no auth for private downloads).
+
+## 2026-09-24 10:28: repo is public
+- The unauthenticated `curl -fsSL https://raw.githubusercontent.com/onexay/msl/main/install.sh | sh` installs v0.1.0 with its SHA-256 verified, and `msl --update` reads the public update.json ("already installed"). The README shows the one-liner.
+- `kernel/fetch.sh` falls back to curl when gh isn't logged in, so building from source no longer needs gh.
+
+## 2026-09-24 10:35: licensed Apache-2.0
+- Added LICENSE (canonical Apache-2.0 text) and NOTICE. The README has a License section, `guest/Cargo.toml` changes from MIT to Apache-2.0, THIRD_PARTY_NOTICES names the licence, and packages install LICENSE and NOTICE in `share/doc/msl`.
+- Future commits use `onexay <…noreply…>`. Rewriting the earlier commits' author was blocked by the permission check and is left to the user.
+
+## 2026-09-24 11:11: open-source governance pass (audit items 1–20)
+1. Microsoft's MIT notice for the adapted WSL strings is included: `docs/licenses/WSL-MIT.txt`, referenced in `Messages.swift`.
+2. Full dependency licence texts are generated by `scripts/gen-licenses.sh` (cargo-about for the Rust crates, SwiftPM checkouts for the Swift packages) and shipped in `share/doc/msl/licenses`.
+3. GPL corresponding source: `scripts/gpl-sources.sh` fetches and verifies the kernel.org tarball and Debian's busybox 1.37.0-6 source. Both publish scripts attach them, and they were uploaded to the existing releases.
+4. Trademark and non-affiliation notice added to NOTICE and the README. The rename is left to the owner.
+5. Commit history rewrite: left to the owner.
+6. SECURITY.md: reporting, supported versions, security model. Found: the `~/MSL` NFS bridge is reachable by other local users (roadmap open item).
+7. Dependabot config (cargo, Swift, Actions).
+8. Branch protection: needs the owner's go-ahead (repo setting).
+9. PGP-signed checksums (`MSL_GPG_KEY`); `install.sh` verifies them against the pinned release key when gpg is present.
+10–14. CONTRIBUTING (DCO), CODE_OF_CONDUCT (Contributor Covenant 2.1; contact still to be filled in), CI (Swift, Rust, shellcheck, version check), issue and PR templates, CODEOWNERS, CHANGELOG (release notes come from it), GOVERNANCE.
+15. Topics and homepage: needs the owner's go-ahead.
+16. Moved the dev log and spike under `docs/dev` and the entitlements next to `msld`. m1 now downloads its own test images (it depended on the deleted `spike/cache`).
+17. Docs index; PLAN split into architecture.md and roadmap.md, with the original kept as `dev/plan.md`; design notes under `docs/design`.
+18. Shorter README; the configuration reference is in `docs/configuration.md`, and build and release details are in CONTRIBUTING.
+19. A single `VERSION` file, with `scripts/set-version.sh` and `check-version.sh`; the guest crate is `publish = false`.
+20. SPDX headers in 76 source files (`nfs.rs`: Apache-2.0 AND BSD-3-Clause).
+
+## 2026-09-24 11:27: roadmap moved to GitHub
+- Milestones created from the roadmap: M0–M5 (closed), M6 x86_64 via qemu-user, M7 VS Code integration, and Later.
+- Open items became issues #1–#6: the NFS view exposure (security), notarisation, `--resize`, testing x86_64 distros (M6), the vsock Apple report and dial-back, and `~/MSL` auto-start (Later).
+- Removed `docs/roadmap.md` and `docs/dev/plan.md`, and renamed `docs/architecture.md` to `docs/ARCHITECTURE.md`. References now point to the milestones and issues.
+- Milestones renamed to elements, with short goals only: Hydrogen … Carbon (done), Nitrogen (x86_64 via qemu-user), Oxygen (VS Code), and Fluorine (was "Later"). The detail moved into issues: #7–#9 and #4 (Nitrogen), #10–#12 (Oxygen), and #13–#17 plus #6 (Fluorine). Docs refer to milestones by name.
+
+## 2026-09-24 11:48: history rewrite and repo protections
+- Rewrote the history so every commit is authored as `onexay` with the no-reply email, and scrubbed the user name and paths from the old PROGRESS/PLAN text. Force-pushed `main` and the two tags (both now at `c97549e`) and updated the commit hash in the release notes. GitHub still keeps the pre-rewrite commits reachable through `refs/pull/18/head` (Dependabot's merged PR); only GitHub Support can purge them.
+- Protected `main`: no force pushes or deletion; pull requests need Lint, Host (Swift) and Guest (Rust) to pass, with conversations resolved; admins can still push directly.
+- Turned on private vulnerability reporting, Dependabot alerts and security updates, and secret scanning with push protection. Added topics: wsl, linux, macos, virtualization-framework, apple-silicon, developer-experience.
+
+## 2026-09-24 11:57: v0.1.1 replaces v0.1.0
+- The name is now "Modern Subsystem for Linux". Deleted the v0.1.0 release and tag, merged the changelog into a single 0.1.1 entry, and set the version to 0.1.1 everywhere.
+- Published **v0.1.1** (Latest): tarball + .sha256, .pkg, update.json and the BusyBox source. Not PGP-signed, because the key isn't on the build Mac.
+- Checked the public one-liner install: msl 0.1.1 with kernel 6.18.15-msl, the new name in CLI output, LICENSE/NOTICE/licences in share/doc/msl, and `msl --update` reporting it's current.
+
+## 2026-09-24 12:31: clean distro stop (#19) and eth0 on systemd 259 (#20)
+- A user reported unclean journals and `eth0` renamed to `enp0s1` in Ubuntu 26.04.
+- #19: stopping used `SIGKILL`. Now a systemd distro gets `SIGRTMIN+4` (poweroff), and other distros' processes get `SIGTERM`, with the namespace ending once only msl's processes are left. Anything left after 10 s is killed. `--shutdown` stops distros in parallel. Measured: Ubuntu 26.04 stops in 3.2 s with a clean journal; a distro without systemd stops in 0.07 s; a process ignoring TERM is killed at 10 s.
+- #20: systemd 259 treats the pid namespace as a container and ignores `net.ifnames=0`. The compat layer now runtime-masks `99-default.link`, and the NIC stays `eth0`.
+- e2e m1–m5 all pass (40/25/24/45/20).
+
+## 2026-09-24 12:35: v0.1.2
+- Published **v0.1.2** (Latest) with the fixes for #19 and #20. Checked the upgrade from the public one-liner: installed v0.1.1, `msl --update` moved it to 0.1.2, and a second `--update` reports it's current.
+
+## 2026-09-25 00:10: Neon: --json for the query commands
+- `--json` works with `--list` (all variants), `--list --online`, `--status` and `--version`. The models are in `MSLCore/JSONOutput.swift`, and `Arguments.parseInvocation` accepts the flag first or among those commands' options, never inside a Linux command line. Other commands reject it with `Msl/E_INVALIDARG`.
+- Conventions: one object on stdout with `schema: 1`, sorted camelCase keys, raw numbers, no nulls; pretty on a terminal, compact when piped. Errors go to stderr as JSON, with wsl.exe's exit codes (e.g. `-l --json` with nothing installed exits 255). In `--status`, `.mslconfig` warnings go into the JSON instead of stderr.
+- Docs: `docs/json.md` (examples from real output), `--help`, README, CHANGELOG.
+- Tests: 5 new unit tests (24 in total), a new `Tests/e2e/neon.sh` (19/19), and m1 40/40 and m2 25/25 still pass.
+
+## 2026-09-25 00:12: e2e suites named after milestones
+- `Tests/e2e/m1.sh`…`m5.sh` are now `helium`, `lithium`, `beryllium`, `boron` and `carbon`, next to `neon`. Their headers and temp-dir prefixes match, and `release.sh` keeps its name. Updated CONTRIBUTING, the vsock doc, and issue #4 (Nitrogen's suite will be `nitrogen.sh`).
+
+## 2026-09-25 00:16: v0.1.3
+- Published **v0.1.3** (Latest) with `--json` for the query commands (Neon). Checked: installed v0.1.2 with the public one-liner, ran `msl --update` to 0.1.3, and `--version --json` reports 0.1.3 with the install prefix.
+
+## 2026-09-25 01:26: VS Code managed-pipe transport (design)
+- Added option C′ to `docs/design/vscode-integration.md`: a resolver extension whose `makeConnection()` pipe runs extension → msld Unix socket → vsock:1026 → msl-guest → the server's Unix socket inside the distro. It reuses the forwarder's framed bridge. Still depends on the proposed `resolvers` API, which is recorded as an open question.
+
+## 2026-09-25 09:35: Sodium started (VS Code via managed pipes)
+- New milestone **Sodium** with #27–#33: resolver skeleton, server install, `msl-bridge`, `makeConnection`, `tunnelFactory`, msld connect socket, tests/docs.
+- #29 `msl-bridge` (`/run/msl/init msl-bridge unix:<path>|tcp:<port>`): stdio relay with half-close both ways. Unit test plus a real distro check: 100 MB echoed through `msl -e` with matching SHA-256 in 0.41 s; the TCP target and the error exits (1, and 2 for usage) work.
+- Found: `/run/user/<uid>` does not exist for `msl -e` sessions (no PAM/logind), so the server socket moves to `~/.vscode-server/msl/<commit>.sock`. Updated the design doc, #28 and #32.
+
+## 2026-09-25 09:43: Sodium extension works end to end
+- `extensions/vscode`: resolver for `msl+<distro>` (#27), server install/start in the distro (#28), `makeConnection` over `msl-bridge` (#30), and `tunnelFactory` (#31). VS Code 1.138.0 was tested in an isolated instance (`--enable-proposed-api`).
+- First resolve took 1.65 s (7.7 s when the server was downloaded on an earlier run), and both pipes finished the handshake in about 60 ms. After killing the bridges in the distro, VS Code resolved again (24 ms, reusing the server) and reconnected both channels. A distro port was auto-forwarded through `tunnelFactory`, and 50 MB downloaded through it with a matching SHA-256 in 0.16 s.
+- Gotcha: VS Code refuses a `--user-data-dir` whose IPC socket path is longer than 103 characters.
+
+## 2026-09-25 10:10: clean slate script, view dir move, reinstall
+- `scripts/clean-slate.sh [--stop-msld]` resets msl (terminate/unregister all, retrying once for #34; shutdown; stale sockets; optional msld stop) and reports what is left, with a log in `build/logs/`.
+- #34 filed: the first `--unregister` failed with ENOTEMPTY and left 47,816 files registered; the retry worked.
+- The file view moved from `~/MSL` to `~/.msl/distros` (the old folder is removed when empty; tested). Finder still lists the `Ubuntu-26.04` disk at the hidden path, with its volume icon.
+- Stale `run/vsock-*.sock` files are now removed when the VM stops.
+- Reinstalled Ubuntu-26.04 with `--no-launch` (7.3 s).
+
+## 2026-09-25 10:36: #32 msld connect socket
+- `connect.sock` (msld, `Connect.swift`) plus guest vsock 1026 (`connect.rs`). The guest connects from a thread that has entered the distro's mount namespace and taken the default user's uid and gids. Only `<home>/.vscode-server/msl/<name>.sock` is allowed.
+- Tests: 3 guest unit tests and 2 Swift parser tests. A 100 MB echo took 0.39 s with a matching SHA-256. Refused as expected: docker.sock, systemd private, `..`, a symlink to a root-only socket (EACCES), a symlink to a VM-only path (ENOENT), a bad distro, and a malformed line. The TCP target works, and a connect to a stopped distro starts it.
+- The extension now uses connect.sock for every pipe (no `msl` processes; handshake about 48 ms). The distro stays running while VS Code holds pipes.
+- Found and fixed a tunnel bug: with a slow local reader, 10 of 12 50 MB downloads were cut short (40-47 MB), because `onDidClose` destroyed the socket with data still queued. Added backpressure (`Pipe.pause/resume`) and a clean end; after the fix, 12 of 12 were correct.
+
+## 2026-09-25 10:46: #33 Sodium tests and docs
+- `Tests/e2e/sodium.sh`: 22 of 22 pass in 24 s (msl-bridge echo, tcp and exit codes; connect.sock mode, a 100 MB echo, tcp, 6 allowlist refusals, the symlink EACCES/ENOENT cases, a bad distro, a malformed line; pipes count as sessions for the idle timeout; auto-start; the extension compiles). It stops only its own msld.
+- VM restart under a connected window: found that `resolve()` returned a dead server, because the old pidfile matched a new process (pids start over). Fixed by checking the process's cmdline for `--socket-path <sock>` and taking a start lock. After the fix, a new server started in 1.7 s. VS Code then rejected its old reconnection token and offered to reload, as it does with WSL after `wsl --shutdown`.
+- Added a manual checklist to extensions/vscode/README.md. Still to check by hand: the window label, two distros, and installing the .vsix (reading the window title needs Accessibility permission).
+
+## 2026-09-25 11:02: Debian and two distros side by side
+- Installed Debian (2.8 s from cache). Stock Debian has no curl, wget or python3, so the server download moved to the Mac: `~/Library/Caches/msl/vscode-server/`, then piped into the distro. Debian took 4 s to download 211 MB and 3.6 s to install.
+- Found a second dead-server case: a server that was auto-shutting down still matched pid+cmdline but refused connections. `running()` now also connects through `msl-bridge`.
+- Two windows, Ubuntu-26.04 and Debian, from the installed `.vsix` in an isolated profile: each distro had its own server and remote extension host, and a Debian forwarded port passed 3 of 3 slow 50 MB downloads. Windows started with `--extensionDevelopmentPath` share one development host, so a second launch reloads it.
+- My mistake: a zsh launch passed all options as one argument (zsh does not split variables into words), so the user saw a "No remote extension installed to resolve msl" window. It was a separate instance with a junk profile, and it had exited by the time I checked. Launches now go through a bash script.
+
+## 2026-09-25 11:50: #35 msl --manage-ide
+- `ArgvJSON` (MSLCore): a comment-preserving text edit of `enable-proposed-api`, with 8 unit tests (a byte-exact round trip of the stock file and variants, idempotence, other ids, lookalikes, refusals). The user chose to keep the text edit over a lossy parse-and-rewrite; it is brittle, to be revisited.
+- `IDE` catalog, `--manage-ide` parsing (2 tests), and `Sources/msl/ManageIDE.swift`: detection by app bundle, PATH and config dir; status read from extensions.json (the IDE deletes the folder of an uninstalled extension later); install/uninstall through the IDE's CLI; a one-time argv.json backup; atomic writes; refuses to run as root; under sudo, `--uninstall` re-runs itself as SUDO_USER.
+- `build.sh` builds `share/msl/msl.vsix` (needs npm); `package.sh` requires it. `install.sh` prompts to set up the IDEs it finds (`--no-ide` skips).
+- release.sh: install.sh with a throwaway HOME set up VS Code; `--update` kept it; `--uninstall` removed it and restored argv.json byte for byte.
+
+## 2026-09-25 11:59: .pkg dropped; extension released separately
+- Removed the `.pkg` from package.sh, publish.sh and CONTRIBUTING (the README documents only install.sh).
+- The extension version is package.json's, released as `vscode-<version>` (never Latest) by `extensions/vscode/publish.sh`, which records `release.tag` and `release.sha256`. `extensions/vscode/fetch.sh` downloads and verifies it. `scripts/build.sh` uses a local `dist/msl-<version>.vsix` if present, else fetches, so building msl needs no Node. The msl `publish.sh` refuses to publish unless the bundled .vsix is the published one.
+- Published **vscode-0.1.0** (msl-0.1.0.vsix, sha256 32e1054d…). A build with no local dist fetched it, and the hash matched. Added LICENSE to the extension; vsce warned it was missing from 0.1.0.
+
+## 2026-09-25 12:04: #35 msl.path via cli-path
+- Instead of editing each IDE's settings.json, `msl --manage-ide --install` writes its resolved path to `<MSL_HOME>/cli-path`, and uninstall removes it (only if it names this msl; under sudo, as SUDO_USER). Extension 0.1.1 looks up msl in this order: the msl.path setting, then cli-path (ignored if the file it names is gone), then ~/.local/bin, /usr/local/bin, PATH. A Node harness with a stubbed vscode module passes 4 of 4. release.sh confirms cli-path is written by install.sh and removed by --uninstall.
+
+## 2026-09-25 12:53: README rewrite and complete --help
+- Rewrote README.md. New sections: what the installer sets up and what undoes each change; the full `msl --help` with grouped explanations; why the VS Code extension and the `argv.json` change are needed; a table of compatibility with WSL distributions.
+- `--help` now lists every accepted command (it had omitted --manage, --mount/--unmount, --update, --uninstall, --debug-shell, --set-version, --set-default-version, --list --online); --manage-ide moved to the MSL group. The README embeds the output verbatim, checked with diff.
+- Corrected README and ARCHITECTURE: msld is not a LaunchAgent and msl does not talk to it over XPC. msl starts msld on demand and passes stdio over a Unix socket (SCM_RIGHTS).
+- Removed unverified claims from the draft (a `code .` example; Ubuntu 22.04 as tested; exports round-tripping into WSL).
+
+## 2026-09-25 13:03: documentation restructure
+- README.md cut from 445 to 122 lines. It keeps the pitch, install, VS Code, how it works, limitations, comparison and development, and links to the reference pages.
+- Moved to docs/, unchanged apart from headings and links: cli.md (the full `msl --help` and the command tables; the help text is byte-identical to the old README block), install.md (installer options, what it sets up), wsl-compatibility.md.
+- New: getting-started.md (install through VS Code, following install.sh's prompts), troubleshooting.md (logs, --status, --debug-shell, common problems). Idle-timeout defaults checked against MSLConfig.swift.
+- docs/README.md regrouped as Getting started, Guides, Reference, How it works (the Diátaxis split).
+
+## 2026-09-25 13:07: design notes moved to GitHub issues
+- New `design` label. The three notes in docs/design/ became issues, each linking to its last version in the repo: vsock flow control (#36, closed as fixed in Boron; its open items are #5), memory reclaim (#37, open for the re-test when Apple ships free-page reporting), VS Code integration (#38, open; C′ shipped in Sodium, and B, D and E are #10 to #12).
+- Removed docs/design/. Links in the README, ARCHITECTURE, comparison, troubleshooting, the docs index, the extension README and a comment in MSLConfig.swift now point to the issues, as do the bodies of #5 and #10. CONTRIBUTING says design write-ups go in issues.
+
+## 2026-09-25 13:15: spike code removed
+- Deleted docs/dev/spike/. It no longer ran: its JSON control protocol on vsock 1024 was replaced by gRPC before the first commit, and nothing built or tested it. spike-results.md stays, since ARCHITECTURE cites its findings, and links to the folder at d0430e1.
+- Dropped "(spike finding)" from comments in guest/src/distroinit.rs and Sources/MSLService/Service.swift; the comments keep their reasons.
+
+## 2026-09-25 13:19: spike results removed; docs file names
+- Deleted docs/dev/spike-results.md and the "(spike finding)" and "(spike)" tags in ARCHITECTURE.
+- Naming rule, now in CONTRIBUTING: UPPERCASE at the root, lowercase snake_case under docs/. Renamed ARCHITECTURE.md, README.md (to readme.md), THIRD_PARTY_NOTICES.md, getting-started.md, wsl-compatibility.md and the three licence texts. Updated links, gen-licenses.sh, package.sh (the installed notices file is now share/doc/msl/third_party_notices.md), NOTICE and two source comments.
+- Issue links: #38 now points to ARCHITECTURE at d0430e1; #27 and #35 pointed to the deleted design note and now point to #38.
+
+## 2026-09-25 13:23: crate list; docs checks in CI
+- architecture.md's guest crate list now matches guest/Cargo.toml. Removed rtnetlink, rust-ini, youki and rustix, which were never dependencies. Added nfsserve and serde_json. Noted that the kernel does DHCP (`ip=dhcp`) and wsl.conf uses msl's own INI reader.
+- scripts/check-links.py checks relative links and GitHub-style anchors in every Markdown file, with no dependencies. It passes on 20 files, and a test file with a missing file and a missing heading fails as expected. CI's lint job runs it.
+- DocsTests in MSLCoreTests compares the help block in docs/cli.md with Messages.usage. It passes, and fails when one line of the doc is changed.
+
+## 2026-09-25 13:40: Nitrogen: Apple's Rosetta position
+- Apple's Rosetta doc (developer.apple.com/documentation/apple-silicon/about-the-rosetta-translation-environment): general-purpose Rosetta for Intel Mac apps lasts through macOS 27; macOS 28 keeps only a subset for older games. Separately, "macOS 27 directly integrates support for Intel binary translation, without needing to install Rosetta. This enables support for Intel Linux binaries running in ARM virtual machines (VMs) as well as Intel Linux containers." No end date is given for the Linux part, and VZLinuxRosettaDirectoryShare isn't deprecated.
+- Checked on macOS 27.0: `VZLinuxRosettaDirectoryShare.availability` is `.installed`, `/Library/Apple/usr/libexec/oah/RosettaLinux/` holds `rosetta` and `rosettad`, and `arch -x86_64 /usr/bin/true` fails with "Bad CPU type". So the Linux translator ships with the OS and is independent of macOS Rosetta; msl's "only if Rosetta is already installed" caveat doesn't apply on 27.
+
+## 2026-09-25 14:00: Nitrogen: Arch under Rosetta; missing syscalls
+- archlinux installs through Rosetta, and its x86_64 systemd 261 starts, then exits with "Failed to allocate manager object: Invalid argument". Found with strace: systemd checks systemd-executor with `faccessat(fd, "", X_OK, AT_EMPTY_PATH)`. glibc makes that the `faccessat2` syscall; Rosetta answers ENOSYS without calling the kernel, and glibc turns that into EINVAL.
+- A static x86_64 probe (cross-built in Debian with gcc-x86-64-linux-gnu) shows that Rosetta on macOS 27.0 returns ENOSYS for faccessat2, close_range, openat2, clone3, pidfd_getfd, mount_setattr, landlock_*, process_madvise, epoll_pwait2, memfd_secret, futex_waitv, cachestat, fchmodat2, statmount, listmount, io_uring_setup, pkey_alloc and rseq. pidfd_open, the new mount API (open_tree, fsopen …), statx and memfd_create work.
+- Apple doesn't publish Rosetta's Linux syscall coverage. Its docs cover only setup, AVX-512 (unsupported) and an optional kernel patch that exposes the TSO bit through prctl. Rosetta calls that prctl (`0x4d4d444c`) at startup, and msl's kernel returns EINVAL. Per Apple, without the patch every process in the VM runs under TSO, which slows native arm64 processes too.
+
+## 2026-09-25 14:40: Nitrogen: amd64 Debian/Ubuntu under Rosetta
+- Installed the amd64 WSL images of Debian 13 (systemd 257), Ubuntu 24.04 (255) and Ubuntu 26.04 (259) with `--from-file`. All three boot systemd. A `/run/systemd/system/service.d/` drop-in with `MemoryDenyWriteExecute=no` takes all three from `degraded` to `running`: Rosetta JITs, so units that set MDWX (journald, udevd, logind, resolved, timedated) died with SIGTRAP.
+- binfmt_misc is shared by the whole VM. Ubuntu's `systemd-binfmt.service` clears every entry at start, which removes Rosetta for every distro ("Exec format error"). For testing I masked it in each rootfs.
+- Full x86_64 syscall sweep, with the same sweep run natively on arm64 as a baseline: 33 calls are ENOSYS only under Rosetta. Missing are clone3 (5.3), openat2 and pidfd_getfd (5.6), faccessat2 (5.8), close_range (5.9) and later calls; pidfd_open and the new mount API (5.2–5.3) work. So x86_64 programs see roughly a 5.2–5.3 kernel through Rosetta, while `uname` reports 6.18, and that is below systemd's 5.10 minimum. Obsolete calls get SIGTRAP instead of ENOSYS. 19 calls are ENOSYS in msl's kernel too (config: userfaultfd, landlock, kcmp, process_vm_*, pkey, modules, acct); Apple's container kernel (6.18.5) enables userfaultfd, kcmp and cross-memory attach.
+- On Debian 13 amd64: setuid `sudo` works, `apt-get install gcc` takes 1m21s, and compiling and running a C program works. procps `ps`/`pgrep` 4.0.4 on Debian 13 and Ubuntu 24.04 crash Rosetta (`assertion failed [true_path_length_other >= 0]`, ThreadContextFcntl.cpp:179 `is_rosetta_process`) for any PID; the same version on Ubuntu 26.04 works, and `top` works everywhere. Under Rosetta, `/proc/<pid>/exe` of an x86_64 process shows `/run/rosetta/rosetta`.
+
+## 2026-09-25 15:10: Nitrogen: first qemu-user run
+- No code changes: copied Debian's static `qemu-x86_64` 10.0.13 to `/var/lib/msl/emu/`, unregistered Rosetta, and registered qemu with the same magic and mask and `OCF` flags.
+- Syscall sweep under qemu: it implements faccessat2, close_range and openat2 (the calls Rosetta lacks), but returns ENOSYS for seccomp, bpf, ptrace, keyctl/add_key, set_robust_list, native AIO (io_setup …), perf_event_open, fanotify, mbind/mempolicy and mlock2. Like Rosetta, it lacks clone3, rseq, io_uring and 5.10+ calls. A garbage rt_sigreturn trips a qemu assertion (`cpu_exec_longjmp_cleanup`).
+- Boot: archlinux (systemd 261) boots under qemu, which it can't under Rosetta. All four x86_64 distros reach `degraded` in 3–5 s. Blockers: "Failed to set up credentials: Invalid argument" (journald, sysctl, tmpfiles, udev-load-credentials; exit 243) and "Failed to set up mount namespacing: Invalid argument" (logind, udevd; exit 226). No failing mount syscall reaches the kernel, so qemu rejects the call itself. Next: get qemu's own log (`QEMU_STRACE`) into the executor, which needs a debug environment hook in distro init.
+- Stopped testing; the Rosetta vs qemu-user comparison and proposal are in #40 (design). The test VM is shut down.
+- x86_64 support deferred: #4, #7 and #9 updated, Nitrogen marked deferred, docs say so.
+- Hid x86_64-only distros: `Online.x86Supported = false` removes them from `--list --online` (text and JSON), and `--install <x86-only>` now fails with "only available for x86_64, which msl doesn't support yet". `--from-file` is unchanged. Checked with the dev build: 15 JSON entries, none emulated; `--install archlinux` exits 255.
+- Moved the x86_64 switch into MSLCore (`Manifest.x86Supported`, `x86Available`, `installRefusal`) and added the `x86Deferred` test (37 tests pass). With the switch flipped to true, the test fails with 5 issues.
+
+## 2026-09-25 15:20: msl 0.1.4 released
+- CHANGELOG: cut 0.1.4 from Unreleased, adding the entry for hiding x86_64-only distros. `scripts/set-version.sh 0.1.4`. Build, 37 unit tests, the link check and `Tests/e2e/release.sh` (install, `--update`, `--uninstall`) passed.
+- `scripts/publish.sh 0.1.4` published v0.1.4 as Latest (ad-hoc signed, checksum not PGP-signed, as before). The `update.json` channel serves 0.1.4, and the downloaded tarball matches its SHA-256 (96942cc8…). The kernel (`kernel-6.18.15-msl.1`) and VS Code extension (`vscode-0.1.1`) releases are unchanged and bundled.
+
+## 2026-09-25 16:30: VS Code extensions in a distro; DNS stall fixed (#41)
+- Extensions install in the distro. The server's `code-server --install-extension` fetched Prettier and `rust-analyzer-0.3.3057-linux-arm64` from the Marketplace in 7.8 s, and the rust-analyzer binary runs. The running server noticed both. `code --remote msl+<distro> --install-extension` on the Mac installs locally (darwin-arm64), as it does for WSL and SSH. GitHub Repositories is `extensionKind: ["ui", "workspace"]`, so it installs on the Mac by design.
+- Reported: cloning from GitHub in a connected window failed with a connect timeout for api.github.com:443. In the distro, `getent ahostsv6 github.com` took 10 s, `ahosts` 5 s, and names with an AAAA record answered at once. Node fetch took 5 s for api.github.com and 10 s (or UND_ERR_CONNECT_TIMEOUT) for github.com; undici's 10 s connect timeout includes the lookup.
+- Cause: DNSProxy called `DNSServiceQueryRecord` without `kDNSServiceFlagsReturnIntermediates`, and mDNSResponder then never delivers a negative answer, so every NODATA AAAA query ran into msld's 5 s timeout. A Swift probe on the Mac: AAAA github.com with the timeout flag alone never completed in 8 s; with ReturnIntermediates it returned NoSuchRecord (-65554) in 0.00 s.
+- Fix: add the flag. The dev build in a throwaway MSL_HOME (Debian) resolves github.com and api.github.com in 1–8 ms for v4, v6 and both.
+
+## 2026-09-25 16:57: msl 0.1.5 released
+- Filed #41 (DNS stall for IPv4-only names, with the RCA). The fix commit carries the symptom, root cause and verification, and closed #41 on push.
+- CHANGELOG: cut 0.1.5 from Unreleased. `scripts/set-version.sh 0.1.5`. Build, 37 unit tests, the link check and `Tests/e2e/release.sh` passed.
+- `scripts/publish.sh 0.1.5` published v0.1.5 as Latest (ad-hoc signed, checksum not PGP-signed). The `update.json` channel serves 0.1.5, and the downloaded tarball matches its SHA-256 (9c1b2613…). Kernel and VS Code extension releases are unchanged.
+
+## 2026-09-25 17:15: [msl2] section in .mslconfig
+- The VM section is now `[msl2]`, with `[wsl2]` accepted as an alias (as `/etc/msl.conf` falls back to `/etc/wsl.conf`). Warnings name the section as written. Updated configuration.md, architecture.md, the proto comment and the lithium, boron and neon e2e configs.
+- 37 unit tests pass (the config test now also parses a `[wsl2]` file); lithium.sh 25 of 25.
+
+## 2026-09-25 17:45: per-distro disks: USB mass storage benchmark
+- Question: can per-distro images be hot-added as USB mass storage (the only hot-pluggable block device in Virtualization.framework; virtio-blk, NVMe and NBD attachments are fixed at boot, and virtio-fs shares can change at runtime but can't hold a Linux root)?
+- Driver: the guest binds `usb-storage` (Bulk-Only Transport, protocol 0x50), not `uas`. SuperSpeed (5000), `max_sectors_kb=1024`, queue depth 1 (`nr_requests=1`); virtio-blk has 256. Both attachments use `.automatic` caching and `.full` sync.
+- fio (Debian, 4 vCPU, 2 GiB file, direct I/O, 15 s), virtio-blk (data.img) vs USB: seq read 1M qd8 1099 vs 1880 MiB/s; seq write 902 vs 766 MiB/s; rand read 4k qd1 10.1k vs 5.3k IOPS, qd32 66.0k vs 5.5k; rand write 4k qd1 28.8k vs 10.8k, qd32 145k vs 11.2k; rand write 4k + fsync 205 vs 10.6k. Untar of 277 MB / 10,197 entries + sync: 554 vs 464 ms; cold read of all files: 664 vs 1475 ms.
+- USB doesn't queue: qd32 equals qd1, so random I/O is 2–26× slower.
+- USB reports `write through` (`/sys/block/sda/queue/write_cache`), so Linux never sends a cache flush. Its fsync at ~95 µs can't include a full flush to the Mac's storage (virtio-blk's fsync costs ~5 ms with `.full`). Guest fsyncs on USB disks probably aren't durable against a Mac crash or power loss. That applies to `--mount` today.
+- Conclusion: USB isn't suitable for distro root filesystems. Next candidates: NBD + device-mapper ranges, and loop devices over virtio-fs.
+
+## 2026-09-25 18:20: DNS regression in 0.1.5: CNAME names don't resolve
+- Found while building a kernel in a distro: `curl: (6) Could not resolve host: cdn.kernel.org`. With the dev build (0.1.5 code), `getent ahostsv4` of cdn.kernel.org, www.apple.com and deb.debian.org returned nothing; github.com worked.
+- Cause: with `kDNSServiceFlagsReturnIntermediates` (the #41 fix), mDNSResponder also delivers the CNAME record. For cdn.kernel.org it reported the CNAME with `more=true` and then the A record; for AAAA, the CNAME came in a batch of its own (`more=false`). DNSProxy stopped after that batch with only the CNAME, or answered with CNAME plus A records all owned by the question name, which glibc rejects. Without the flag, mDNSResponder delivered only the final records, which DNSProxy puts under the question name as a flattened answer.
+- Fix: keep only records of the requested type (all for CNAME and ANY queries), and finish on such a record or on a negative answer. Dev build: cdn.kernel.org, www.apple.com, deb.debian.org, github.com, api.github.com and example.org resolve on v4, v6 and both in 1–35 ms, and NXDOMAIN answers in 23 ms.
+- boron.sh gained three DNS checks: an IPv4-only name answers A+AAAA in under 2 s (#41), and a CNAME name resolves on A and on AAAA. With the 0.1.5 code the two CNAME checks fail (46 passed, 2 failed); with the fix, 48 of 48 pass.
+
+## 2026-09-25 19:10: --manage --move refuses; storage direction
+- Per-distro disk spike ended. NBD attachments are accepted over `nbd+unix://` (no TCP port), but the VZ NBD disk reports write-through, like USB, so guest flushes probably never reach the server (not confirmed). Loop images inside data.img would work but aren't needed now. Decision: keep one shared disk and several distros; do #3 (offline grow) next. The spike code was removed.
+- `--manage --move` used to record the location and report success without moving anything. It now fails with "All distributions share one disk, so a single distribution can't be moved." (unsupported). Mac storage is internal; external drives can be unplugged under a running VM, so moving storage there isn't offered. lithium.sh 25 of 25.
+- Docs: cli.md lists --move and --resize as unsupported; architecture.md no longer calls data.img an ASIF image or says --resize sets a project quota.
+
+## 2026-09-25 19:30: msl 0.1.6 released
+- Filed #42 (CNAME names don't resolve, a 0.1.5 regression from #41) with the root cause, and closed it with a link to the release.
+- CHANGELOG: cut 0.1.6 (the `[msl2]` section, `--move` refused, the CNAME fix). `scripts/set-version.sh 0.1.6`. Build, 37 unit tests, the link check, `Tests/e2e/release.sh` and boron.sh (48 of 48) passed.
+- `scripts/publish.sh 0.1.6` published v0.1.6 as Latest (ad-hoc signed, checksum not PGP-signed). The `update.json` channel serves 0.1.6, and the downloaded tarball matches its SHA-256 (319e9350…). Kernel and VS Code extension releases are unchanged.
+
+## 2026-09-25 19:55: Magnesium milestone; NFS over a Unix socket
+- macOS's `mount_nfs` supports Unix-domain sockets, undocumented but in Apple's NFS source: a host written as `<path>` is AF_LOCAL (netid `ticotsord`), and `port=`/`mountport=` take a path. Mounted `"</tmp/msl-nfs/nfs.sock>:/Debian"` as a normal user through a relay in front of msld's NFS bridge and listed the root. (The write round trip used the distro's `/tmp`, a separate tmpfs, so it proved nothing; boron's `/home` checks will cover it.)
+- New milestone Magnesium (security and data safety): #1 (file view over a Unix socket by default, TCP as a `.mslconfig` option; plan in a comment on #1), #3, #21, #34, and new #43 (`--mount` USB disks are write-through, so fsync isn't durable) and #44 (release gate: publish.sh runs the full e2e suite). #2 (notarisation) waits for a Developer ID.
+
+## 2026-09-25 20:45: #3 disk growth; clean shutdown (#45); kernel DM/NBD; build versions
+- The formatter hard-codes `sparse_super2` with no resize inode, meta_bg or 64-bit blocks, so ext4 can't grow online. Offline grow checked first on a clone of a real data.img (256 → 300 GiB, Debian's resize2fs over USB): e2fsck 4.6 s, resize2fs 3.5 s, clean re-check, marker hash intact.
+- `scripts/build-e2fsprogs.sh` builds static `e2fsck` (1.5 MB) and `resize2fs` (1.1 MB) from Debian's e2fsprogs 1.47.2-3 in a container; they go in the initramfs (now 3.2 MB). GPL source via `gpl-sources.sh e2fsprogs`, attached by publish.sh; copyright file shipped.
+- mini-init grows `/dev/vda` before mounting it when the device is ≥ 64 MiB larger than the filesystem: `e2fsck -f -p`, then `resize2fs`. Stage 1 now copies every initramfs tool (it copied only busybox, the first e2e failure). PingReply reports total/free and the grow result.
+- `msl --manage <distro> --resize <size>`: grow only, up to the Mac volume, refused while distros run; stops the VM, grows data.img (sparse), boots, and checks the grow result. On a 256 GiB disk with Debian: 5.4 s end to end (2.8 s at boot), the Mac file grew ~7 MB.
+- `[msl2] defaultVhdSize` (WSL's key) sizes a new disk; the default is min(256 GiB, Mac volume). The formatter rounds up one 128 MiB group. `--status` shows disk max, Mac usage, free in the VM and on the Mac, and warns when the Mac has < 16 GB free and less than the distros see.
+- Shutdown now remounts /var/lib/msl read-only before power-off (#45): data.img's superblock reads clean with no needs_recovery.
+- Kernel: CONFIG_MD, CONFIG_BLK_DEV_DM, CONFIG_BLK_DEV_NBD; built with kernel/build.sh (container). Tags are now `kernel-<linux>-msl-<config hash>` (kernel/tag.sh): current `kernel-6.18.15-msl-76f230e`, not published yet.
+- Versions: build.sh stamps the commit; `msl --version` shows `0.1.6+<hash>` (`.dirty` for uncommitted changes); JSON keeps `msl` plain and adds `commit`.
+- Tests: 39 unit tests; guest 17; magnesium.sh 16 of 16; helium 40, lithium 25, beryllium 24, boron 48, carbon 20, neon 20, sodium 22, all passing.
+
+## 2026-09-25 21:30: "macOS" in prose, `macos` in user-visible names
+- Naming rule: "macOS" in prose, `macos` in code. Renamed the user-visible names: the distro mount `/mnt/mac` → `/mnt/macos` (`/macos` under `[automount] root=/`), `MSL_MAC_{USER,HOME,VIEW}` → `MSL_MACOS_*`, and the `--version --json` key `macOS` → `macos` (nothing read it). Internal names (virtio-fs tag `mac`, the VM-root `/mnt/mac`, `macCwd`), code comments, the trademark notice and OrbStack's `/mnt/mac` in comparison.md stay.
+- About 90 prose uses of "Mac" in docs, CLI and error messages, `--status`, install.sh and the extension README now say macOS, reworded where "Mac" meant the hardware.
+- All e2e suites pass: helium 40, lithium 25, beryllium 24, boron 48, carbon 20, neon 20, sodium 22, magnesium 16; unit 39; guest 17.
+
+## 2026-09-25 21:40: msl 0.1.7 released
+- Published `kernel-6.18.15-msl-76f230e` (device-mapper, NBD client) with kernel/publish.sh: Image, config, release.sha256 and linux-6.18.15.tar.xz; not Latest. kernel/fetch.sh downloads it back with both checksums OK.
+- CHANGELOG: cut 0.1.7 (#3 disk growth and defaultVhdSize, #45 clean shutdown, `/mnt/macos` and `MSL_MACOS_*` renames, `x.y.z+<commit>` versions, config-hashed kernel tags). `scripts/set-version.sh 0.1.7`. Build, 39 unit tests, the link check and `Tests/e2e/release.sh` passed; all feature e2e suites passed before the cut (215 checks).
+- `scripts/publish.sh 0.1.7` published v0.1.7 as Latest (ad-hoc signed, checksum not PGP-signed), with the BusyBox and e2fsprogs Debian source packages attached. `update.json` serves 0.1.7; the downloaded tarball matches its SHA-256 (57174631…); its `msl --version` prints `0.1.7+66fb0af` and kernel `6.18.15-msl-76f230e`, and it ships e2fsprogs.COPYRIGHT. VS Code extension unchanged (vscode-0.1.1). #3 and #45 closed.
+
+## 2026-09-25 21:50: issue triage
+- Reviewed all open issues. Closed #21 as obsolete: it tracked flakiness in a `~/MSL` auto-start that no longer exists (the view is at `~/.msl/distros`, unmounted at shutdown, and nothing starts the VM on access); #6 still tracks a view that works while the VM is stopped. Closed #8 as superseded by #9 (msl owns the VM-wide binfmt entry), with its flag notes moved to #9. Already closed by commits: #3, #42, #45. 18 open.
+
+## 2026-09-25 22:30: #1 file view: Unix socket and per-call RPC filter
+- Tested before relying on socket permissions: with the socket at mode 0000, `mount_nfs "<sock>:/Debian"` still mounted, and the relay saw peer uid 0 on both connections. macOS's NFS client connects from the kernel as root, so file permissions on the socket don't stop other users. The MOUNT call also arrives as uid 0; file calls carry the accessing user's AUTH_SYS uid (501), plus some uid-0 calls from the kernel (GETATTR, LOOKUP, a READ from read-ahead).
+- Fix, in msld only: the view is served on `<MSL_HOME>/nfs.sock` (0600; raw clients connect with their own credentials, so they can't forge AUTH_SYS), and every call passes `RPCFilter` in a record-aware relay in front of the framed vsock bridge. Allowed: AUTH_SYS uid = owner or 0, AUTH_NONE NULL pings, and MOUNT only while msld runs its own `mount_nfs`. Denied calls get MSG_DENIED/AUTH_ERROR/AUTH_TOOWEAK, written between whole guest replies. `[msl2] fileViewTransport = tcp` keeps the old 127.0.0.1 port with the same filter (weaker: raw clients can forge the uid there).
+- boron.sh gained: mount over the socket, socket 0600, a rogue `mount_nfs` refused and logged, a raw GETATTR as uid 12345 denied and as the owner accepted, and the tcp option mounting from 127.0.0.1. A socket path with a space (as in `~/Library/Application Support`) mounts. neon.sh now stops its own msld (it leaked one before). All suites pass (boron 55); unit 40; guest 17.
+
+## 2026-09-25 22:55: msl found msld through argv[0]
+- Reported: `msl -v` → "msl: could not start /Users/akshay/msld". msl located msld (and the install prefix, the bundled .vsix and the path written to cli-path) from `CommandLine.arguments[0]`, which zsh passes as typed: `msl` from PATH resolves against the current directory. Hidden while msld is already running; seen once it had exited (after `msl --update`).
+- Fix: one `selfExecutable` from `_NSGetExecutablePath`, symlinks resolved, used in all four places. helium.sh's first check runs `msl --version` through PATH from `/` with a fresh MSL_HOME, so it has to start msld: before the fix "could not start /msld", after it passes (helium 41 of 41). release.sh and neon pass.
+- architecture.md no longer calls msld a LaunchAgent with an XPC service: it's a per-user process that msl starts on demand.
+
+## 2026-09-25 23:20: msl 0.1.8 released
+- Pre-release e2e: all suites passed except neon's commit check (build/ predated the last commit; passes after a rebuild) and sodium, which failed 4 checks in about one run in three: the distro could idle-stop (instanceIdleTimeout=2000) between starting the test's echo server and using it. sodium.sh now holds a session open until the idle checks; 5 of 5 runs pass.
+- CHANGELOG: cut 0.1.8 (#1 file view security, the argv[0] msld lookup fix). `scripts/set-version.sh 0.1.8`. Build, 40 unit tests, the link check and `Tests/e2e/release.sh` passed.
+- `scripts/publish.sh 0.1.8` refused an untracked file in the tree (a rotated LOG.md.old); it was moved aside for the publish and put back unchanged. v0.1.8 published as Latest (ad-hoc signed, checksum not PGP-signed); `update.json` serves 0.1.8; the tarball matches its SHA-256 (8dde8321…); its msl run through PATH from `/` prints `0.1.8+36cb3ef`. #1 closed. Kernel kernel-6.18.15-msl-76f230e and extension vscode-0.1.1 unchanged.
+
+## 2026-09-25 23:45: locale in sessions
+- Reported: the VS Code terminal in Ubuntu printed `bash: warning: setlocale: LC_CTYPE: cannot change locale (en_US.UTF-8)`. The VS Code Server ran with no LANG (msl set none); VS Code's `terminal.integrated.detectLocale` then set `LANG=en_US.UTF-8` for the terminal (seen in bash's /proc environ). Ubuntu has only C.utf8, and declares `LANG=C.UTF-8` in /etc/default/locale. macOS's own LANG is en_IN.UTF-8, so it didn't come through msl.
+- Fix: the guest adds LANG, LANGUAGE and LC_* from the distro's /etc/default/locale (else /etc/locale.conf) to every session, before the request's own env, as a login shell and WSL do. Stock Debian declares en_US.UTF-8 (and LC_ALL) and has it generated. beryllium.sh checks LANG/LC_TIME from the file and no setlocale warning (26 of 26); guest parser unit test (18 guest tests).
+
+## 2026-09-26 00:00: msl 0.1.9 released
+- Pre-release e2e: all suites passed (helium 41, lithium 25, beryllium 26, boron 55, carbon 20, neon 20, sodium 22, magnesium 16; guest 18). Found during the run: boron, carbon, beryllium and lithium ended with `pkill -f build/bin/msld`, and helium with `pkill -f msld -U <user>`, stopping any dev-build msld (or any msld) including one serving the real MSL_HOME. All now kill only the msld of their own MSL_HOME; rerun, the real one survived.
+- CHANGELOG: cut 0.1.9 (distro locale in sessions). Build, 40 unit tests, the link check and `Tests/e2e/release.sh` passed. LOG.md.old moved aside for publish.sh and restored unchanged.
+- v0.1.9 published as Latest; `update.json` serves 0.1.9; the tarball matches its SHA-256 (8d91794e…) and prints `0.1.9+99cc265`. Kernel and extension unchanged.
+
+## 2026-09-26 00:30: release packages built by CI (Xcode 26)
+- Reported: msld doesn't start on an M1 with macOS 26.6: missing Swift library. 0.1.9 was packaged on this Mac with Xcode 27 (Swift 6.4, macOS 27 SDK) although msl claims macOS 26.0. msld links several Swift runtime dylibs strongly (`libswift_DarwinFoundation1/2/3`, `libswiftSynchronization`, `libswift_Concurrency`); msl doesn't link DarwinFoundation2. Exact dyld message still to be collected from the M1.
+- The linker records the deployment target as the SDK version (LC_BUILD_VERSION shows sdk 26.0 for an Xcode 27 build), so a check on that field can't catch this; dropped it.
+- CI gets a "Release package" job on macos-26: selects the newest Xcode whose major is Package.swift's minimum (26) and fails otherwise, adds the musl target and protobuf, runs `scripts/package.sh` with the release URLs, and uploads the tarball, .sha256, update.json and build-info.txt (commit, version, Xcode, Swift) as artifact `package`.
+- `scripts/publish.sh` no longer packages: it downloads the artifact of HEAD's successful CI run, checks the commit, Xcode 26, the checksum and update.json, and that the bundled kernel and .vsix are the published ones (from the tarball), then publishes. The notes name the CI run and Xcode.
+
+## 2026-09-26 00:50: kernel and VS Code extension built by CI too
+- `kernel/build-linux.sh` holds the build (any Debian/Ubuntu arm64); `kernel/build.sh` runs it in Apple `container` for local testing. New `.github/workflows/kernel.yml` runs it on ubuntu-24.04-arm when the kernel inputs change and uploads artifact `<kernel/tag.sh tag>` (Image, config, tag, build-info). `kernel/publish.sh` downloads the newest unexpired artifact with that tag and publishes it; the tag is a hash of the config, so any CI build of the same inputs qualifies.
+- New `.github/workflows/vscode.yml` builds the .vsix when `extensions/vscode` changes, as artifact `vscode-<version>` with the commit. `extensions/vscode/publish.sh` publishes it after checking that `extensions/vscode` at that commit is identical to HEAD's; it no longer needs Node locally.
+
+## 2026-09-26 11:00: msl 0.1.10 released (first CI-built release)
+- CI: MSLd now pins Host (Swift) to Xcode 26 as well and skips the Release package job for PRs; renamed from "CI". The Kernel job runs in `debian:trixie`: on the bare Ubuntu runner, GCC 13 and rustc changed CONFIG_GCC_VERSION, CONFIG_RUSTC_* and more under the same tag; in trixie the config is identical to the published one, and the mismatched artifact was deleted. upload-artifact v7 (Node 24); the extension builds with Node 24.
+- CHANGELOG: cut 0.1.10 (msld starts on macOS 26 again). `scripts/set-version.sh 0.1.10`, 40 unit tests, link check; code unchanged since the last full e2e pass.
+- MSLd run 36220303941 built the package (Xcode 26.6, Swift 6.3.3). `scripts/publish.sh 0.1.10` downloaded that artifact and checked the commit, Xcode, checksums, kernel and .vsix before publishing (LOG.md.old moved aside and restored). v0.1.10 is Latest; the notes name the CI run; `update.json` serves 0.1.10; the tarball matches its SHA-256 (e7cb14fa…) and prints `0.1.10+bb75105`, kernel 6.18.15-msl-76f230e.
+- Still to confirm on the M1 with macOS 26.6 that msld starts.
+
+## 2026-09-26 13:30: documentation site (MkDocs, GitHub Pages)
+- MkDocs Material 9.7.7 (pinned in docs/requirements.txt; MkDocs 1.x) from docs/, `mkdocs.yml` at the root; `docs/dev/`, `docs/readme.md` and `requirements.txt` stay off the site. Nav: Get started (Download, Getting started, Installer details, Upgrading, Troubleshooting), Using msl, Reference, Internals, Project.
+- `scripts/docs_hooks.py`: a page containing only `<!-- include: FILE -->` becomes that root file (CHANGELOG, CONTRIBUTING, SECURITY), and every relative link is resolved in repo coordinates and pointed at its site page or at the file on GitHub, so docs/ keeps working on GitHub too.
+- New pages, written against the avoid-ai-writing rules (docs context, technical voice) and only from facts in the existing docs, code and tests: index (home), download (msl and the .vsix, one-line and by hand), upgrading (0.1.4, 0.1.6, 0.1.7, 0.1.10), files, networking, storage, vscode. The skill's detector (technical mode, rendered-markdown) scores all seven 0 with no issues; a deliberately bad sample scores 47, so the engine works. No em dashes.
+- `mkdocs build --strict` passes with no warnings; no .md links remain in the built HTML. `.github/workflows/docs.yml` builds with --strict on PRs and pushes, and on main uploads and deploys with configure-pages v6, upload-pages-artifact v5 and deploy-pages v5 (all Node 24).
+
+## 2026-09-26 14:15: docs site on the mkdocs-terminal theme
+- Theme switched from Material to mkdocs-terminal 4.8.0 (docs/requirements.txt pins mkdocs 1.6.1 and mkdocs-terminal 4.8.0), palette `default`. Material-only config (palette toggles, features, button classes on the home page) removed.
+- The theme has no logo setting: `docs_theme/partials/top-nav/top.html` (a copy of the theme's, one line changed) puts `assets/logo.png` in front of the site name. It loads its favicon from fixed paths, so `docs/img/favicon.ico`, `favicon-16x16.png` and `favicon-32x32.png` are made from the logo.
+- The theme clips the site name (`.logo { overflow: hidden }` in a shrinking flex row): "Modern Subsystem for Li". `docs/css/msl.css` keeps it whole on wide screens and lets it wrap below 720 px, so the menu stays visible. Checked with headless Chrome screenshots at 1280 and 420 px. Strict build clean.
+
+## 2026-09-27 10:00: docs site unpublished
+- Unpublished for local polishing; a move from MkDocs to Hugo is under consideration. GitHub Pages turned off (`DELETE /repos/onexay/msl/pages`; the URL now returns 404) and the Docs workflow disabled with `gh workflow disable` (the file stays). README, CONTRIBUTING and docs/readme.md no longer link to the site. mkdocs.yml, the hook, the theme override and the new pages stay for `mkdocs serve`.
+
+## 2026-09-27 01:30: Nitrogen: FEX-Emu evaluation (first pass)
+- Apple's "Running Intel Binaries in Linux VMs" page says the Virtualization framework "doesn't support the bootstrapping or installation of Intel Linux distributions", only Intel apps in an ARM distribution. So full x86_64 distros under Rosetta are unsupported by Apple. The same page recommends binfmt flags `CPF` (msl uses `OCF`) and documents Rosetta's AOT caching (`rosettad`, `VZLinuxRosettaCachingOptions`). Apple's TSO kernel patch (`RosettaPatch.zip`, 619 lines, MIT-style licence, written for 6.10) adds `PR_SET_MEM_MODEL` (0x4d4d444c).
+- Confirmed a bug in the supported setup: booting stock Ubuntu 24.04 arm64 runs its `systemd-binfmt`, which clears every binfmt_misc entry. That removes Rosetta for the whole VM, leaving only `python3.12`.
+- FEX 2609.1 (Ubuntu PPA, `fex-emu-armv8.4`) set up without code changes: `FEX` and `FEXServer` plus five arm64 libraries (10 MB), patched with `patchelf --set-interpreter /.msl-fex/lib/ld-linux-aarch64.so.1 --force-rpath --set-rpath /.msl-fex/lib`. `DT_RUNPATH` isn't enough, because FEXServer's libstdc++ needs libm first. The bundle is copied into each x86 rootfs and into the VM root, and registered as `/.msl-fex/bin/FEX` with `POCF`. The path must be the same in both places, because FEX finds FEXServer next to `/proc/self/exe`. msl's kernel meets FEX's requirements (4K pages, 48-bit VA).
+- Result: x86_64 systemd runs as PID 1 under FEX for both archlinux (systemd 261, which Rosetta can't start) and Debian 13 (257). But every unit fails with "Failed to spawn executor: Invalid argument", including mounts. Suspected cause: systemd starts the executor through glibc `pidfd_spawn`, i.e. `clone3` with `CLONE_INTO_CGROUP`, which FEX lists as unsupported (`Thread.cpp`, `ForkGuest`). FEX also can't honour `PR_SET_MDWE` (FEX issue #2684), so `MemoryDenyWriteExecute` will be a problem next. Not yet confirmed: FEX's logging didn't appear with a global Config.json.
+- podman-fex (FEX in Podman's libkrun VM on Apple silicon) measures FEX ahead of qemu in 19 of 20 workloads and of Rosetta in 16 of 20, for containers rather than systemd distros.
+
+## 2026-09-27 02:10: Nitrogen: FEX clone3 patch
+- Confirmed the executor-spawn failure with a static x86_64 test: FEX-2609 returns EINVAL for `clone3(CLONE_CLEAR_SIGHAND)`. glibc 2.39's `posix_spawn` can fall back to `clone`, but not when a cgroup is requested (`POSIX_SPAWN_SETCGROUP`), which is how systemd starts every unit. FEX's fork path (`CloneFork`) also drops `CLONE_PIDFD`, so `pidfd_spawn` "succeeds" with pidfd 0. Test results: native arm64 9/9, stock FEX 3/9.
+- Patched FEX (+37/−11 in `Syscalls.cpp` and `Syscalls/Thread.cpp`): accept `CLONE_CLEAR_SIGHAND` (EINVAL with `CLONE_SIGHAND`, as the kernel does), send non-thread clones with it or `CLONE_INTO_CGROUP` through `ForkGuest` (a real fork), fork with the host `clone3` when a pidfd or cgroup is requested, and reset guest handlers to SIG_DFL in the child while keeping ignored signals ignored. Built in the arm64 Ubuntu (clang 18, `CMAKE_CXX_SCAN_FOR_MODULES=OFF`, 27 s): 9/9 pass.
+- Boot with the patched FEX plus a `service.d` `MemoryDenyWriteExecute=no` drop-in: Debian 13 amd64 (systemd 257) only fails `e2scrub_reap`, as it does under every engine. Arch (systemd 261) runs journald, udevd and dbus, but logind and nsresourced die with SIGILL, homed with SIGSEGV, networkd/resolved/userdbd hang in `activating`, and `/usr/bin/ldconfig` (static-pie) segfaults when run directly, so that one is a separate FEX issue.
+- FEX logs `Failed to remap /proc/pid/cmdline data (prctl … errno 22)`: `PR_SET_MM` needs `CONFIG_CHECKPOINT_RESTORE` in msl's kernel.
+- Opened #46 for the binfmt flush bug.
+
+## 2026-09-27 02:50: Nitrogen: x86_64 distros with systemd=false
+- Set `[boot] systemd=false` in the archlinux and Debian 13 amd64 WSL images (both ship `systemd=true`), so msl's arm64 init is PID 1 and only the distro's programs are x86_64, as in a container. Same script under Rosetta (macOS 27.0) and the patched FEX 2609; packages downloaded beforehand and removed between runs.
+
+| | Rosetta: Debian | Rosetta: Arch | FEX: Debian | FEX: Arch | native arm64 |
+|---|---|---|---|---|---|
+| package install (gcc, sudo …, from cache) | 25.3 s | 2.2 s | 13.1 s | 2.3 s | |
+| gcc -O2 hello, then run | ok, 0.30 s | ok, 0.43 s | ok, 0.50 s | ok, 0.84 s | 0.13 s |
+| `ps -e`, `pgrep` | **crash** (Rosetta assertion) | ok | ok | ok | |
+| setuid `sudo` | ok | ok | ok | ok | |
+| `ldconfig` (Arch, static-pie) | | ok | | **SIGSEGV** | |
+| sha256sum 256 MB | 0.49 s | 0.49 s | 0.54 s | 0.54 s | 0.11 s |
+| xz -6, 64 MB, 1 thread | 24.5 s | 23.6 s | 24.9 s | 25.2 s | 20.0 s |
+| 300 × fork+exec `true` | 2.64 s | 2.69 s | 4.58 s | 4.67 s | 0.05 s |
+
+- Rosetta ran first, so its Debian install includes cold caches (first translation of dpkg and friends, and the page cache); the 25 s vs 13 s is not a clean comparison. The native sha256 uses the ARMv8 SHA instructions; the x86 build gets no SHA-NI under either translator.
+- Without systemd, the distros' first-boot units don't run: Arch needed `pacman-key --init && pacman-key --populate archlinux` (normally `pacman-init.service`). pacman 7 also needs `--disable-sandbox` (or `DisableSandbox` in pacman.conf), because msl's kernel has no Landlock.
+
+## 2026-09-27 03:05: Decision: arm64 only for now
+- x86_64 distro support stays deferred (Nitrogen), and msl supports arm64 distros only. Everything from 2026-09-25 to 09-27 is summarised in #40's update comment: Apple's guidance, the Rosetta/qemu/FEX results, the `systemd=false` table, the FEX `clone3` patch and its test program (both inlined in the issue), and the steps if this resumes. The FEX patch was not sent upstream.
+- The test VM is shut down and its temporary home removed. #46 (binfmt flush) stays open: it also affects x86 programs in arm64 distros.
+- Closed #46 as not planned: x86_64 programs inside arm64 distros are not supported either.
+
+## 2026-09-27 09:41: Design notes: custom virtio device, VM-per-distro
+- Opened #47: `VZCustomVirtioDevice`/`VZVirtioQueue` (macOS 27) as a guest↔host stream transport. The two options are a Swift virtio-vsock device (device ID 19, which keeps the stock guest driver and lets us own credit accounting) and a private stream device with our own kernel driver. The element API copies data, and each device runs on one serial queue, so any gain would come from dropping framing, not from the transport. Benchmark framing overhead first.
+- Closed #17 (VM-per-distro) as not planned. Mac RAM is fixed, and VZ doesn't return freed guest memory to macOS while a VM runs (the balloon doesn't either), so a VM per distro pays for its kernel and page cache once per distro. Apple `container machine` does use one VM per machine, but with small, short-lived VMs, and it isn't a WSL-model replacement (see `docs/comparison.md`).
+- Nitrogen milestone closed (deferred, not shipped). Its description now summarises all six issues (#4, #7, #8, #9, #39, #40) and #46, plus the plan for resuming.
+
+## 2026-09-27 18:57: Design: local inference in distros (#13)
+- Looked at Hypervisor.framework for GPU and rejected it: it covers only vCPU/memory/GIC/timers, and the macOS 27 additions (4K IPA granule, TLB invalidation) aren't GPU-related. Using it would mean writing our own VMM.
+- macOS 27's `VZCustomVirtioDevice` is the path: a host-implemented virtio device with a shared-memory window that maps host memory into the guest. `maximumAllowedSharedMemoryRegionCount` is 1 on macOS 27.0.
+- Decision: no Venus/Vulkan (capped at ~75–80% of native by translated shaders). Instead a custom `msl-accel` device: a driver in MSL's kernel, zero-copy `MTLBuffer`s in the shm window, and graph-level submission over rings to host Metal engines. Priority: spike → device core → ggml (llama.cpp/Ollama) → vLLM (platform plugin + vllm-metal host worker) → MLX (optional) → upstreaming and docs.
+- Rescoped #13 and posted the findings, design, scope and priority there. Cross-linked #47 (same API, shared spike harness) and #15 (3D for GUI stays separate).
+
+## 2026-09-27 19:07: Spike (#13), stage A: custom virtio device + shm window
+- Branch `spike/13-accel`: `MSL_ACCEL_SPIKE=<GiB>` adds a `VZCustomVirtioDevice` (ID 63, class 0x12) whose shm window holds a mailbox and a no-copy `MTLBuffer`. The guest probe `spikes/13-accel/accel.c` maps the window through sysfs. Ran it against the existing Ubuntu distro, with the installed msld stopped and the spike build started from `build/`.
+- The window is capped at 8 GiB: VZ's 64-bit PCI MMIO range is 16 GiB (`0x5_0000_0000–0x8_FFFF_FFFF`), and BARs are power-of-two aligned. A 64 GiB window: "can't assign; no space". `validate()` accepts any size.
+- A guest access to an unmapped part of the window stops the VM ("Internal Virtualization error"). Backing all 8 GiB with one lazy anonymous mapping takes 0.1 ms and commits nothing; touched pages are charged to the VZ VM process, not to guest RAM. `mapMemory` fails until the VM is live, and works on the first 100 ms retry.
+- GPU zero-copy works: 1 GiB x*2+1 in 17 ms once warm (first use 215 ms, page wiring). Guest RAM through `guestMemoryMapping` also works as a no-copy `MTLBuffer`, but needs physically contiguous guest memory.
+- Mailbox round trip p50 0.12 µs vs an empty Metal command buffer at p50 14 µs: per-step overhead is Metal's, not the VM's.
+- Verdict: go. The design changes: the window is an 8 GiB aperture, and weights and KV cache live in host-only buffers. Results posted to #13. Next is stage B: a built-in guest driver, which needs a kernel rebuild (no module support).
+
+## 2026-09-27 19:15: Spike (#13): window size vs memory
+- A boot probe (kernel + busybox initrd, VM RAM 2–36 GiB) shows VZ's 64-bit PCI MMIO range is always 16 GiB, placed at RAM + 2 GiB. The largest window is 16 GiB when RAM + 2 GiB is 16 GiB-aligned (14, 30 GiB: assigned), otherwise 8 GiB. VZ caps VM memory at host RAM (36 GiB), so bigger hosts can't be simulated here; the probe is on `spike/13-accel` for a run on a larger Mac.
+- This doesn't limit model size: weights and KV cache are host-only Metal buffers, bounded by Metal's working set (about 75% of host RAM) minus the VM's RAM. Posted to #13.
+
+## 2026-09-27 19:22: Spike (#13), stage B: guest driver
+- Built-in virtio driver `spikes/13-accel/msl_accel.c` on `spike/13-accel`, compiled into `kernel/out-spike/Image` by `spikes/13-accel/build-kernel.sh` in Apple `container`, and booted with `MSL_KERNEL`. It binds device 63: the window is at 0x600000000 (8 GiB) with a 256-entry packed virtqueue, and it exposes `/dev/msl-accel`.
+- The cacheable mapping through the driver is required: `memcpy` runs at 43 GB/s (unaligned too), the same as guest RAM, while stage A's sysfs device-memory mapping gets SIGBUS on `memcpy`. Coherence with the host poll thread and the GPU holds (ping p50 0.12 µs; 1 GiB GPU run correct).
+- Doorbell round trip p50 50 µs (min 27 µs) per kick, with the host handler at about 4.1 µs per element. Batching reaches 686k requests/s at 128 per kick. The doorbell is for wakeups; data goes through polled shm rings.
+- Results posted to #13. The next step is a first ggml graph round trip to host ggml-metal.
+
+## 2026-09-27 19:44: Spike (#13): ggml round trip at native speed
+- Reused llama.cpp's ggml-rpc (client backend, host `rpc-server`, graph cache) with a new byte-ring transport in the msl-accel window: `spikes/13-accel/ggml-rpc-shm.patch` on llama.cpp 9adc7f4, with TCP only for setup and a session epoch for reconnects. `msld` backs the window with a POSIX shm object (`MSL_ACCEL_SPIKE_SHM`) that the host `ggml-rpc-server` (Metal) also maps.
+- `llama-bench` (pp512/tg128, Q4_K_M) in the Ubuntu distro compared with native Metal: Llama 3.2 1B 2431/133.7 vs 2401/140.3 t/s (101%/95%), Qwen2.5 7B 382.7/28.7 vs 382.3/28.6 (100%/100%). ggml-rpc over TCP via vmnet gets 68% and 87% on tg. The distro's own CPU gets 73.6 and 17.1 t/s on tg.
+- Fixed a transport race along the way: `llama-bench` reconnects immediately, and the old server loop consumed the new client's HELLO before noticing the closed TCP peer. A session epoch in the ring header fixes it.
+- Seen: a `msl -d Ubuntu` command issued while msld was stopping the distro on its instance idle timeout hung until killed. Not investigated yet.
+- The shm object is unlinked, and the spike VM, msld and rpc-server are stopped. Results posted to #13.
+
+## 2026-09-27 20:41: Spike (#13): doorbell wakeups
+- Driver `MSL_ACCEL_KICK` and `MSL_ACCEL_WAIT(seq)` on one lock-protected virtqueue. msld wakes the host engine on KICK with `os_sync_wake_by_address_all` (cross-process, on the shm window) and holds WAIT elements until the engine bumps the guest seq and pokes a relay word. The ggml-rpc transport spins for `GGML_RPC_SHM_SPIN_US`, then sleeps; wakers signal only a sleeping peer.
+- tg128 in one session: pure doorbell 117.9 (1B) and 26.5 (7B) vs spin-only 127.8 and 27.4 t/s. pp is unaffected, and spinning roughly doubles CPU on both sides during generation. Idle `llama-server` session for 20 s: host engine 0.94 s CPU with the old 20 µs sleep loop vs 0.10 s with doorbells. Every config answered correctly after idle.
+- One guest kernel oops (slab corruption in `kmem_cache_free`) during the first matrix run. With a completion canary added (magic/kind/len/resp per completion; bad ones leaked, not freed), a rerun of the same sequence plus three extra runs, about 15k doorbell wakeups, showed nothing. Still open: a WAIT-heavy stress test and KASAN next.
+- The vmnet bridge subnet changes per VM boot (192.168.71.1 → 192.168.72.1), so the bench scripts read it from the guest's default route.
+- Results posted to #13; the spike VM and msld are stopped and the shm object is unlinked.
+
+## 2026-09-27 21:20: Spike (#13): stress test and KASAN
+- Built a KASAN + SLUB_DEBUG_ON + lockdep spike kernel (`kasan.fragment`, `EXTRA=` in `build-kernel.sh`). Doorbell stress (random-timeout WAITs, KICKs, batched BENCH, children killed mid-WAIT, `hostpoke` releasing every 0–200 µs) ran 120 s with 4.67M waits, 11.5M kicks and 9,884 kills: 0 reports. The llama.cpp doorbell workload under KASAN: 0 reports.
+- Kicks can hit ENOSPC on the 256-entry queue under 4 kicker threads. A real driver should coalesce kicks.
+- The guest panicked again about 2 min after the clean runs, at 316 s uptime: an ext4 printk woke the kernel-log wait queue and hit an entry with a NULL func. KASAN was silent, and the first crash also corrupted several unrelated slab caches, which points to guest RAM being written from outside the guest kernel (host or VZ), not to the driver. Not isolated yet; the next experiments (stock baseline, accel without the Metal buffer and mailbox thread, lower memory pressure) are listed on #13.
+
+## 2026-09-27 22:41: Spike (#13): guest RAM loses a host page under memory pressure
+- Aliasing test: guest RAM signature scan (6 GiB), cross-checked 1 GiB window regions written by guest and host, host VM counters, doorbell load. The stage-A guest-RAM Metal command was disabled.
+- At 50 s uptime, before the llama load, 4 MiB of the scanned guest RAM read back as zeros, all mapped to the same physical page (the shared zero page). The kernel then crashed with "Bad rss-counter state" on several processes. So page-table pages were wiped: two 4 KiB page tables in one 16 KiB host page. The host had about 100 MB free, the compressor was growing from 9.5 to 16 GB, and swapouts had started. The window regions stayed identical from both sides.
+- Ruled out free-page reporting: the balloon didn't negotiate it (bit 5 clear), and MSL never inflates the balloon.
+- Open: is this VZ/macOS losing a guest RAM page under pressure in general, or only in VMs with a `mapMemory` window? Next is the same pressure with no accel device.
+
+## 2026-09-27 22:49: Control: guest RAM corruption under host swap, without the spike
+- Stock msld, stock release kernel, no accel device (no `/dev/msl-accel`, no 1af4:107f). Guest scanned 10 GiB of RAM while host hogs held 12, then 20 GB of incompressible memory.
+- About 4 min of compression only: clean. Once macOS swapped (swapouts 60k → 292k), the guest crashed about 2 min later: journald fault in `__handle_mm_fault` on a corrupted page table, oopses in `bpf_prog_free`, `refcount_warn_saturate` and `sk_alloc`, and `Bad rss-counter state` across processes. Same signature as the spike crashes.
+- Conclusion: the #13 crashes come from guest RAM losing contents under host swap. That's platform-level and affects MSL generally; the accel spike isn't the cause. Posted to #13; filing a separate MSL issue is pending the user's go-ahead.
+
+## 2026-09-27 23:19: Data disk corrupted; guest init panics on it
+- The generation test (`accel genscan`: per-page generations to tell zeroed, stale-swap-copy and foreign pages apart) never started. The VM panicked 1 s into boot: `EXT4-fs error (device vda): ext4_lookup: inode #8194: deleted inode referenced: 16613400`. msl-guest's NFS file view then hit `entry.metadata().await.unwrap()` in `guest/src/nfs.rs:208`, which got EUCLEAN (117). That is PID 1, so the kernel panicked ("Attempted to kill init"). Every boot fails as soon as msld mounts the file view.
+- Likely fallout from the swap-induced guest memory corruption crashes earlier today (and data.img already had ext4 errors from 2026-09-25). Two MSL bugs to file: guest init must not die on filesystem errors in the file view, and the data disk should get a checked fsck at boot when ext4 has recorded errors.
+- data.img is untouched so far. Repair plan, pending the user: APFS clone backup, then `e2fsck -f`.
+
+## 2026-09-27 23:29: Clean slate with a corrupted data disk
+- `scripts/clean-slate.sh` hung on `--unregister Ubuntu`: unregister needs the guest, and the guest panics at boot on the corrupted ext4.
+- The script now puts a timeout on msl commands (`MSL_TIMEOUT`, default 120 s) and has `--reset-disk`. After the shutdown it stops msld, moves `data.img` and `registry.json` aside as `*.reset-<timestamp>`, and removes empty Finder-view mount points; msld creates a fresh disk on its next start.
+- Ran it: the shutdown timed out (the VM had panicked), then the disk and registry were moved aside. No distros are registered and no msld is running. The Ubuntu distro needs reinstalling.
+
+## 2026-09-27 23:38: Generation test on stock MSL: the crash follows a swap burst; lost memory reads as zeros
+- Reinstalled Ubuntu (26.04.1) on the fresh disk with the installed release (msld 0.1.10+bb75105, release kernel, no accel device). `accel genscan 8` ran under host hogs, with `vmmap` sampling the VM process.
+- Timeline: the VM process's swapped size went 0 → 1.9 GB → 0.9 GB while pages were compressed and faulted back, and genscan generations 1–5 were all intact. Then a burst: host compressor 19.6 GB, swapouts 292k → 450k, the VM process 8.3 GB swapped. The guest oopsed at that moment (268 s uptime).
+- The damage hit long-idle kernel memory, not genscan's pages (rewritten every pass): `pc : 0x0` from `__seccomp_filter` (a seccomp BPF program's function pointer read back as 0), then `bpf_prog_free`, then Bad rss-counter. Every corruption caught so far is zeros (wait-queue func, bpf_func, page tables → zero page), which points to pages coming back zero-filled after swap, not stale or foreign.
+- Boot check afterwards: ext4 journal recovery and 4 orphan inodes deleted, no errors.
+
+## 2026-09-27 23:58: Differential: Apple's own VZ setup survives the same swap pressure
+- Stock MSL (release msld and kernel) and an Apple `container` VM (12 GiB, Apple's kernel and VZ config) ran side by side under the same host hogs, each with `genscan` and a /proc/vmstat balloon logger.
+- Balloon ruled out: inflate, deflate and nr_balloon_pages stayed 0 in both.
+- The same swap burst hit both (MSL 7.3 GB and container 6.5 GB swapped at the same instant). MSL panicked at 211 s (init killed by SIGSEGV). The container stayed clean for 10 more minutes of repeated paging (3.0 ↔ 6.5 GB swapped): genscan done at gen 34 with 0 ZERO, 0 STALE, 0 FOREIGN pages, and 0 oopses.
+- Caveat: the corruption only ever shows in cold kernel state, and the container runs far less of it than a systemd distro. So this points at MSL's configuration but doesn't prove it.
+- Config differences, from Containerization's `VZVirtualMachineInstance.toVZ`: MSL adds a memory balloon device and a USB xHCI controller (Apple has neither), leaves the platform default (Apple sets `VZGenericPlatformConfiguration`), shares the whole Mac `/` over virtiofs, uses disk caching `.automatic`/`.full` (Apple `.cached`/`.fsync`), and boots its own kernel build and cmdline.
+
+## 2026-09-28 00:12: Bisect: not the balloon, not USB, not our kernel
+- Added `MSL_VZ_NO_BALLOON`, `MSL_VZ_NO_USB` and `MSL_VZ_GENERIC_PLATFORM` to msld on `spike/13-accel` (msld logs the resulting VM config), and a cold region to genscan (written once, read back every 60 s). The default platform is already `VZGenericPlatformConfiguration`, so that difference from Apple's setup isn't real.
+- Same host swap pressure each time, one change at a time; the guest confirmed the device set every run:
+  - no balloon: corruption at 131 s (Bad rss-counter in rsyslog, genscan, journald), when the VM jumped 1.9 → 9.5 GB swapped;
+  - no balloon, no USB: oopses at 158 s;
+  - no balloon, no USB, Apple's container kernel (6.18.15 built 2026-03-17): oopses and Bad rss-counter at 210 s, with the VM about 7.8 GB swapped.
+- User pages have never been hit in any run (6 GiB hot plus 3 GiB cold genscan regions, all clean). It's always kernel memory: page tables, slab, BPF programs, wait queues. That's not what randomly lost host pages would look like.
+- Remaining differences from the Apple container that survived: guest workload (a systemd distro plus MSL init vs one process), 12 vCPUs/18 GiB vs 6/12, disk caching `.automatic`/`.full` vs `.cached`/`.fsync`, a virtiofs share of the whole Mac `/`, and the kernel cmdline.
+
+## 2026-09-28 08:22: Opened #48 (guest kernel memory corruption under host swap)
+- Wrote up every test and finding from the swap investigation in #48 (symptoms, repro, a results table for the six test setups, what's ruled out and what isn't, next steps, and the two related bugs to split out: init panic on EUCLEAN in the file view, and no fsck when ext4 has recorded errors). Linked it from #13.
+- Repro on `spike/13-accel`: `spikes/13-accel/swaprepro.sh` and `hog.c`, with no local paths.
+
+## 2026-09-28 20:13: #48 V1: vsock quiet still corrupts
+- `spikes/13-accel/vsockab.sh quiet` (on `spike/13-accel`): a test config via `MSL_CONFIG` with localhost forwarding and DNS tunneling off and idle timeouts disabled; `MSL_NO_FILEVIEW=1`; the scanner started, then its session ended. Only the control channel was open.
+- The guest oopsed at 56 s uptime, right after the VM went 5.0 → 8.6 GB swapped (swapouts 1.40M → 1.72M). Same signature (Bad rss-counter in dbus, journald and systemd, then oopses). So vsock data traffic isn't needed to trigger it; V2 (heavy vsock) was skipped for now.
+- The Mac was already swapping before the test (76 MiB free, compressor 7.8 GB, 6.9 of 8 GB swap in use).
+- Found along the way: `~/.mslconfig` here has a `[msl]` section, which the parser ignores. It only reads `[msl2]` keys (like WSL's `[wsl2]`), and unknown keys are dropped silently (`default: break` in MSLConfig.parse). So the 8 GB / 8 CPU settings never applied, and every run used 12 CPUs / 18 GiB.
+
+## 2026-09-28 20:37: #48 V1 rerun after a Mac restart: compression burst, not swap
+- `vsockab.sh quiet` from a clean baseline (16 GB free, no compressor, no swap): the guest panicked at 110 s uptime while macOS evicted 6.6 GB of the VM in about 17 s (vmmap swapped 0.6 → 7.2 GB), with host swapouts only 744 → 888. So the trigger is a large eviction of VM memory into the compressor, not disk swap. vsock is ruled out on a clean baseline too.
+
+## 2026-09-28 21:07: #48: a 16 KiB-page guest kernel survives
+- Static look at `com.apple.Virtualization.VirtualMachine`: it imports `hv_vm_map`/`unmap`/`protect`, `hv_vm_config_set_ipa_granule` (string `non_default_ipa_granule`) and the private `__hv_vcpu_config_set_tlbi_workaround_enabled` (strings `TLBI IPAS2E1IS` and others). So VZ can run a 4 KiB stage-2 granule on the 16 KiB host, with a TLBI workaround.
+- Built the MSL kernel with `CONFIG_ARM64_16K_PAGES` (`spikes/13-accel/page16k.fragment`). Ubuntu 26.04 and the initrd binaries run fine (64 KiB-aligned segments).
+- Same repro with stock devices, from a clean Mac: two eviction bursts (6.3 GB and 7.2 GB of the VM), 0 oops, systemd running at 926 s, genscan 29 generations with 0 bad pages. Every 4 KiB-page run crashed within seconds of the first burst. So the trigger points at 4 KiB guest pages on a 16 KiB host (VZ's 4 KiB granule / TLBI path), most likely an Apple bug. One run so far; to be repeated. Posted to #48.
+- Fixed `swaprepro.sh`: a bare `wait` hung on the endless host logger.
+
+## 2026-09-28 21:22: #48: the 16 KiB-page kernel repeat is clean (2/2)
+- `swaprepro.sh page16k-2` on the 16 KiB-page kernel: VM peak 7.2 GB evicted, genscan clean (20 generations plus 7 cold checks), 0 oopses, systemd running. The host logger was silent for about 4.5 min under the heaviest pressure, and guest uptime lags wall time by about 4 min (the whole Mac stalled); the guest survived that too.
+- Tally: 4 KiB-page guests crashed in 8 of 8 runs with an eviction burst; 16 KiB-page guests 0 of 2 (three bursts in total). Posted to #48. Next: a 4 KiB-assumption audit before making the 16 KiB kernel MSL's default, and a minimal Hypervisor.framework reproducer for Apple.
+
+## 2026-09-28 21:33: #48 mitigation: MSL's kernel uses 16 KiB pages
+- 4 KiB-assumption audit on the 16 KiB-page kernel, with a static ELF scanner (PT_LOAD alignment below 16 KiB) plus a runtime smoke test per distro. Ubuntu 26.04 (1716 aarch64 ELF files), Ubuntu 22.04 (1813), Debian 13 (901), Fedora 44 (1041), AlmaLinux 9 (1131) and Kali (1200): 0 under-aligned files, systemd running, and apt/dnf and Python (`mmap.PAGESIZE` 16384) working. jemalloc via redis-server on Ubuntu (jemalloc 5.3.0) runs. MSL's own code has no page-size assumptions (its 4096s are buffer sizes), and the initrd binaries are 64 KiB-aligned.
+- openSUSE Tumbleweed and Leap 16.0 didn't install: "The downloaded file's SHA-256 does not match the distribution list". That's independent of the kernel, and should be looked at separately.
+- `kernel/msl.fragment` now sets `CONFIG_ARM64_16K_PAGES` and `CONFIG_ARM64_VA_BITS_47`, and `build-linux.sh` fails if 16K pages aren't set. New kernel tag `kernel-6.18.15-msl-21f0ec7`, built locally with `kernel/build.sh`, not published yet. Smoke test of the stock build: PAGESIZE 16384, systemd running.
+- Docs: `docs/architecture.md` (kernel), `docs/troubleshooting.md` (programs that assume 4 KiB pages), CHANGELOG [Unreleased].
+
+## 2026-09-28 21:59: Published kernel-6.18.15-msl-21f0ec7 (16 KiB pages)
+- CI (Kernel workflow, run 36450256573, commit b1b90ca) built the 16 KiB-page kernel. `kernel/publish.sh` published it as release `kernel-6.18.15-msl-21f0ec7` (Image, config, release.sha256, linux-6.18.15.tar.xz) and wrote `kernel/release.tag` and `kernel/release.sha256`. The repo's Latest is still v0.1.10. The next MSL release packages this kernel; `msl --update` then delivers it.
+
+## 2026-09-28 22:42: Released v0.1.11
+- Contents: the 16 KiB-page kernel `kernel-6.18.15-msl-21f0ec7` (#48), and `msl --install` no longer hangs with stdin from `/dev/tty` (bad62ad). Package from CI run 36455383803 (Xcode 26.6), commit 1982505, unsigned like 0.1.10. `update.json` stable points to 0.1.11.
+- e2e against the release build before publishing (#44 isn't automated yet): helium 40/41, lithium 25/25, beryllium 26/26, boron 55/55, carbon 20/20, neon 20/20, sodium 22/22, magnesium 16/16, release.sh passed. The helium failure is the PTY OOBE check (`exit=3`), which ends without a result when run from a session with no controlling terminal. It's identical with the previous 4 KiB kernel, so not a regression. Filed #49.
+- Local only: `.git/info/exclude` now lists untracked local files (`LOG.md.old`, `kernel/out-spike*/`, `site/` drafts) so `publish.sh`'s clean-tree check passes.
+
+## 2026-09-28 23:09: Spike (#13) re-checked on the 16 KiB-page kernel
+- Merged main into `spike/13-accel` and built `msl_accel.c` into the release kernel config (16 KiB pages). The driver needed no change. The only fix was `accel.c`'s `virt2phys` (hardcoded 4096 for pagemap), commit 4730390.
+- Smaller sizing to stay out of swap: 8 GiB VM, 1 GiB window (was 18 and 8). Probes match or beat 4 KiB: mailbox p50 0.08–0.12 µs, driver-mapped memcpy 44–49 GB/s, GPU zero-copy correct, doorbell p50 41 µs, batched 1.85M req/s.
+- ggml over the shm rings vs native Metal: 1B pp 99%, tg 93% (default spin) / 97% (pure spin); 7B pp 100%, tg 98% / 100%. Doorbell stress 60 s with hostpoke: 3.07M waits, 9.6M kicks, 0 reports. Swap stayed at 377 MB.
+- Results posted to #13. The spike VM, msld and rpc-server are stopped and the shm object is unlinked. Next: step 2, the `msl-accel` core.
+
+## 2026-09-29 00:04: msl-accel core (#13 step 2), branch accel-core
+- Design in `docs/internals/accel.md`. Decided with the user: one engine process per context, gpuMemory defaults to Metal's working set minus VM memory, and the device is on by default on macOS 27. Release builds must stay on the macOS 26 SDK, which lacks `VZCustomVirtioDevice`; bridging that is deferred, so the host device is compiled only with the macOS 27 SDK for now.
+- Built-in driver `kernel/drivers/msl_accel.{c,h}`: two queues (control, waits), one context per fd, bounded mmap, KICK coalesced through a `kick_pending` header word that msld clears before waking the engine, WAIT capped at 4 per context, DESTROY at release. Distro tag from the caller's cgroup. The kernel tag now hashes `kernel/drivers` (local build f268249).
+- msld: `AccelDevice` (8 GiB window, per-context shm mapped and unmapped with `mapMemory`/`unmapMemory`, relay thread per context), `Engine` (posix_spawn, registered names only), `[msl2] gpu`/`gpuMemory` and a GPU row in `msl --status`. Replies use Linux errno values: `ETIMEDOUT` and `EPROTO` differ on Darwin, which the first test run caught.
+- Loopback engine plus `Tests/accel/accelctl.c`: `check` 3/3 runs with 0 failures, stress 60 s with 3.16M round trips, 0 errors, 584 children SIGKILLed and 0 kernel reports. Echo 4 KiB: 0.6 µs p50 spinning, 49 µs through WAIT. New e2e suite `Tests/e2e/aluminium.sh`: 13/13.
+- A `kernel/build.sh | grep | head` pipeline killed the kernel build (SIGPIPE), and `scripts/build.sh` then silently fell back to the published kernel. Don't pipe long builds into `head`.
+
+## 2026-09-29 13:15: repo split
+- 13:15 Splitting `kernel/` and `extensions/vscode/` into their own repos (msl-kernel, msl-vscode-extension), history preserved. accel-core is left as is.
+- 13:30 Split done. [msl-kernel](https://github.com/onexay/msl-kernel) and [msl-vscode-extension](https://github.com/onexay/msl-vscode-extension) were extracted with `git subtree split` (history and sign-offs kept), each with its own CI, publish script and README. The pinned releases (`kernel-6.18.15-msl-21f0ec7`, `vscode-0.1.1`) were re-published there with identical files; older releases stay in msl. msl keeps only the pins and `fetch.sh`. New `scripts/pin.sh kernel|vscode <tag>` moves a pin, and `MSL_KERNEL_OUT`/`MSL_VSIX` make `scripts/build.sh` bundle a local build. A clean build fetched both from the new repos (Image and `.vsix` checksums match the pins).
+- accel-core still has `kernel/drivers/msl_accel.{c,h}`, which now belong in msl-kernel. The header is shared with msld, engines and tests, so where it lives after the split is still open.
+- 13:54 New repo [msl-docs](https://github.com/onexay/msl-docs): a Hugo + Hextra site organised like Microsoft's WSL docs (Overview, Install, Tutorials, Concepts, How-to, Security, FAQ, Troubleshooting, Release notes), 43 pages written fresh with core `docs/` as reference only and checked against the code. CI builds it; it isn't published. Verified for the tutorials in a throwaway `MSL_HOME`: Docker Engine 29.1.3 and PostgreSQL 16 run as systemd services in Ubuntu 24.04, and their ports answer on macOS. A distribution stops ~15 s after its last `msl` session even with services running; `instanceIdleTimeout = -1` keeps it up.
+- Core `docs/` disagrees with the code in a few places, found while writing msl-docs: systemd readiness (code waits for `/run/systemd/private`, not `is-system-running`), `MSLENV /w` (skipped, not ignored), hostname (host name, not computer name), `--mount` (also accepts `/dev/diskN` as root), and `[user] default` overriding `--set-default-user`.
+
+## 2026-09-29 16:08: VM platform identity, nested virtualization, NBD disk slots
+- 16:08 The utility VM relied on the default `VZGenericPlatformConfiguration`, so it got a new machine identifier every boot and no nested virtualization. Adding a persisted `VZGenericMachineIdentifier` and `[msl2] nestedVirtualization` (WSL key, default true). The kernel has `# CONFIG_VIRTUALIZATION is not set`, so `/dev/kvm` also needs KVM in msl-kernel.
+- 16:08 Then a time-boxed (1 h) experiment: can a virtio-blk slot backed by `VZNetworkBlockDeviceStorageDeviceAttachment` switch its backing file at runtime, which would sidestep the lack of virtio-blk hot-plug?
+- 16:16 Done: `makeConfig` sets a `VZGenericPlatformConfiguration` with the machine identifier from `machine-identifier` (created once, reused across boots) and `isNestedVirtualizationEnabled` when `nestedVirtualization` is on and `isNestedVirtualizationSupported`. `msl --status` and `--status --json` show it. msl-kernel: `CONFIG_VIRTUALIZATION=y`, `CONFIG_KVM=y` in `msl.fragment` (local build, not yet published or pinned). On an M3 Pro: "CPU: All CPU(s) started at EL2", `/dev/kvm` present, "kvm [1]: Hyp nVHE mode initialized successfully". Running a nested guest wasn't tried.
+- 16:16 NBD slot experiment (throwaway `MSL_HOME`, a Python fixed-newstyle NBD server on a Unix socket, `nbd+unix://` URL; no extra entitlement needed for the unsandboxed msld):
+  - The slot shows up as `/dev/vdb` with `/sys/block/vdb/serial` = `blockDeviceIdentifier`. No `/dev/disk/by-id` (no udev in the utility VM).
+  - Switching the backing file on the live connection works: after `drop_caches` the guest reads the new file.
+  - The size is fixed at the first connection. Dropping the connection and offering a different size: VZ reconnects, reads the new size, closes the connection straight away and never retries; the guest gets I/O errors until the VM restarts, even after the original size is offered again.
+  - With a fixed advertised size (1 GiB) larger than the backing files, switching files works, writes past a file's end fail with EIO, and an ext4 image switched in live mounts and reads fine.
+  - Conclusion: fixed-size NBD slots can stand in for virtio-blk hot-plug. A raw disk (`--mount --bare`) would need dm-linear at its real size, which needs DM ioctls in msl-guest (the utility VM has no `dmsetup`). The hook isn't committed.
+- 16:32 The utility VM's /etc/machine-id comes from the machine identifier's UUID: msld adds `msl.machine_id=<32 hex>` to the kernel command line (not shown in `msl --status`), and mini-init writes it. Starting a benchmark of NBD slots against a direct disk-image attachment (fio in a distro, same file sizes, time box 1.5 h).
+- 16:54 Checked in a Debian distro: `/etc/machine-id` in the utility VM equals the machine identifier's UUID.
+- 16:54 NBD slot benchmark (M3 Pro, 4 GiB files, fio 3.39 in Debian, `direct=1`, libaio, 15 s): a direct `VZDiskImageStorageDeviceAttachment` (`.automatic`, `.full`) against an NBD slot served by a Swift server with requests in flight concurrently, 4 MiB socket buffers and the file read and written through the macOS page cache.
+  - Reads, both files warm: 1 MiB sequential at queue depth 8 4.55 GB/s direct vs 7.16 GB/s NBD; 4 KiB random at queue depth 1 127 µs vs 75 µs; at queue depth 32 80k vs 133k IOPS. Direct reads stay about 130 µs even when the file is cached, and 1 MiB sequential falls to about 840 MiB/s once the file isn't cached. With the server bypassing the cache (`F_NOCACHE`), NBD random reads at queue depth 1 cost 140 µs vs 133 µs direct, so about 6 µs per request.
+  - Writes, not durable: 1 MiB sequential 3.3 GB/s direct vs 7.7 GB/s NBD; 4 KiB random at queue depth 1 61 µs vs 74 µs; at queue depth 32 151k vs 132k IOPS.
+  - **Durability blocker:** the guest sees VZ's NBD disk as `write through` (the direct disks are `write back`) with either `synchronizationMode`, and VZ sends no FLUSH or FUA even for fio `--fsync=1`; the server's counters saw only READ and WRITE. So every WRITE must be durable before the reply. Direct with fsync after each write: 476 IOPS. NBD with `F_FULLFSYNC` per write: 345 IOPS at queue depth 1, 726 at 32, 479 MiB/s sequential. With `F_BARRIERFSYNC` (ordering only): 5.7k, 7.7k, 612 MiB/s. Without either, fsync inside the guest isn't honoured, and a macOS crash or power loss can reorder the image's writes and corrupt its ext4.
+  - Also: VZ reconnects on its own when the server restarts and the size hasn't changed.
+  - Benchmark hook removed from msld; nothing committed.
+- 17:53 Can the guest force the NBD slot to write back so that it sends flushes? No. `echo "write back" > /sys/block/vdb/queue/write_cache` exits 0 but the value stays `write through` (6.18 ignores it for a device without a write cache), and `/sys/block/vdb/cache_type` is read-only (no `VIRTIO_BLK_F_CONFIG_WCE`). `synchronizationMode = .full` only forwards flushes the guest sends, so it can't help. What's left: a kernel patch that makes virtio-blk send flushes to a device that didn't offer the feature (VZ would probably reject them), or Feedback to Apple.
+- 18:18 Same check with a reference server, qemu-nbd 11.1.1 (Homebrew has no nbdkit), `--cache=writeback` and `-T 'nbd_*'`. qemu-nbd advertised transmission flags `0xd6d` (including `SEND_FLUSH` 0x4 and `SEND_FUA` 0x8). The guest still sees the slot as `write through` with `fua` 0, and after `dd conv=fsync` and `sync` the trace shows 14 READ and 1 WRITE (flags 0x0), no FLUSH. So VZ's NBD client doesn't pass flushes on even when the server supports them; it wasn't my server's handshake.
+
+## 2026-09-29 19:21: per-distro disks via NBD slots (#50), branch distro-disks
+- 19:21 Plan: every new distro gets its own sparse `ext4.img` in its location folder, hot-attached through 16 pre-attached VZ NBD slots served by msld. Durability matches qemu-nbd's default (writeback: page-cache writes, `F_FULLFSYNC` at unbind and shutdown). Existing distros stay on `data.img` until `--move`. Scope: `--move`, per-distro `--resize`, `--export/--import --vhd`, `--import-in-place`. Starting phase 1 (protocol and guest).
+- 19:48 Phase 1 done (protocol and guest). New MiniInit RPCs `AttachDisk`, `DetachDisk`, `MigrateDistro` and `DistroConf`, and `StartDistroRequest.own_disk`. An own disk mounts at `/run/msl-disks/<id>` (tmpfs, so a distro still on data.img and its new disk can coexist during a move), and `distro_dir` resolves to it while it is attached. Attach: find the slot by virtio serial, exclusive open, `BLKFLSBUF`, check the ext4 UUID, `e2fsck -p` when the filesystem isn't clean, offline grow to the image size, mount private. Detach: stop the distro (and wait for a stop already under way), drop the view bind, unmount, then wait until an exclusive open succeeds, i.e. no superblock holds the device. A mount lock serializes attach/detach with the start of a distro until it has pivoted into its root. data.img is found by serial `data`. Tools after boot run through the reaper (`run_tool`). 22/22 guest tests pass (new: superblock parsing, serial lookup, distro dirs).
+- 19:54 Phase 2 done (NBD server and slots). `NBDServer` (MSLCore): fixed-newstyle, one Unix socket (`run/nbd.sock`, 0600), exports `slot0`–`slotN`, concurrent I/O answered out of order, writeback durability like qemu-nbd (FLUSH/FUA and unbind run `F_FULLFSYNC`), unbound slots read zeros and fail writes with EIO, writes past the image end fail with ENOSPC, TRIM punches holes (`F_PUNCHHOLE`). A bound image is reference-counted, so an unbind never closes an fd under an in-flight request. 3 new tests over a socketpair. `VMHost` starts the server before the VM and adds 16 slots (4 TiB each, `MSL_DISK_SLOTS` for tests); data.img gets serial `data`. Smoke test: the VM boots with vda=data and vdb–vdq=slot0–slot15, including a socket path with a space (percent-encoded); boot plus msld start took 3 s. `DistroDisk` (sizing, superblock parsing) and `DistroRecord.disk` (Optional: a test decodes an older registry.json). 46/46 Swift tests.
+- 19:59 Phase 3 done (lifecycle). `DistroDisks` tracks distro → slot while the VM runs: every disk-backed distro is attached at boot (up to the slot count); `startDistro` and export attach on demand; with all slots taken, the least recently used distro that isn't running is detached first. Install and import create `<location>/ext4.img` (default location `distros/<id>` in msl's folder, `--vhd-size` or `defaultVhdSize` or 256 GB), attach it and stream the tar in; anything that fails undoes the disk. Unregister detaches and deletes the image (and its folder when empty), as WSL deletes ext4.vhdx. The client sends absolute locations. `MSL_LEGACY_STORE` (tests) still imports onto data.img. Smoke test with `MSL_DISK_SLOTS=2`: Debian installed onto an 8 GB ext4.img (820 MB used) with `/` on /dev/vdb; three distros on two slots evicted and reattached on another slot with a marker file intact; unregister removed the image and folder; after `--shutdown` both disks reattached at boot with no e2fsck needed.
+- 20:06 Own disks are now mounted at `/run/msl-disks/<id>/rootfs`, so the filesystem root is the distro's root, as in WSL's ext4.vhdx (lost+found included). Images can move between WSL and msl once converted between VHDX and raw.
+- 20:06 Phase 4 done (WSL disk features).
+  - `--manage --move <folder>`: rename (or sparse copy across volumes); a distro on data.img is copied onto a new disk by the guest (`MigrateDistro`: tar pack piped into unpack), then removed from data.img.
+  - `--manage --resize` on an own disk: the distro must be stopped; detach, grow the file, reattach (the guest grows it offline).
+  - `--export --vhd`: detach, then an APFS clone (`copyfile` with `COPYFILE_CLONE | COPYFILE_DATA_SPARSE`); refused for distros on data.img and for stdout.
+  - `--import --vhd` (copied into `<location>/ext4.img`) and `--import-in-place` (used where it is): the superblock is checked on the Mac, then the guest attaches it and reads wsl-distribution.conf (`DistroConf`).
+  - The Finder view follows attachment: the Mac mounts only distros on data.img or with their disk attached; msld unmounts a distro before detaching its disk and resyncs after changes.
+  - Smoke test: moving an own disk (relative path) and migrating a data.img distro kept marker files; 8 → 12 GB resize showed 12G in the distro, and shrinking was refused; export → `--import --vhd` and `--import-in-place` both ran with the data intact; errors for an image already in use, a missing file and `--vhd` to stdout; unregistering all four left no images or folders.
+- 20:23 Phase 5 (status, docs, tests).
+  - `msl --status`: a "Distribution disks" row (count, used on macOS, max) and data.img rows ("Shared disk") only while a distro is still on it, plus a low-space warning for own disks.
+  - Help text for `--vhd-size`, `--export/--import --vhd`, `--import-in-place`, `--move`, `--resize`, `--set-sparse`.
+  - docs: storage.md rewritten, including durability; cli, architecture, configuration, troubleshooting, index, install, comparison, upgrading, README, CHANGELOG.
+  - New e2e `silicon.sh` with 2 slots: first run 45/49. Four test bugs: the install message; Debian still running under its idle timeout, so B couldn't get a slot; a 5 TB resize hits the Mac-volume check before the 4 TB one; a file written after `sync` is lost when the VM dies, as on any disk. That last one also showed the docs overstated crash safety: now only what the distro had written out survives an msld/VM crash. Second run 49/49.
+  - Trims reach the NBD server: `--compact` punched the freed 512 MB out of ext4.img (carbon).
+  - Existing suites: lithium 27/27 (`--move` now works), carbon 20/20 (compact measured on ext4.img), magnesium 16/16 (`MSL_LEGACY_STORE` keeps covering data.img), helium 40/41 (the known #49 PTY check, same output as on 09-28), boron 55/55.
+- 20:29 fio in Debian on its root filesystem (2 GiB file, `direct=1`, libaio, 10 s), data.img (direct VZ attachment) vs own disk (NBD slot):
+  - 1 MiB read, queue depth 8: 6446 vs 7237 MiB/s
+  - 1 MiB write, queue depth 8: 3269 vs 7253 MiB/s
+  - 4 KiB random read, queue depth 1: 119 vs 74 µs
+  - 4 KiB random read, queue depth 32: 84k vs 126k IOPS
+  - 4 KiB random write, queue depth 1: 68 vs 91 µs
+  - 4 KiB random write, queue depth 32: 133k vs 117k IOPS
+  - 4 KiB random write with `fsync=1`: 191 vs 10.3k IOPS. The own disk's fsync never reaches the SSD, as documented.
+- 20:40 Pushed main (the repo split, progress notes, VM identity) and opened PR #51 from distro-disks (6 commits), which closes #50.
+
+## 2026-09-29 21:01: kernel with KVM
+- 21:01 Kernel `kernel-6.18.15-msl-a1a22bd` (msl-kernel 91c098a) published and pinned: KVM built in, and `uname -r` now shows the release (build-linux.sh passes `LOCALVERSION=-msl-<hash>` from tag.sh and checks `kernelrelease` against the tag). The first CI run, without the suffix, was cancelled. Checked in a Debian distro: `uname -r` 6.18.15-msl-a1a22bd, `/dev/kvm` root:kvm 660, `KVM_GET_API_VERSION` 12, `--status` shows nested virtualization on.
+
+## 2026-09-29 21:29: graceful shutdown and a LaunchAgent (#52), branch graceful-shutdown
+- 21:29 msld had no SIGTERM handler: at logout, restart or shutdown the VM died with it. It now handles SIGTERM/SIGINT by running the `--shutdown` path with a 5 s stop grace (`MiniInit.Shutdown` takes `grace_ms`; 0 keeps 10 s) and then exits; no VM boot starts once it is terminating. Check: a file written without `sync` survived `kill -TERM` of msld (exited in 2 s; systemd in Debian shut down cleanly, the disk was unmounted clean).
+- 21:36 msld as a LaunchAgent (`dev.msl.msld`), socket-activated: launchd holds `msld.sock` and starts msld on the first connection (`launch_activate_socket` via CMSLSupport), `ExitTimeOut` 30 s, `ProcessType` Interactive, logs to msld.log. The first msl that finds no msld writes the plist and bootstraps it in `gui/<uid>`; a dev build, an `MSL_HOME` test home, or no GUI domain (SSH) spawns msld directly as before. `MSL_LAUNCHD=1` forces the agent (label `dev.msl.msld.<FNV hash of the home>`, with the `MSL_*` variables passed through) for tests. `--uninstall` boots it out and deletes the plist (for the invoking user under sudo). `launchctl bootout` returns immediately; msld finished its shutdown 2 s later, and a command sent in between gets "msld is shutting down", so no second VM can start on the same disks. New e2e `phosphorus.sh` 12/12: SIGTERM keeps an unsynced write; under launchd, bootout does too, and the next command reloads the agent. Docs: install.md (the LaunchAgent), architecture, storage (durability at logout/shutdown), troubleshooting, upgrading, changelog. Not tested here: a real macOS restart.
+## 2026-09-29 21:51: MkDocs removed; msl-docs is the only documentation site
+- 21:51 Removed `mkdocs.yml`, `docs_theme/`, `scripts/docs_hooks.py`, `.github/workflows/docs.yml`, `docs/requirements.txt`, `docs/css/`, the site-only `docs/assets/`, `docs/img/`, `docs/project/` and `docs/index.md`, and `site/`. GitHub Pages was already off (`has_pages` false, no gh-pages branch); the `github-pages` environment is deleted. CONTRIBUTING points at msl-docs for user documentation. Mistake: `rm -rf site` also deleted the untracked, git-excluded Hugo drafts in `site/` (hugo.yaml, go.mod, content/, static/), the local draft from before msl-docs was written; there is no backup or snapshot, so they are gone.
+- 22:00 msl-docs is published: its Docs workflow deploys `main` to https://onexay.github.io/msl-docs/ (Pages source: GitHub Actions; msl-docs #3), the home page and deep pages return 200. msl's `docs/` is now developer notes only (architecture, comparison, internals, dev/, licences); the user pages (cli, configuration, download, files, getting_started, install, json, networking, storage, troubleshooting, upgrading, vscode, wsl_compatibility) are removed, and README, CHANGELOG, CONTRIBUTING and two code comments link to their msl-docs pages (all URLs checked, 200). The test comparing docs/cli.md with `msl --help` is removed (46 tests).
+
+## 2026-09-29 23:12: release 0.2.0
+- 23:12 Version 0.2.0 (minor: per-distro disks, LaunchAgent and clean shutdown, nested virtualization, the KVM kernel; `--resize` and `fsync` behaviour change). Publishing after CI only, as decided: no full e2e run against the release build this time (silicon, phosphorus, lithium, carbon, magnesium, helium and boron passed on dev builds today). Unsigned, like 0.1.11 (no release key on this Mac).
+- 23:35 Released [v0.2.0](https://github.com/onexay/msl/releases/tag/v0.2.0) (Latest, unsigned): package from CI run 36607685165 (Xcode 26.6) at cb90aad, kernel `kernel-6.18.15-msl-a1a22bd`. The update channel (`releases/latest/download/update.json`) serves 0.2.0. msl-docs release and upgrade notes updated (msl-docs #5) and deployed.
+
+## 2026-09-30 23:54: distro disks without NBD, branch boot-disks
+- 23:54 Direction: msld stops serving disk I/O. Each distro's ext4.img is attached as virtio-blk (`VZDiskImageStorageDeviceAttachment`) when the VM boots. A disk that has to be attached while the VM runs is mounted in the guest through a loop device over the virtiofs share. First spike: does fsync on a loop device over virtiofs reach the SSD, and how fast is it?
+- 00:00 Spike: ext4 on a loop device over the virtiofs share, in Ubuntu 26.04, everything in one `msl` invocation. (An earlier split run lost the mount to the instance idle timeout, and fio ran on the root disk instead; those numbers are discarded.) The loop device reports `write back`, so the guest sends flushes. fio, 10 s each, buffered loop vs `--direct-io=on`:
+  - 4 KiB random write with `fsync=1`: 1527 vs 1629 IOPS. Native macOS on the same volume: `fsync` 25.6k, `F_BARRIERFSYNC` 6.0k, `F_FULLFSYNC` 334 IOPS. The guest's flushes are faster than one F_FULLFSYNC, so virtiofs doesn't do a full flush per guest fsync: not durable.
+  - 1 MiB write, queue depth 8: 1192 vs 1455 MiB/s (data.img 3269, NBD slot 7253 on 09-29).
+  - 4 KiB random write, queue depth 32: 6908 vs 6943 IOPS (data.img 133k, NBD slot 117k).
+  - 4 KiB random read, queue depth 32 with direct I/O: 14.8k IOPS (data.img 84k). The buffered run read the guest's page cache (333k), so it isn't comparable.
+  - Conclusion: the virtiofs loop is neither durable nor fast (random I/O 6 to 19 times slower). It fails the condition set for it and isn't suitable as a root filesystem, even for a short time.
+- 00:14 virtio-blk limit, measured with a standalone VZ program booting the MSL kernel (macOS 27.0.1): with only a console, VZ starts with 26 virtio-blk disks and refuses 27 ("The virtual machine configuration parameters were invalid", after `validate()` passed). With MSL's devices (NIC, two virtiofs shares, vsock, balloon, entropy, xHCI) it starts with 20 and refuses 21: data.img plus 19 distro disks (`DistroDisk.maxBootDisks`). VM restart cost: a cold `msl -d Ubuntu-26.04 -- true` takes 1.48 s against 0.04 s warm.
+- 00:14 Implemented on boot-disks: every registered distro's ext4.img is attached as virtio-blk at boot (`VZDiskImageStorageDeviceAttachment`, `.full`), serials `d0`…; the NBD slots and `NBDServer` are gone. A disk that appears while the VM runs restarts the VM when nothing depends on it (no running distro, no other request, no `--mount`), else mini-init mounts it through a loop device (`LOOP_CONFIGURE`, direct I/O, autoclear) over the Mac share, and msld does F_FULLFSYNC on it at detach and VM stop. A boot disk is reused only while its path is the same file (device, inode) and size, which covers `--move` across volumes and `--resize`. The loop path works for images on another APFS volume too (checked with an `hdiutil` sparse image under /Volumes). New disks are created before the VM boots, so a first install doesn't boot twice.
+- 00:14 e2e silicon rewritten for boot disks, the idle restart and the loop path: 59/59.
+- 00:18 Other suites on boot-disks: phosphorus 12/12, lithium 27/27, carbon 20/20, magnesium 16/16, boron 55/55. Swift unit tests 43/43, guest unit tests 23/23.
+- 00:18 fsync check, dev build, Debian (`dd bs=4k count=1000 oflag=dsync`): on its boot-attached disk (/dev/vdb) 1000 synced writes take 7.93 s (126/s, a real F_FULLFSYNC each; the NBD slot did 10.3k/s without reaching the SSD). On a loop device (/dev/loop0, added while Debian ran) 0.74 s (1356/s): as measured in the spike, virtiofs doesn't flush to the SSD, so msld's F_FULLFSYNC at detach and VM stop is what makes it durable.
+
+## 2026-10-01 00:56: no timed wake-ups when idle, branch no-polling
+- 00:56 Baseline (dev build, own MSL_HOME, idle timeouts off, 30 s windows; host figures from `top` CSW/IDLEW, guest from `/proc/interrupts` arch_timer and every mini-init thread's ctxt_switches). VM up, no distro: msld 1026 context switches (15 idle wake-ups), VM process 6931, guest timer interrupts 1902, mini-init 846. Debian (systemd) running idle: msld 1036, VM 6899, guest timers 1937, mini-init 252. Sources: msld's idle monitor ticks every second (and asks the guest for its running distros each time), the localhost-forwarding and file-view accept loops poll every 200 ms, stdin copies every 100 ms; the reaper sleeps 50 ms on ECHILD (mini-init with no distro, and a non-systemd distro's init).
+- 00:56 Changes: `StopFlag` wakes blocked readers through a pipe, so the copy and accept loops `poll()` without a timeout; the idle monitor sleeps until the next idle deadline or a request/session/VM change (with a 60 s check while distros run, since a distro can stop by itself); the reaper blocks on an eventfd bumped by a SIGCHLD handler when it has no children.
+- 00:56 After: VM up, no distro: msld 8 context switches (0 idle wake-ups), VM process 3775, guest timers 1298, mini-init 65. Debian running idle: msld 5, VM 4303, guest timers 1298, mini-init 143. The agent's 500 ms port watcher (/proc/net/tcp) stays until the kernel gets BPF tracing.
+- 01:03 e2e on no-polling: lithium 27/27, sodium 21/21, boron 55/55, phosphorus 12/12, beryllium 26/26, neon 20/20, carbon 20/20, magnesium 16/16, silicon 58/59. The failure ("the resized disk is attached at boot again") is a race from #60, not this change: `VMHost.stopped()` ran twice per VM stop (from `waitForStop` and, asynchronously, from the `guestDidStop` delegate) and cleared whatever VM was current. After an idle restart the late one ran after the new boot and wiped DistroDisks' boot table, so Debian fell back to the loop device (log: "vm started (… 3 distro disks)", then "mounted through /dev/loop0"). It could also have dropped the new VM itself. Fix: `stopped(_ which:)` acts only if `which` is still the current VM, so it runs once per VM.
+- 01:08 After the fix: silicon 59/59, phosphorus 12/12. Reaper check with Debian and `[boot] systemd=false` (distro-init is PID 1 and reaps): an orphan (`(sleep 2 &)`) was reaped with 0 zombies left, and with no process in the distro the `reaper` thread made 0 context switches in 30 s (8 before and after the window, from the earlier sessions). The 50 ms loop would have made about 600.
+- 01:20 Port watcher on kernel events, in #62, with no kernel change. The kernel already has `CGROUP_BPF` and `BPF_SYSCALL`, so a sock_ops program on the root cgroup does it and FTRACE/BPF_EVENTS aren't needed (the user chose this over a kernel bump). `BPF_SOCK_OPS_TCP_LISTEN_CB` fires after each `listen(2)` and turns on `BPF_SOCK_OPS_STATE_CB` for that socket, so the listener leaving LISTEN is seen too. Either way the program writes 8 bytes to a ring buffer (`BPF_MAP_TYPE_RINGBUF`, one 16 KiB page). mini-init sleeps on the map fd (tokio `AsyncFd`), drains it, rescans `/proc/net/tcp{,6}`, and rescans again 200 ms later, because STATE_CB fires before the socket is unhashed. The program is 20 raw instructions and loads in the interpreter (no BPF_JIT). If loading fails, mini-init falls back to 500 ms polling. Check: one sock_ops program held by PID 1. A Perl listener on 127.0.0.1:18765 in Debian was reachable on the Mac 0.21 s after `msl -d Debian -e perl …` started, and msld dropped the port when it closed.
+- 01:20 Idle after this, 30 s (before, with polling): VM up and no distro, VM process 0.4% CPU and 1547 context switches (2.4%, 3775), guest timer interrupts 727 (1298). Debian running, VM process 0.6% and 1740 (3.4%, 4303), guest timers 670 (1298), mini-init 35 (143). msld stays at 8–21.
+- 01:24 e2e with the event-driven watcher: boron 55/55 (localhost forwarding), sodium 21/21, lithium 27/27, phosphorus 12/12, silicon 59/59. Guest unit tests 24/24.
+
+## 2026-10-01 08:44: direct sessions (#57), branch direct-sessions
+- 08:44 msl reads and writes a session's streams itself. `RunRequest.direct` makes msld open one-shot `VZVirtioSocketListener` ports (random, 0x40000000-0x7fffffff) and pass them to the agent in `RunRequest.dial_back` with a 16-byte token. The agent dials each stream back to CID 2, writes the token, and copies raw between the PTY or pipes and the socket. When the process has exited and its output is delivered (or a background process holds it for 2 s), it shuts down the write side. msld checks the token, hands the fds to msl (`Reply.streams`), and reports `.exited`; msl exits once its output streams reach eof. msl still passes its stdio fds, so an older msld relays as before, and the OOBE session keeps that relay. msld now ignores SIGPIPE: before, a write to a client that had gone away killed msld (and the VM).
+- 08:44 Checks (dev build, Debian): echo, exit code 7, stderr kept apart, stdin, `yes | head -3` (0 s), a background process holding stdout (returns in 2 s), 2 M lines, empty stdin; tty: typed input, a pty in the distro, resize to 33x111, exit 3; OOBE (relay) then the shell (direct) on one connection. 60 short sessions and 6 x 4 GiB, no failures. One earlier run hung twice (4 GiB stdout, 120 s alarm) and didn't come back in 66 later runs; not explained.
+- 08:44 Throughput: 4 GiB of stdout to a pipe 4.76-4.80 s (8.21 s through msld's relay), to /dev/null 4.94 s; 4 GiB of stdin 4.88 s (5.66 s); msld CPU unchanged during the transfers.
+- 08:44 e2e: beryllium 26/26, boron 55/55, sodium 21/21, lithium 27/27, carbon 20/20, magnesium 16/16, neon 20/20, phosphorus 12/12, silicon 59/59, helium 40/41. The helium failure is #49 (same check, same output, `[?2004l50 160`), as on 09-28 and 09-29.
+
+## 2026-10-01 09:38: direct import/export and msl --connect (#57), and the splice hang, branch direct-streams
+- 09:38 `--import`/`--export`/`--install` take the tar stream themselves: msld passes the guest-dialed stream (`HostStream`) to msl as `Reply.stream`, and msl copies to or from its file. `msl --connect <distro> unix=<path>|tcp=<port>` (not in --help): msld asks mini-init to open the target (`MiniInit.OpenStream`, the same allowlist and per-user connect as vsock 1026) and dial it back, then hands msl the fd and counts it as a session until msl disconnects. The VS Code extension spawns one per managed pipe (the user chose this over keeping the relay: a stall stays in its own process). Checks: export of 281 MB to a file and to stdout in about 0.4 s (same 10594 entries), import from a file and from stdin with the data intact, a bad tar refused, `--connect` over TCP and a Unix socket, refusals for a disallowed path and a closed port.
+- 09:38 The intermittent hang (#63, on main): a session whose msl has an open but silent stdin, running a process that lives long enough, never returns. Caught live in sodium. The agent's reaper slept with no SIGCHLD, because the process (`sh`) hadn't exited: it was in state D in `pipe_release`. The guest raw bridge copied the host's stdin stream into the child's stdin pipe with `std::io::copy`, which uses splice(2) into a pipe, and splice holds the pipe's lock while it waits for socket data, so the exiting child couldn't release its stdin. The old framed path used read and write. Repro: `sleep 20 | msl -d Debian -e sh -c 'sleep 1; exit 3'` hangs every time (3/3 alarms), with `< /dev/null` it returns 3. Fix: `rpc::copy_plain` (read and write) for the raw bridge and `relay()`; after it, 5/5 return 3. (A shared-eventfd theory about the reaper was wrong; the reaper is unchanged.)
+- 10:07 The tail of a large guest->host stream went missing on `msl --connect` (100 MB echo: 99.79-99.96 MB arrived). Byte counts: msl wrote 100,000,000, the guest relay passed all 100,000,000 each way, and msl read about 99.88 MB before eof. `SO_LINGER` and keeping msld's VZ connection objects open changed nothing. Holding the guest socket 5 s after its last write gave all 100 MB, so the guest closing was the trigger, but the guest can't see the host finish (POLLHUP at once, no change later). Apple's Containerization does the same `dup` + `close()` on the host and closes right after its last write in vminitd, but it uses one vsock per direction for stdio. The trigger is a host half-close: a server sending 100 MB on connect arrived complete 3/3 when msl never half-closed, and 99.89-99.96 MB 3/3 when msl had half-closed (`shutdown(SHUT_WR)` at stdin eof) before the guest closed. Fix: `OpenStream` uses two streams, one per direction, and msl never half-closes the tty stream (it also carries output). After: echo 3/3 and send 2/2 complete; two 1.3 GB exports byte-identical, ending in zero blocks, `bsdtar` reads them fully.
+
+## 2026-10-01 11:45: no compatibility paths before the public release, branch drop-compat
+- 11:45 The user: MSL isn't announced publicly yet, so no backwards compatibility. Removed: msl passing its stdio and file fds and the `direct` flags; msld's session and tar relays (`BridgeSet`, the framed import/export branches, `Completion`, `FramedBridge`'s stop/sent/delivered/quiet/abort, `Pump.copy`'s stop); `connect.sock` (`Connect.swift`, `Paths.connectSocket`) and the guest's vsock 1026 listener; `msl-bridge`; the guest's `DataPort` and framed session/tar paths; `Started`'s port fields and the import/export `data_port` events (reserved in the proto). The OOBE session goes direct too: msl stops the first session's stdin copy (a stop pipe) and drains its output when the shell's `.streams` arrives. Framing remains only for localhost forwarding and the file view. `ConnectRequest` now just parses `--connect`'s arguments. `msl --update` reinstalls the VS Code extension where it's installed (msl, msld and the extension change together). Extension (PR #3): `msl --connect` only.
+- 11:55 e2e on drop-compat: lithium 27/27, sodium 17/17 (the msl-bridge and connect.sock checks are gone), silicon 59/59, boron 55/55, beryllium 26/26, magnesium 16/16, neon 20/20, phosphorus 12/12, helium 40/41 (#49), carbon 16/20. carbon hit the intermittent boot failure (seen once each in helium and lithium before), and the new logging caught it: the idle restart for a new disk logged "vm start failed: VZErrorDomain 2 … The storage device attachment is invalid" *before* "guest powered off" for the old VM. VZ holds an exclusive flock on every disk image a VM uses (a non-blocking `flock` on a running VM's data.img gets EWOULDBLOCK, shared and exclusive) and releases it a little after the VM reports stopped, so a boot right after a stop can find an image still locked. Fix: before booting, msld waits (up to 10 s) until each image to attach can be locked, and otherwise says the disk is in use by another VM.
+- 12:06 After the lock wait: carbon 20/20 twice, lithium 27/27, helium 40/41 (#49), silicon 59/59 once and 57/59 once. In the failing run the idle restart booted with A's and Debian's disks ("vm started … 2 distro disks"), yet both were then mounted on loop devices: the old VM's teardown wiped the new boot's disk table. `VMHost.stopped()` clears `vm` first and runs the teardown (`onStop` → `DistroDisks.reset()`) after; when the delegate got there first, `waitForStop` saw `vm == nil`, returned, and the restart booted while that teardown was still running. Fix: VMHost counts teardowns in progress; `waitForStop` and every boot (`Service.bootVM`) wait until none is running.
+- 12:43 Short sessions came back empty in about 2-4% of runs (exit code 0). msl read 0 bytes and then eof, while the guest had written all 10 bytes (300/300 stdout streams, no write errors): VZ dropped them when the guest closed right after writing. Closing only after msl closed gave 0 empty in 600, but then a slow reader never got the guest's half-close (eof) and both sides waited. One layer up, the cause is ours: removing framing (#63) also removed the end-of-stream contract, and every fix since has tried to get it back out of VZ's close and half-close. Fix: end of stream goes on the control channel. The guest reports the bytes it wrote to each output stream (`Exited` tty/stdout/stderr_bytes, `ExportDistroDone.bytes`, a streaming `OpenStream` with `opened` then `done(bytes)`). msld relays them (`Reply.ended`, `Reply.streamEnd`). msl reads exactly that many bytes, then closes, and the guest closes only after msl has (`rpc::wait_for_host_close`). No half-closes from the guest, and msl's output wait has no give-up timer. Checks: 0 empty in 600 short sessions; the slow reader 300000/300000 in 3 s; `yes | head`, background stdout, export (bsdtar reads it), 10 sessions in 0.1 s; 4 GiB of stdout in 5.95 s (was 4.8 s; see below).
+- 13:02 The 25% stdout slowdown (4 GiB 5.92-5.97 s, 8 GiB 12.08 s; main 4.75-4.87 s and 9.66 s) was msl's copy: msl's user CPU doubled (0.66 s to 1.22 s for 8 GiB) and sys rose (4.92 s to 5.85 s), the guest and msld unchanged. Each read was preceded by a `poll` on the stream and the count's wake-up pipe, with a fresh `pollfd` array; a non-blocking read with `poll` only on EAGAIN didn't help (6.03-6.19 s), since the reader keeps up and hits EAGAIN nearly every time. Fix: output copies use plain blocking reads, as on main; when the count arrives and the copy already has every byte, msl shuts down the stream's read side, which ends the blocked read. After: 1 GiB 1.21 s, 4 GiB 4.74 s, 8 GiB 9.61 s. Checks: 0 empty in 600 short sessions, 0 wrong in 100 stderr-only sessions, the slow reader 300000/300000 in 3 s, `yes | head -2`, background stdout (2 s), export (bsdtar reads it), 10 sessions in 0.11 s, tty (prompt, size, resize, exit 3).
+- 13:10 e2e on drop-compat with blocking output reads: sodium 17/17, silicon 59/59, carbon 20/20, lithium 27/27, boron 55/55, beryllium 26/26, magnesium 16/16, phosphorus 12/12, helium 40/41 (#49), neon 19/20 (`--version` reported the build's commit, and a commit landed during the run). Swift unit tests 43/43, guest unit tests 21/21 (msl-bridge's tests went with it).
+
+## 2026-10-01 14:51: handed-off streams lost under load, branch fd-handoff
+- 14:51 Short sessions run 20 at a time printed nothing about 9% of the time (108 of 1200, `msl -e echo …`); one at a time, never (0 of 600). The guest reported writing 10-12 bytes; msl read 0 and then eof. Found while moving localhost forwarding into msl-portd, which lost 5-10% of parallel connections the same way.
+- 14:51 Ruled out with a standalone test (a hidden guest subcommand dialing N connections at once, msld counting the bytes; not kept): VZ's guest-initiated vsock (2400 connections, 60 at a time, all bytes), `rpc::dial_host`, a child process writing through a pipe, msld's one-shot listeners and tokens, and running alongside 20-way session traffic. All clean, while sessions run at the same time still lost output. Also ruled out: half-closing stdin, removing the one-shot listener, streams of a session being swapped (a token per stream changed nothing), a stale `close` in msld or msl (a `close` interposer saw no EBADF), and a change of socket in the guest (same inode and peer, no SO_ERROR after the write).
+- 14:51 The cause: in every failing session, all three stream sockets were already at eof when msl received them (`recv(MSG_PEEK|MSG_DONTWAIT)` returned 0 for each). msld closed its descriptors right after sending them with SCM_RIGHTS. A Unix socket whose last descriptor is closed while it sits in a message the receiver hasn't read yet is emptied and shut down by XNU's garbage collection of in-flight descriptors, and each vsock stream is a Unix socket to Virtualization.framework's process. Under load msl reads its control socket later, so the window is wider; when msld relayed the bytes itself through a socketpair, msld read every byte from the vsock and wrote it, and msl still got eof, so the loss is in the handoff, not in VZ. Holding msld's copy until the session ended only reduced it (39 of 1200): a short session can end before msl has read `.streams`.
+- 14:51 Fix: `IPCConnection.sendRetaining` keeps a dup of each sent fd until the receiver acknowledges the frame (a zero-length frame that `receive` sends for every frame with fds and consumes on the other side) or the connection closes. Holding until the connection closes would be too long: when msl's output is gone (`msl -e yes | head`), closing its stream is what stops the guest's writes. After: 0 wrong in 2400 parallel sessions, 0 empty in 300 sequential, the slow reader 300000/300000, `yes | head -2` in 0 s, background stdout 2 s, export (bsdtar reads it), 4 GiB of stdout 4.73-4.76 s, tty (prompt, size, resize, exit 3). Not fixed here (also on main): `msl --export <distro> - | head -c 1000` aborts with an uncaught NSFileHandle "Broken pipe" exception when msl prints the failure to stdout.
+- 15:09 msl's own messages (out/err, --json errors, the IDE prompt, the download bar) go through write(2): `msl --export Debian - | head -c 1000` exits 255 instead of aborting (134), a full export to a pipe is intact (rc 0). e2e on fd-handoff: sodium 17/17, silicon 59/59, carbon 20/20, lithium 27/27, boron 55/55, beryllium 26/26, magnesium 16/16, neon 20/20, phosphorus 12/12, helium 40/41 (#49). Swift unit tests 43/43.
+
+## 2026-10-01 15:16: localhost forwarding through msl-portd, branch msl-portd
+- 15:16 `msl-portd` (libexec/msl, no entitlements) relays localhost forwarding, like WSL's wslrelay.exe. msld keeps the port watching, binds 127.0.0.1/::1 for each port and passes the listening sockets to msl-portd over a socketpair (fd 3, IPCConnection frames, SCM_RIGHTS). For each accepted connection msl-portd asks msld for a stream; msld connects to the guest forwarder (vsock 1025), writes the port header and passes the fd; msl-portd runs the credit framing (FramedBridge, moved to MSLCore). msld starts msl-portd with the first forwarded port and closes its control socket after the last; msl-portd then stops accepting and exits after its last connection. If msl-portd dies, msld starts it again and re-forwards the ports.
+- 15:16 msld keeps its descriptor of each forwarded stream until msl-portd reports the connection closed (`PortRelayMessage.closed`). Closing it right after the handoff lost 5-10% of connections at 20-way concurrency (the client got no bytes, the host-side vsock read eof at once); releasing it when msl-portd had received it (#68's acknowledgement) still lost about 0.4% (2-6 of 1000, 4 runs); holding it to the end lost none (0 of 1000, 6 runs). A close() interposer loaded into msl, msld and msl-portd saw no double close. Unlike the session handoff, this one isn't explained by XNU's in-flight garbage collection (msl-portd already holds the fd), so it's inside Virtualization.framework's host-initiated connections. (Correction to the #68 entry: its interposer run wasn't loaded, as macOS strips DYLD_* when it starts /bin/bash or /usr/bin/perl; the in-flight check stands on its own.)
+- 15:16 Checks (dev build, Debian): 1 GiB through a forwarded port in 2.32-2.34 s down and 1.40-1.57 s up (main: 2.33 s and 1.40 s), msld CPU 0.00 s for it (main: 1.87 s down, 0.68 s up), msl-portd 7.7 s for 3 GiB each way; 500 sequential connections 0.58-0.60 ms each (main 0.60 ms), 0 wrong; 20 x 50 parallel 100 KB echoes 0 errors (3 runs, after the rebase on #68); after `kill -9` of msl-portd the port answers again (new msl-portd), a port that closes and reopens is forwarded again, msl-portd exits when the port closes and when msld is killed.
+
+## 2026-10-01 15:55: the file view through msl-fileviewd, branch msl-fileviewd
+- 15:55 Direct NFS (mounting the guest's IP over vmnet) dropped: as uid 501, binding port 700 on 127.0.0.1 is refused, but listening on 0.0.0.0:700 and connecting from source port 701 both work, so a "privileged" source port proves nothing on macOS; any local user (and any VM on the shared vmnet bridge) could reach the guest's NFS server, protected only by the AUTH_SYS uid the client sets. FSKit (macOS 26's `FSGenericURLResource` can mount a URL) was considered and not taken now: an app bundle and extension, a manual enable in System Settings, a sandbox exception plus XPC to msld for the vsock, and our own client in place of the kernel's NFS client.
+- 15:55 Instead `msl-fileviewd` (libexec/msl, no entitlements) relays the view, like msl-portd: msld creates the 0600 socket (or the 127.0.0.1 port), passes the listener, opens a framed vsock stream to the guest NFS server for each connection and keeps its descriptor until msl-fileviewd reports it closed; msl-fileviewd runs RPCFilter and copies. msld opens the MOUNT window with `RelayMessage.mountWindow` and waits for msl-fileviewd's `mountWindowSet` before running mount_nfs. The relay code is now shared: `RelayHelper` (MSLCore) for the helpers, `RelayProcess` (MSLService) for msld; msl-portd is a few lines on top. Also fixed: msl-portd exited as soon as msld closed its control socket, cutting forwarded connections still open; RelayHelper now waits for the last one.
+- 15:55 Checks (dev build, Debian, 1 GiB files): reads through `~/.msl/distros` 9.01 / 13.65 / 17.60 s (main 9.16 / 13.80 / 17.59 s) with msld CPU 0 (main 4.6 s per GiB), writes 30.4-30.5 s (main 29.5-32.1 s) with msld CPU 0 (main 4.2 s per GiB); msl-fileviewd 22 s of CPU for 3 GiB read + 2 GiB written; the checksum over the view matches the guest's; after `kill -9` of msl-fileviewd a new one starts and the mount still works; after `msl --shutdown` no msl-fileviewd and no mounts are left. Seen on both builds and not addressed here: the view reads at 60-110 MB/s and writes at 34 MB/s, and each successive 1 GiB read is slower.
+
+## 2026-10-01 16:49: VS Code extension 0.2.0 bundled, branch pin-vscode-0.2.0
+- 16:49 msl-vscode-extension 0.2.0 published (`msl --connect` for managed pipes, #3 there; the toolchain update, #2): msl had bundled 0.1.1, which needs msld's `connect.sock`, removed in #67. Its `publish.sh` took the first `vscode-<version>` artifact the API listed, a build of the bump PR's first commit, and refused; it now takes the artifact built from HEAD (#5 there). Pinned with `scripts/pin.sh vscode vscode-0.2.0`.
+- 16:49 Checks with the pinned build: all e2e suites (helium 40/41, #49); `Tests/e2e/release.sh` (package with msl-portd and msl-fileviewd in libexec/msl, install, run, `msl --update` 0.1.0 -> 0.1.1, uninstall, nothing left). Its msld check printed the first libexec/msl/msld on the Mac (here an installed 0.2.0), so it now matches the test's prefix. VS Code with an isolated profile (`--user-data-dir`, `--extensions-dir`) and the bundled .vsix: opening `vscode-remote://msl+Debian/root` installed and started the VS Code Server in Debian, opened two `msl --connect` pipes to its socket within 6 s, and started the remote extension host.
+
+## 2026-10-01 18:41: macOS 27 or later only, branch macos-27
+- 18:41 The user: GPU acceleration (#13) needs `VZCustomVirtioDevice` (macOS 27), so MSL as a whole now requires macOS 27, instead of a macOS 26 build reaching a 27-only API. `Package.swift` targets 27.0; CI's host and release package jobs run on GitHub's `xcode-27` image (macOS 27, preview) and select the newest released Xcode 27, skipping betas (the image's `Xcode_27.1.app` and `Xcode_27.2.app` are symlinks to betas); `install.sh` refuses below 27; `update.json` carries `minimumMacOS`, and `msl --update` refuses a release that needs a newer macOS.
+- 18:41 dyld doesn't refuse a command-line binary built for a newer macOS: a hello world built with `-target arm64-apple-macos28.0` (`minos 28.0`) ran on macOS 27 with exit 0. So msl and msld check the running macOS themselves at startup (`MSLBuild.unsupportedMacOS`) and fail with "msl needs macOS 27 or later (this is macOS 26.x)." A unit test keeps `Package.swift`, `install.sh` and `MSLBuild.minimumMacOS` in step. Checks: Swift unit tests 45/45, `minos 27.0` on msl and msld, a dev build lists distros.

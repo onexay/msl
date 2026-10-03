@@ -1,0 +1,17 @@
+# Weekly dependency update PRs, one grouped PR per ecosystem.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /guest
+    schedule: { interval: weekly }
+    groups: { rust: { patterns: ["*"] } }
+    open-pull-requests-limit: 5
+  - package-ecosystem: swift
+    directory: /
+    schedule: { interval: weekly }
+    groups: { swift: { patterns: ["*"] } }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups: { actions: { patterns: ["*"] } }

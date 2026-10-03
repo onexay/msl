@@ -1,0 +1,383 @@
+// MSL host <-> guest protocol (gRPC over vsock).
+//
+// - MiniInit: vsock port 1024, served by msl-guest as the utility VM's PID 1.
+// - Agent:    one per running distro, served inside the distro's namespaces on
+//             the port returned by MiniInit.StartDistro.
+//
+// Bulk bytes (tar streams, process stdio) never go through gRPC: the guest binds
+// an ephemeral vsock port, announces it in a stream event, and the host connects
+// to it. An announced port accepts exactly one connection.
+
+syntax = "proto3";
+
+package msl.v1;
+
+message Empty {}
+
+// ---------------------------------------------------------------- MiniInit
+
+service MiniInit {
+  rpc Ping(Empty) returns (PingReply);
+
+  // Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
+  // directory, read from `stream`. Events: done.
+  rpc ImportDistro(ImportDistroRequest) returns (stream ImportDistroEvent);
+
+  // Writes the distro's rootfs as a tar to `stream`. Events: done.
+  rpc ExportDistro(ExportDistroRequest) returns (stream ExportDistroEvent);
+
+  // A byte stream to a Unix socket (VS Code's, see connect.rs for what's
+  // allowed) or a localhost TCP port in a running distro, as two streams
+  // dialed back to the host, one per direction. Events: opened (the target is
+  // open and both streams are up), then done once the target has closed.
+  rpc OpenStream(OpenStreamRequest) returns (stream OpenStreamEvent);
+
+  // Removes the distro's root filesystem (the distro must be stopped).
+  rpc DeleteDistro(DistroRef) returns (Empty);
+
+  // Starts the distro's namespaces + init and returns once its agent is ready
+  // (and, for systemd distros, once systemd's bus socket exists).
+  rpc StartDistro(StartDistroRequest) returns (StartDistroReply);
+
+  // Kills the distro's PID namespace and cleans up its cgroup.
+  rpc StopDistro(DistroRef) returns (Empty);
+
+  // Lists distros whose namespaces are running.
+  rpc ListRunning(Empty) returns (ListRunningReply);
+
+  // Stops all distros, unmounts their disks, syncs and powers the VM off.
+  rpc Shutdown(ShutdownRequest) returns (Empty);
+
+  // TCP ports listening on the (shared) loopback/any address, for localhost
+  // forwarding. Sends the full set now and again on every change.
+  rpc WatchPorts(Empty) returns (stream ListeningPorts);
+
+  // Block devices currently present (before hot-attaching a disk).
+  rpc ListDisks(Empty) returns (DiskList);
+  // Wait for a newly attached disk (not in `before`) and mount it at
+  // /mnt/msl/<name> (shared into every distro), unless `bare`.
+  rpc MountDisk(MountDiskRequest) returns (MountDiskReply);
+  // Unmount /mnt/msl/<name> before the host detaches the disk.
+  rpc UnmountDisk(UnmountDiskRequest) returns (Empty);
+
+  // FITRIM the distro store so freed blocks go back to the Mac (sparse data.img).
+  rpc CompactDisk(Empty) returns (CompactDiskReply);
+
+  // The ~/.msl/distros file view: one folder per distro *name* (bind mounts of the
+  // rootfs under /run/msl-view, the NFS export root). Replaces the whole set.
+  rpc SetFileView(FileViewRequest) returns (Empty);
+
+  // A distro's own disk (ext4.img): mounts it as the distro's directory, either
+  // the virtio-blk disk attached at boot (found by its serial) or, for a disk
+  // that appeared while the VM runs, a loop device over the file on the Mac
+  // share. Checks the ext4 UUID, runs e2fsck when the filesystem isn't clean,
+  // and grows it offline to `size_bytes`. The distro must be stopped.
+  rpc AttachDisk(AttachDiskRequest) returns (AttachDiskReply);
+  // Stops the distro, unmounts its disk and flushes it (a loop device is
+  // released), so the host can copy, move or delete the file.
+  rpc DetachDisk(DistroRef) returns (Empty);
+  // Copies a distro kept on data.img onto its (attached) own disk, then removes
+  // it from data.img.
+  rpc MigrateDistro(DistroRef) returns (MigrateDistroReply);
+  // /etc/wsl-distribution.conf of an attached distro (import of a disk image).
+  rpc DistroConf(DistroRef) returns (DistributionConf);
+}
+
+message AttachDiskRequest {
+  string id = 1;
+  string serial = 2;       // virtio-blk serial of the boot disk, e.g. "d3"
+  string uuid = 3;         // expected ext4 UUID (lowercase, hyphenated)
+  uint64 size_bytes = 4;   // size of the image file: grow the filesystem to it
+  string mac_path = 5;     // instead of `serial`: the image's path on the Mac, for a loop device
+}
+
+message AttachDiskReply {
+  string device = 1;       // e.g. /dev/vdc or /dev/loop0
+  // What was done before mounting (e2fsck, growth); empty when nothing.
+  string repaired = 2;
+}
+
+message MigrateDistroReply {
+  uint64 entries = 1;
+}
+
+message ShutdownRequest {
+  // How long distros get to stop before they're killed; 0 = the default (10 s).
+  // msld passes less when macOS is shutting down (#52).
+  uint32 grace_ms = 1;
+}
+
+message FileViewRequest {
+  map<string, string> distros = 1;  // name -> id
+}
+
+message CompactDiskReply {
+  uint64 trimmed_bytes = 1;
+}
+
+message DiskList {
+  repeated string names = 1;  // e.g. "sda"
+}
+
+message MountDiskRequest {
+  repeated string before = 1;
+  string name = 2;
+  string fstype = 3;    // default ext4
+  string options = 4;
+  uint32 partition = 5; // 0 = whole disk
+  bool bare = 6;
+}
+
+message MountDiskReply {
+  string device = 1;       // e.g. /dev/sda1
+  string mount_point = 2;  // empty when bare
+}
+
+message UnmountDiskRequest {
+  string name = 1;
+}
+
+// Connections to vsock port 1025 (the forwarder) start with a 2-byte
+// big-endian TCP port; the guest then relays to 127.0.0.1:<port> (or [::1]).
+message ListeningPorts {
+  repeated uint32 ports = 1;
+}
+
+message PingReply {
+  string kernel_release = 1;
+  double uptime_seconds = 2;
+  // The shared data filesystem (/var/lib/msl on data.img).
+  uint64 data_total_bytes = 3;
+  uint64 data_free_bytes = 4;
+  // What mini-init did to grow it at this boot; empty when there was nothing to do.
+  string data_grow = 5;
+}
+
+message DistroRef {
+  // Registry GUID (lowercase, hyphenated). Also the on-disk directory name.
+  string id = 1;
+}
+
+message ImportDistroRequest {
+  string id = 1;
+  HostStream stream = 2;     // the tar stream, dialed back to the host
+}
+
+// A raw stream the guest dials back to the host: a guest-initiated vsock
+// connection to host `port` (CID 2), which a stalled host reader can't freeze
+// (#36). The guest writes `token` first; the host takes the first connection
+// with it. A stream the guest writes ends with eof.
+message HostStream {
+  bytes token = 1;
+  uint32 port = 2;
+}
+
+// One vsock per direction, as with session stdio: Virtualization.framework
+// drops data still on its way to the host when the host has half-closed a
+// connection and the guest then closes it.
+message OpenStreamEvent {
+  oneof event {
+    Empty opened = 1;
+    uint64 done = 2;  // bytes written to the host stream (see Exited)
+  }
+}
+
+message OpenStreamRequest {
+  HostStream stream = 1;     // target -> host; the guest closes it at the target's eof
+  HostStream from_host = 6;  // host -> target; its eof shuts down the target's write side
+  string distro_id = 2;
+  uint32 uid = 3;            // the user to connect as (Unix sockets)
+  string unix_path = 4;      // either this
+  uint32 tcp_port = 5;       // or this (127.0.0.1, else ::1)
+}
+
+message ImportDistroEvent {
+  reserved 1;
+  oneof event {
+    ImportDistroDone done = 2;
+  }
+}
+
+message ImportDistroDone {
+  uint64 entries = 1;
+  // From /etc/wsl-distribution.conf ([oobe] section), if present.
+  DistributionConf distribution_conf = 2;
+}
+
+message DistributionConf {
+  string oobe_command = 1;
+  optional uint32 oobe_default_uid = 2;
+  string oobe_default_name = 3;
+}
+
+enum ExportFormat {
+  EXPORT_FORMAT_TAR = 0;
+  EXPORT_FORMAT_TAR_GZ = 1;
+  EXPORT_FORMAT_TAR_XZ = 2;
+}
+
+message ExportDistroRequest {
+  string id = 1;
+  ExportFormat format = 2;
+  HostStream stream = 3;     // the tar stream, dialed back to the host
+}
+
+message ExportDistroEvent {
+  reserved 1;
+  oneof event {
+    ExportDistroDone done = 2;
+  }
+}
+
+message ExportDistroDone {
+  uint64 entries = 1;
+  uint64 bytes = 2;  // the tar stream's length (see Exited)
+}
+
+message StartDistroRequest {
+  string id = 1;
+  string name = 2;          // distro name (used for MSL_DISTRO_NAME, cgroup label)
+  string hostname = 3;
+  // DNS tunneling ([msl2] dnsTunneling): resolv.conf points at the guest stub
+  // (10.255.255.254), which relays queries to the Mac's resolver over vsock.
+  bool dns_tunneling = 4;
+  // The distro lives on its own disk, which must be attached (AttachDisk).
+  bool own_disk = 5;
+}
+
+message StartDistroReply {
+  uint32 agent_port = 1;
+  bool systemd = 2;
+  double start_seconds = 3;
+}
+
+message ListRunningReply {
+  repeated string ids = 1;
+}
+
+// ---------------------------------------------------------------- Agent
+
+service Agent {
+  // Starts a process. Events: started (stdio ports), then exited. The process
+  // is only exec'd after the host has connected to every announced port, so
+  // no output is lost; `exited` is sent after stdout/stderr are drained.
+  rpc Run(RunRequest) returns (stream RunEvent);
+
+  rpc Resize(ResizeRequest) returns (Empty);
+  rpc Signal(SignalRequest) returns (Empty);
+
+  // Distro facts read from inside its root: wsl.conf, wsl-distribution.conf.
+  rpc Info(Empty) returns (DistroInfo);
+
+  // Resolve a user name in the distro's /etc/passwd.
+  rpc LookupUser(LookupUserRequest) returns (LookupUserReply);
+}
+
+message LookupUserRequest {
+  string name = 1;
+}
+
+message LookupUserReply {
+  bool found = 1;
+  uint32 uid = 2;
+}
+
+enum ShellType {
+  SHELL_TYPE_STANDARD = 0;  // $SHELL -c "<command_line>"
+  SHELL_TYPE_LOGIN = 1;     // $SHELL -l -c "<command_line>"
+  SHELL_TYPE_NONE = 2;      // exec argv directly
+}
+
+message RunRequest {
+  // Empty argv and empty command_line: start the user's shell as a login shell.
+  repeated string argv = 1;
+  // Used with SHELL_TYPE_STANDARD / SHELL_TYPE_LOGIN.
+  string command_line = 2;
+  ShellType shell_type = 3;
+
+  // User name; empty = default user (wsl.conf [user] default, else default_uid).
+  string user = 4;
+  uint32 default_uid = 5;
+
+  // Linux path; "~" = user's home. Falls back to home if it doesn't exist.
+  string cwd = 6;
+  map<string, string> env = 7;
+
+  // Which host stdio fds are terminals. Any true -> a PTY is allocated and used
+  // for those fds; the others get pipes.
+  bool stdin_tty = 8;
+  bool stdout_tty = 9;
+  bool stderr_tty = 10;
+  uint32 rows = 11;
+  uint32 cols = 12;
+
+  // Caller's macOS working directory; used when `cwd` is empty. The guest maps
+  // it under the distro's [automount] root (default /mnt/macos).
+  string mac_cwd = 13;
+  // MSLENV (the WSLENV equivalent) and the macOS values of the variables it
+  // lists; the guest applies the /p and /l path translations.
+  string mslenv = 14;
+  map<string, string> mslenv_values = 15;
+  // macOS home directory (for mslpath -w of Linux-only paths).
+  string mac_home = 16;
+  // The host ports the guest connects to for the session's streams
+  // (guest-initiated vsock connections, which a stalled host reader can't
+  // freeze, #36); they carry raw bytes, with no framing.
+  DialBack dial_back = 17;
+}
+
+// Host vsock ports (CID 2) for a session's streams; 0 = not used. The guest
+// writes `token` first on each connection, so the host can tell its agent from
+// any other process in the VM. tty carries the PTY master (both directions).
+// Once the process has exited and its output is delivered (or a background
+// process keeps it open for 2 s), the guest shuts down the write side of each
+// output stream before it reports Exited.
+message DialBack {
+  bytes token = 1;
+  uint32 tty_port = 2;
+  uint32 stdin_port = 3;
+  uint32 stdout_port = 4;
+  uint32 stderr_port = 5;
+}
+
+message RunEvent {
+  oneof event {
+    Started started = 1;
+    Exited exited = 2;
+  }
+}
+
+message Started {
+  reserved 2, 3, 4, 5;
+  uint64 session_id = 1;
+}
+
+// End of stream is carried here, not by the vsock: Virtualization.framework
+// can drop the tail of a guest->host connection when the guest closes it, and
+// can lose a half-close (eof). So the guest reports how many bytes it wrote to
+// each output stream; the host reads exactly that many, then closes the stream,
+// and the guest closes its end only after that.
+message Exited {
+  int32 code = 1;  // exit status, or 128 + signal
+  uint64 tty_bytes = 2;
+  uint64 stdout_bytes = 3;
+  uint64 stderr_bytes = 4;
+}
+
+message ResizeRequest {
+  uint64 session_id = 1;
+  uint32 rows = 2;
+  uint32 cols = 3;
+}
+
+message SignalRequest {
+  uint64 session_id = 1;
+  int32 signal = 2;
+}
+
+message DistroInfo {
+  string default_user = 1;        // wsl.conf [user] default (empty if unset)
+  bool systemd = 2;               // wsl.conf [boot] systemd
+  DistributionConf distribution_conf = 3;
+  string os_pretty_name = 4;
+}

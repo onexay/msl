@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: Mark this release as a prerelease
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build with Latest dependencies and publish
+    runs-on: xcode-27
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require main
+        run: test "$GITHUB_REF" = refs/heads/main || { echo "Run releases from main" >&2; exit 1; }
+      - name: Select Xcode for the minimum macOS
+        run: |
+          MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
+          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
+          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
+          sudo xcode-select -s "$XC"
+          xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
+          xcodebuild -version && swift --version
+      - name: Guest toolchain
+        run: rustup target add aarch64-unknown-linux-musl && brew install protobuf
+      - name: Publish
+        env:
+          MSL_GPG_KEY: ${{ secrets.MSL_GPG_KEY }}
+          MSL_GPG_PRIVATE_KEY: ${{ secrets.MSL_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "$MSL_GPG_PRIVATE_KEY" ]; then
+            printf '%s' "$MSL_GPG_PRIVATE_KEY" | gpg --batch --import
+          fi
+          scripts/publish.sh ${{ inputs.prerelease && '--prerelease' || '' }}

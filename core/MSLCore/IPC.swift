@@ -1,0 +1,290 @@
+// SPDX-License-Identifier: Apache-2.0
+import CMSLSupport
+import Foundation
+
+// msl <-> msld protocol over a Unix stream socket.
+// Frame: 4-byte big-endian length + JSON. File descriptors ride along with a
+// frame via SCM_RIGHTS. A zero-length frame acknowledges a frame that carried
+// fds: `receive` sends one for each, and consumes the peer's (sendRetaining).
+
+public struct RunRequest: Codable, Sendable {
+    public var spec: RunSpec
+    public var macCwd: String
+    public var env: [String: String]
+    public var stdinTTY: Bool
+    public var stdoutTTY: Bool
+    public var stderrTTY: Bool
+    public var rows: UInt16
+    public var cols: UInt16
+    /// MSLENV and the macOS values of the variables it names (translated in the guest).
+    public var mslenv: String = ""
+    public var mslenvValues: [String: String] = [:]
+    public var macHome: String = ""
+    public init(spec: RunSpec, macCwd: String, env: [String: String], stdinTTY: Bool, stdoutTTY: Bool, stderrTTY: Bool, rows: UInt16, cols: UInt16) {
+        self.spec = spec; self.macCwd = macCwd; self.env = env
+        self.stdinTTY = stdinTTY; self.stdoutTTY = stdoutTTY; self.stderrTTY = stderrTTY
+        self.rows = rows; self.cols = cols
+    }
+}
+
+public enum Request: Codable, Sendable {
+    case list
+    case status
+    case versionInfo
+    case setDefault(name: String)
+    case terminate(name: String)
+    case shutdown(force: Bool)
+    case unregister(name: String)
+    /// The tar streams of these three: msld replies `.stream` with a vsock fd
+    /// that msl writes the file to or reads it from, then the final reply.
+    case export(name: String, format: String)
+    /// `location` is absolute; `vhdSize` sizes the new disk.
+    case importTar(name: String, location: String, vhdSize: UInt64? = nil)
+    case installFromFile(name: String?, location: String?, sourceDescription: String, vhdSize: UInt64? = nil)
+    /// `msl --connect`: a byte stream to a Unix socket (`unix`) or localhost port
+    /// (`tcp`) in a distro, for VS Code's managed pipes. msld replies `.streams`
+    /// (stdin: to the target, stdout: from it) and keeps the distro running
+    /// until msl disconnects.
+    case connect(distro: String, unix: String?, tcp: UInt16?)
+    case manage(name: String, op: ManageOp)
+    /// `--export --vhd`: a copy of the distro's disk image at `path` (absolute).
+    case exportDisk(name: String, path: String)
+    /// `--import --vhd`: an ext4 image copied into `<location>/ext4.img`.
+    case importDisk(name: String, location: String, image: String)
+    /// `--import-in-place`: an ext4 image used where it is.
+    case importInPlace(name: String, image: String)
+    /// msld replies `.streams` for each process it runs (the distro's first-run
+    /// setup, then the command), then `.exited`.
+    case run(RunRequest)
+    /// A root shell in the utility VM itself; replies as `run`.
+    case debugShell(RunRequest)
+    case mount(MountSpec)
+    case unmount(disk: String?)
+}
+
+/// Sent by msl while a `run` is in progress.
+public enum ClientEvent: Codable, Sendable {
+    case resize(rows: UInt16, cols: UInt16)
+    case signal(Int32)
+}
+
+public struct DistroSummary: Codable, Sendable, Equatable {
+    public var name: String
+    public var id: String
+    public var running: Bool
+    public var version: Int
+    public var isDefault: Bool
+    public init(name: String, id: String, running: Bool, version: Int, isDefault: Bool) {
+        self.name = name; self.id = id; self.running = running; self.version = version; self.isDefault = isDefault
+    }
+}
+
+public enum Reply: Codable, Sendable {
+    case ok
+    case failure(message: String, code: String)
+    case distros([DistroSummary])
+    case status(distros: [DistroSummary], vm: VMStatus)
+    case versionInfo(kernel: String)
+    case installed(name: String)
+    /// A run finished with this exit code.
+    case exited(Int32)
+    /// A process's streams (`run`, `connect`), as fds in this order, each present
+    /// only when true: tty (both directions), stdin, stdout, stderr. Output
+    /// streams end with eof once the guest has delivered everything.
+    case streams(tty: Bool, stdin: Bool, stdout: Bool, stderr: Bool)
+    /// One vsock stream as the attached fd (a tar stream).
+    case stream
+    /// A process from `.streams` has exited: how many bytes the guest wrote to
+    /// each output stream. msl reads exactly that much from each, then closes
+    /// it; the vsock's own end (close or eof) isn't reliable on VZ.
+    case ended(tty: UInt64, stdout: UInt64, stderr: UInt64)
+    /// The guest has finished writing a `.stream` (export) or `connect` output
+    /// stream, after `bytes` bytes; read that many, then close it.
+    case streamEnd(bytes: UInt64)
+    case mounted(device: String, mountPoint: String)
+}
+
+public enum IPCError: Error {
+    case closed
+    case io(Int32)
+    case tooLarge
+}
+
+public final class IPCConnection: @unchecked Sendable {
+    public let fd: Int32
+    private let writeLock = NSLock()
+    private let retainLock = NSLock()
+    private var retained: [[Int32]] = []  // sendRetaining's copies, oldest first
+
+    public init(fd: Int32) { self.fd = fd }
+    deinit {
+        retained.joined().forEach { close($0) }
+        close(fd)
+    }
+
+    public static func connect(path: String) throws -> IPCConnection {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw IPCError.io(errno) }
+        var addr = sockaddr_un.make(path)
+        let rc = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard rc == 0 else {
+            let e = errno
+            close(fd)
+            throw IPCError.io(e)
+        }
+        return IPCConnection(fd: fd)
+    }
+
+    public func send<T: Encodable>(_ value: T, fds: [Int32] = []) throws {
+        let json = try JSONEncoder().encode(value)
+        var frame = Data()
+        var len = UInt32(json.count).bigEndian
+        withUnsafeBytes(of: &len) { frame.append(contentsOf: $0) }
+        frame.append(json)
+        try writeLock.withLock {
+            try frame.withUnsafeBytes { raw in
+                var off = 0
+                var first = true
+                while off < raw.count {
+                    let n: Int
+                    if first && !fds.isEmpty {
+                        n = fds.withUnsafeBufferPointer {
+                            msl_send_with_fds(fd, raw.baseAddress! + off, raw.count - off, $0.baseAddress, Int32(fds.count))
+                        }
+                    } else {
+                        n = Darwin.write(fd, raw.baseAddress! + off, raw.count - off)
+                    }
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw IPCError.io(errno)
+                    }
+                    first = false
+                    off += n
+                }
+            }
+        }
+    }
+
+    /// `send`, keeping a descriptor of each of `fds` open until the peer has
+    /// received them (its acknowledgement) or this connection closes; the
+    /// caller may close its own at once. A Unix socket (a vsock stream is one,
+    /// to Virtualization.framework's process) whose last descriptor is closed
+    /// while it's in a message the peer hasn't received yet is emptied and shut
+    /// down by XNU's garbage collection of in-flight descriptors: the peer gets
+    /// it at eof, without its data.
+    public func sendRetaining<T: Encodable>(_ value: T, fds: [Int32]) throws {
+        let copies = fds.map { dup($0) }.filter { $0 >= 0 }
+        retainLock.withLock { retained.append(copies) }
+        try send(value, fds: fds)
+    }
+
+    /// Wait for the peer's acknowledgement of a `sendRetaining`, when nothing
+    /// else reads this connection meanwhile.
+    public func awaitAcknowledgement() {
+        var fds: [Int32] = []
+        while let header = try? readExactly(4, fds: &fds) {
+            let len = header.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(as: UInt32.self)) }
+            if len == 0 { releaseOldest(); break }
+            guard len < 16 << 20, (try? readExactly(Int(len), fds: &fds)) != nil else { break }
+        }
+        fds.forEach { close($0) }
+    }
+
+    private func releaseOldest() {
+        let batch = retainLock.withLock { retained.isEmpty ? [] : retained.removeFirst() }
+        batch.forEach { close($0) }
+    }
+
+    /// Receive one frame; any fds attached to it are returned (caller owns them).
+    public func receive<T: Decodable>(_ type: T.Type) throws -> (T, [Int32]) {
+        while true {
+            var fds: [Int32] = []
+            let header = try readExactly(4, fds: &fds)
+            let len = header.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(as: UInt32.self)) }
+            if len == 0 {  // the peer has a sendRetaining's fds
+                releaseOldest()
+                continue
+            }
+            guard len < 16 << 20 else { throw IPCError.tooLarge }
+            let body = try readExactly(Int(len), fds: &fds)
+            if !fds.isEmpty { try? acknowledge() }
+            return (try JSONDecoder().decode(T.self, from: body), fds)
+        }
+    }
+
+    private func acknowledge() throws {
+        var zero = UInt32(0)
+        try writeLock.withLock {
+            try withUnsafeBytes(of: &zero) { raw in
+                var off = 0
+                while off < raw.count {
+                    let n = Darwin.write(fd, raw.baseAddress! + off, raw.count - off)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw IPCError.io(errno)
+                    }
+                    off += n
+                }
+            }
+        }
+    }
+
+    private func readExactly(_ count: Int, fds: inout [Int32]) throws -> Data {
+        var out = Data(count: count)
+        var got = 0
+        while got < count {
+            var buf = [Int32](repeating: -1, count: 8)
+            var nfds: Int32 = 8
+            let n = out.withUnsafeMutableBytes { raw in
+                buf.withUnsafeMutableBufferPointer { msl_recv_with_fds(fd, raw.baseAddress! + got, count - got, $0.baseAddress, &nfds) }
+            }
+            if n < 0 {
+                if errno == EINTR { continue }
+                throw IPCError.io(errno)
+            }
+            if n == 0 { throw IPCError.closed }
+            fds.append(contentsOf: buf.prefix(Int(nfds)))
+            got += n
+        }
+        return out
+    }
+}
+
+extension sockaddr_un {
+    public static func make(_ path: String) -> sockaddr_un {
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8.prefix(MemoryLayout.size(ofValue: addr.sun_path) - 1))
+        withUnsafeMutableBytes(of: &addr.sun_path) { buf in
+            for (i, b) in bytes.enumerated() { buf[i] = b }
+        }
+        return addr
+    }
+}
+
+/// Listen on a Unix socket path (removing a stale one).
+/// The listening socket launchd opened for msld (its LaunchAgent's `Sockets`
+/// entry "Listeners", #52), or nil when msld wasn't started by launchd.
+public func launchdListener() -> Int32? {
+    let fd = msl_launchd_socket("Listeners")
+    return fd >= 0 ? fd : nil
+}
+
+public func listenUnix(_ path: String, backlog: Int32 = 64) throws -> Int32 {
+    unlink(path)
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { throw IPCError.io(errno) }
+    var addr = sockaddr_un.make(path)
+    let rc = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    guard rc == 0, listen(fd, backlog) == 0 else {
+        let e = errno
+        close(fd)
+        throw IPCError.io(e)
+    }
+    chmod(path, 0o600)
+    return fd
+}

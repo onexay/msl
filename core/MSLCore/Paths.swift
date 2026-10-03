@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: Apache-2.0
+import Foundation
+
+/// Where MSL keeps its state. Overridable with MSL_HOME (used by tests).
+public struct Paths: Sendable {
+    public let root: URL
+
+    public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        if let home = environment["MSL_HOME"], !home.isEmpty {
+            root = URL(fileURLWithPath: home, isDirectory: true)
+        } else {
+            root = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/msl", isDirectory: true)
+        }
+    }
+
+    public var registry: URL { root.appendingPathComponent("registry.json") }
+    public var dataDisk: URL { root.appendingPathComponent("data.img") }
+    /// The utility VM's VZGenericMachineIdentifier, so it keeps one identity across boots.
+    public var machineIdentifier: URL { root.appendingPathComponent("machine-identifier") }
+    public var socket: URL { root.appendingPathComponent("msld.sock") }
+    /// Byte streams into distros (VS Code managed pipes); see Connect.swift.
+    /// The msl binary that set up the IDE extension (`msl --manage-ide`), so the
+    /// extension finds it wherever msl is installed.
+    public var cliPointer: URL { root.appendingPathComponent("cli-path") }
+    public var log: URL { root.appendingPathComponent("msld.log") }
+    public var runDir: URL { root.appendingPathComponent("run", isDirectory: true) }
+    public var consoleLog: URL { root.appendingPathComponent("console.log") }
+}
