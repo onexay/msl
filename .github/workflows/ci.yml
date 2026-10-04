@@ -40,13 +40,13 @@ jobs:
       - run: swift build --build-tests
       - run: swift test --skip-build
 
-  # Check the package against the committed dependency pins. The manual Release
-  # workflow rebuilds with the Latest kernel and extension releases before publishing.
+  # Check the package against the Latest kernel and extension releases, matching
+  # the manual Release workflow's dependency selection.
   # Keep this package job on the Xcode matching msl's minimum macOS: a newer
   # Swift runtime can link libraries the minimum macOS lacks. xcode-27 is the
   # GitHub macOS 27 image (preview).
   package:
-    name: Pinned dependency package check
+    name: Latest dependency package check
     if: github.event_name == 'push'  # PRs skip ~10 min of macOS package validation
     runs-on: xcode-27
     env: { GH_TOKEN: "${{ github.token }}" }
@@ -64,6 +64,10 @@ jobs:
           xcodebuild -version && swift --version
       - name: Guest toolchain
         run: rustup target add aarch64-unknown-linux-musl && brew install protobuf
+      - name: Resolve latest kernel and extension releases
+        run: |
+          scripts/pin.sh kernel
+          scripts/pin.sh vscode
       - name: Package
         run: |
           V=$(python3 scripts/next-version.py)
