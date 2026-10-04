@@ -13,7 +13,10 @@ kernel) DIR=$ROOT/kernel; REPO=${MSL_KERNEL_REPO:-onexay/msl-kernel} ;;
 vscode) DIR=$ROOT/extensions/vscode; REPO=${MSL_VSCODE_REPO:-onexay/msl-vscode-extension} ;;
 *) echo "usage: scripts/pin.sh kernel|vscode [<tag>]" >&2; exit 2 ;;
 esac
-GH=; command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && GH=1
+# Actions' GITHUB_TOKEN is scoped to the MSL repository, not the separate
+# public kernel and extension repositories. Use their public release endpoints
+# there; locally, use gh when authenticated (including for private overrides).
+GH=; [ -n "${GITHUB_ACTIONS:-}" ] || { command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && GH=1; }
 TAG=${2:-}
 if [ -z "$TAG" ]; then
   if [ -n "$GH" ]; then
