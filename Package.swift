@@ -18,7 +18,7 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.10.0"),
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.1"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.1"),
-        .package(url: "https://github.com/apple/containerization.git", exact: "0.47.0"),
+        .package(url: "https://github.com/apple/containerization.git", exact: "0.48.0"),
     ],
     targets: [
         // CLI parsing, messages, registry model, msl<->msld IPC. No heavy deps: `msl` links only this.
