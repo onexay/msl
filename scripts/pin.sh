@@ -22,7 +22,11 @@ if [ -z "$TAG" ]; then
   if [ -n "$GH" ]; then
     TAG=$(gh release view --repo "$REPO" --json tagName --jq .tagName)
   else
-    TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/^  "tag_name": "\(.*\)",$/\1/p')
+    LATEST_URL=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")
+    case $LATEST_URL in
+      */releases/tag/*) TAG=${LATEST_URL##*/releases/tag/} ;;
+      *) TAG= ;;
+    esac
   fi
   [ -n "$TAG" ] || { echo "no Latest release in $REPO" >&2; exit 1; }
 fi
