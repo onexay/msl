@@ -12,18 +12,13 @@ Include the msl version (`msl --version`), your macOS version, and the steps to 
 
 ## Verifying a release
 
-Each release's tarball has a SHA-256 checksum (`.sha256`). From now on, that file is also signed with the release key (`.sha256.asc`):
-
-- key: `509D 39A8 78FD EBBB CAF7  B715 FA9B 1101 AF64 043C` (rsa4096, onexay)
-- published on [keys.openpgp.org](https://keys.openpgp.org/search?q=509D39A878FDEBBBCAF7B715FA9B1101AF64043C) and on [github.com/onexay.gpg](https://github.com/onexay.gpg)
-
-`scripts/install.sh` checks the checksum, and also checks the signature when `gpg` is installed. To verify by hand:
+Current MSL, kernel and VS Code extension releases include SHA-256 checksums. For an MSL archive, verify it with:
 
 ```console
-$ gpg --keyserver hkps://keys.openpgp.org --recv-keys 509D39A878FDEBBBCAF7B715FA9B1101AF64043C
-$ gpg --verify msl-<version>-macos-arm64.tar.gz.sha256.asc msl-<version>-macos-arm64.tar.gz.sha256
 $ shasum -a 256 -c msl-<version>-macos-arm64.tar.gz.sha256
 ```
+
+The checksum is published alongside the archive in the same GitHub release.
 
 ## Security model
 
@@ -45,5 +40,5 @@ msl runs Linux distributions in one lightweight VM (Apple's Virtualization.frame
 
 - **`~/.msl/distros` file view.** Distro files are served over NFSv3 through a Unix socket in msl's folder (mode 0600), not a network port. macOS's NFS client connects from the kernel as root, so the socket's permissions alone don't stop another user from mounting it. msld therefore checks every NFS call ([#1](https://github.com/onexay/msl/issues/1)): only calls carrying your user ID or root's (the kernel's own) get through, and a MOUNT is accepted only while msld itself is mounting. Another local user can't mount the view, and gets an authentication error for anything in your mounts. With `fileViewTransport = tcp` the view is on a `127.0.0.1` port instead: the same checks apply, but a local program can connect to it directly and claim any user ID, so avoid that setting on a shared system.
 - **Forwarded ports.** As with WSL's localhost forwarding, a port forwarded from a distro can be reached by every local user on macOS.
-- **Release signing.** Releases are ad-hoc signed and not notarised yet. Releases without a `.sha256.asc` (including v0.1.1) are verified only by a SHA-256 checksum published in the same GitHub release; signed releases also carry a PGP signature (see above). `scripts/install.sh` removes the quarantine attribute from the files it installs.
+- **Release signing.** MSL executables are ad-hoc signed and not notarised.
 - **`curl | sh` install.** The root `install.sh` downloads and runs `scripts/install.sh`; read both before piping the installer to a shell if that matters to you. The installer can also install a downloaded tarball with `--from`.
