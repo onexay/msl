@@ -185,8 +185,22 @@ public final class IPCConnection: @unchecked Sendable {
     /// while it's in a message the peer hasn't received yet is emptied and shut
     /// down by XNU's garbage collection of in-flight descriptors: the peer gets
     /// it at eof, without its data.
+    ///
+    /// Throws without sending anything if a descriptor can't be duplicated
+    /// (the process is out of them): sent without its copy, it would be
+    /// exposed to exactly that.
     public func sendRetaining<T: Encodable>(_ value: T, fds: [Int32]) throws {
-        try send(value, fds: fds, retaining: fds.map { dup($0) }.filter { $0 >= 0 })
+        var copies: [Int32] = []
+        for fd in fds {
+            let copy = dup(fd)
+            guard copy >= 0 else {
+                let e = errno
+                copies.forEach { close($0) }
+                throw IPCError.io(e)
+            }
+            copies.append(copy)
+        }
+        try send(value, fds: fds, retaining: copies)
     }
 
     /// Wait for the peer's acknowledgement of a `sendRetaining`, when nothing
