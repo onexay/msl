@@ -243,6 +243,9 @@ message StartDistroRequest {
   bool dns_tunneling = 4;
   // The distro lives on its own disk, which must be attached (AttachDisk).
   bool own_disk = 5;
+  // dnsProxy=false uses the host's DNS servers when DNS tunneling is off.
+  bool dns_proxy = 6;
+  repeated string host_dns_servers = 7;
 }
 
 message StartDistroReply {

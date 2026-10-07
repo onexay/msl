@@ -494,7 +494,13 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     let cfg = serde_json::json!({
         "id": req.id, "name": req.name, "hostname": req.hostname,
         "rootfs": rootfs, "port": port, "ready_fd": wr.as_raw_fd(),
-        "nameservers": if req.dns_tunneling { vec![crate::dns::STUB_ADDR.to_string()] } else { nameservers() },
+        "nameservers": if req.dns_tunneling {
+            vec![crate::dns::STUB_ADDR.to_string()]
+        } else if !req.dns_proxy && !req.host_dns_servers.is_empty() {
+            req.host_dns_servers
+        } else {
+            nameservers()
+        },
     });
     let mut cmd = Command::new("/init");
     std::os::unix::process::CommandExt::arg0(&mut cmd, "msl-distro-init");

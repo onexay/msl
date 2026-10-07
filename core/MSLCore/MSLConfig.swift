@@ -12,6 +12,8 @@ public struct MSLConfig: Equatable, Sendable {
     public var kernel: String?               // custom kernel image path
     public var kernelCommandLine: String = ""
     public var localhostForwarding = true
+    public var autoProxy = true
+    public var dnsProxy = true
     public var dnsTunneling = true
     /// Nested virtualization (/dev/kvm in the guest). Needs an M3 or later and macOS 15.
     public var nestedVirtualization = true
@@ -75,6 +77,10 @@ public struct MSLConfig: Equatable, Sendable {
                 c.kernelCommandLine = value
             case "msl2.localhostforwarding":
                 if let b = parseBool(value) { c.localhostForwarding = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
+            case "msl2.autoproxy":
+                if let b = parseBool(value) { c.autoProxy = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
+            case "msl2.dnsproxy":
+                if let b = parseBool(value) { c.dnsProxy = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "msl2.dnstunneling":
                 if let b = parseBool(value) { c.dnsTunneling = b } else { c.warnings.append("Invalid boolean '\(value)' for .mslconfig entry '\(entry)' in \(at)") }
             case "msl2.nestedvirtualization":

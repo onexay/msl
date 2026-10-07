@@ -2,6 +2,11 @@
 
 All notable changes to MSL are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and MSL uses [semantic versioning](https://semver.org/). `scripts/publish.sh` uses the Unreleased section for GitHub release notes.
 
+## [Unreleased]
+
+### Added
+- Mirror macOS proxy settings into new distro sessions with `autoProxy`, and optionally use the Mac's DNS servers with `dnsProxy` when DNS tunneling is off.
+
 ## [0.1.0] - 2026-10-04
 
 Initial release.

@@ -12,6 +12,10 @@ public final class Service: @unchecked Sendable {
     let vm: VMHost
     let guest: GuestClients
     private let bootLock = NSLock()
+    private let proxyWarningLock = NSLock()
+    private var proxyWarningsLogged: Set<String> = []
+    private let proxyStateLock = NSLock()
+    private var lastProxyEnvironment: ProxyEnvironment?
     /// Identity of our executable at startup, to notice it being replaced on disk
     /// (an updated build): a replaced, running msld can no longer start VMs.
     private let executablePath = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
@@ -778,9 +782,15 @@ public final class Service: @unchecked Sendable {
         let mini = try guest.miniInit
         let host = ProcessInfo.processInfo.hostName.components(separatedBy: ".").first ?? "msl"
         let dns = config.dnsTunneling
+        let dnsProxy = config.dnsProxy
+        let hostDNSServers = !dns && !dnsProxy ? MacHostNetworkSettings.dnsServers() : []
         let own = d.disk != nil
         let reply = try blocking {
-            try await mini.startDistro(.with { $0.id = d.id; $0.name = d.name; $0.hostname = host; $0.dnsTunneling = dns; $0.ownDisk = own })
+            try await mini.startDistro(.with {
+                $0.id = d.id; $0.name = d.name; $0.hostname = host
+                $0.dnsTunneling = dns; $0.dnsProxy = dnsProxy; $0.hostDnsServers = hostDNSServers
+                $0.ownDisk = own
+            })
         }
         return try guest.agent(port: reply.agentPort)
     }
@@ -788,6 +798,20 @@ public final class Service: @unchecked Sendable {
     func run(_ r: RunRequest, conn: IPCConnection) throws -> Int32 {
         var d = try resolveDistro(r.spec)
         let agent = try startDistro(d)
+        var sessionEnvironment = r.env
+        if config.autoProxy {
+            let proxy = MacHostNetworkSettings.proxyEnvironment()
+            let changed = proxyStateLock.withLock { () -> Bool in
+                defer { lastProxyEnvironment = proxy }
+                return lastProxyEnvironment.map { $0 != proxy } ?? false
+            }
+            if changed { log("autoProxy: Mac proxy settings changed; applying the new settings to distro sessions") }
+            for warning in proxy.warnings {
+                let first = proxyWarningLock.withLock { proxyWarningsLogged.insert(warning).inserted }
+                if first { log("autoProxy: \(warning)") }
+            }
+            sessionEnvironment = proxy.values.merging(sessionEnvironment) { _, explicit in explicit }
+        }
         let events = EventRouter(conn: conn)
         defer { events.finish() }
         idle.beginSession(distro: d.id)
@@ -801,7 +825,7 @@ public final class Service: @unchecked Sendable {
             oobe.user = "root"
             oobe.cwd = "/"
             // WSL_DISTRO_NAME only here: Ubuntu's wsl-setup uses `set -u`.
-            oobe.env = r.env.merging(["WSL_DISTRO_NAME": d.name, "MSL_MACOS_USER": NSUserName()]) { $1 }
+            oobe.env = sessionEnvironment.merging(["WSL_DISTRO_NAME": d.name, "MSL_MACOS_USER": NSUserName()]) { $1 }
             apply(r, to: &oobe)
             let code = try session(agent: agent, request: oobe, conn: conn, events: events)
             guard code == 0 else { return code }
@@ -825,7 +849,7 @@ public final class Service: @unchecked Sendable {
         // With no --cd, the guest maps the Mac cwd under the distro's [automount] root.
         req.cwd = r.spec.cd ?? ""
         req.macCwd = r.macCwd
-        req.env = r.env.merging(["MSL_MACOS_VIEW": FileView.viewDir.path]) { $1 }
+        req.env = sessionEnvironment.merging(["MSL_MACOS_VIEW": FileView.viewDir.path]) { $1 }
         req.mslenv = r.mslenv
         req.mslenvValues = r.mslenvValues
         req.macHome = r.macHome
