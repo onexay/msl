@@ -116,6 +116,9 @@ public final class IPCConnection: @unchecked Sendable {
     private let retainLock = NSLock()
     private var retained: [[Int32]] = []  // sendRetaining's copies, oldest first
 
+    /// Descriptors still held for the peer (tests).
+    var retainedCount: Int { retainLock.withLock { retained.joined().count } }
+
     public init(fd: Int32) { self.fd = fd }
     deinit {
         retained.joined().forEach { close($0) }
@@ -138,12 +141,20 @@ public final class IPCConnection: @unchecked Sendable {
     }
 
     public func send<T: Encodable>(_ value: T, fds: [Int32] = []) throws {
+        try send(value, fds: fds, retaining: [])
+    }
+
+    /// The peer acknowledges every frame that carries fds, and each
+    /// acknowledgement releases the oldest batch: so every such frame adds
+    /// one, in the order the frames are written, empty unless retaining.
+    private func send<T: Encodable>(_ value: T, fds: [Int32], retaining copies: [Int32]) throws {
         let json = try JSONEncoder().encode(value)
         var frame = Data()
         var len = UInt32(json.count).bigEndian
         withUnsafeBytes(of: &len) { frame.append(contentsOf: $0) }
         frame.append(json)
         try writeLock.withLock {
+            if !fds.isEmpty { retainLock.withLock { retained.append(copies) } }
             try frame.withUnsafeBytes { raw in
                 var off = 0
                 var first = true
@@ -175,9 +186,7 @@ public final class IPCConnection: @unchecked Sendable {
     /// down by XNU's garbage collection of in-flight descriptors: the peer gets
     /// it at eof, without its data.
     public func sendRetaining<T: Encodable>(_ value: T, fds: [Int32]) throws {
-        let copies = fds.map { dup($0) }.filter { $0 >= 0 }
-        retainLock.withLock { retained.append(copies) }
-        try send(value, fds: fds)
+        try send(value, fds: fds, retaining: fds.map { dup($0) }.filter { $0 >= 0 })
     }
 
     /// Wait for the peer's acknowledgement of a `sendRetaining`, when nothing
