@@ -205,6 +205,42 @@ import Testing
         #expect(read(p[0], &buf, 2) == 2 && buf == Array("hi".utf8))
         close(fds[0]); close(p[0]); close(p[1])
     }
+
+    /// An acknowledgement releases the descriptors of the frame it answers,
+    /// not those of a later sendRetaining.
+    @Test func plainFrameWithFdsKeepsLaterRetainedOnes() throws {
+        var sv: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sv) == 0)
+        let a = IPCConnection(fd: sv[0]), b = IPCConnection(fd: sv[1])
+        var p: [Int32] = [0, 0]
+        #expect(pipe(&p) == 0)
+        try a.send(Request.terminate(name: "plain"), fds: [p[0]])
+        try a.sendRetaining(Request.terminate(name: "retained"), fds: [p[1]])
+        #expect(a.retainedCount == 1)
+        let first = try b.receive(Request.self).1
+        a.awaitAcknowledgement()
+        #expect(a.retainedCount == 1)  // b hasn't received the retained frame yet
+        let second = try b.receive(Request.self).1
+        a.awaitAcknowledgement()
+        #expect(a.retainedCount == 0)
+        (first + second + p).forEach { close($0) }
+    }
+
+    /// A descriptor that can't be duplicated can't be retained: nothing is sent.
+    @Test func sendRetainingFailsWholeWhenADescriptorCannotBeKept() throws {
+        var sv: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sv) == 0)
+        let a = IPCConnection(fd: sv[0]), b = IPCConnection(fd: sv[1])
+        var p: [Int32] = [0, 0]
+        #expect(pipe(&p) == 0)
+        let gone = Int32.max  // never open: dup fails with EBADF, as it would with EMFILE
+        #expect(throws: IPCError.self) { try a.sendRetaining(Request.terminate(name: "lost"), fds: [p[1], gone]) }
+        #expect(a.retainedCount == 0)
+        try a.send(Request.terminate(name: "next"))
+        guard case .terminate(let n) = try b.receive(Request.self).0 else { Issue.record("wrong request"); return }
+        #expect(n == "next")  // the failed frame never reached the peer
+        p.forEach { close($0) }
+    }
 }
 
 @Suite struct ConfigTests {

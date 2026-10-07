@@ -65,7 +65,7 @@ final class PortForwarder: @unchecked Sendable {
                 log("localhost forwarding: port \(p) is in use on macOS; skipped")
                 continue
             }
-            defer { fds.forEach { close($0) } }
+            defer { fds.forEach { close($0) } }  // msl-portd has its own
             if relay == nil {
                 do {
                     relay = try RelayProcess(executable: "msl-portd", vm: vm, ended: { [weak self] r in self?.relayEnded(r) })
@@ -74,7 +74,9 @@ final class PortForwarder: @unchecked Sendable {
                     return
                 }
             }
-            guard (try? relay?.conn.send(RelayMessage.listen(port: UInt16(p)), fds: fds)) != nil else { continue }
+            // Retained: msl-portd may only just have started, and a listener
+            // closed before it has received it arrives shut down.
+            guard (try? relay?.conn.sendRetaining(RelayMessage.listen(port: UInt16(p)), fds: fds)) != nil else { continue }
             ports.insert(p)
             log("localhost forwarding: port \(p)")
         }

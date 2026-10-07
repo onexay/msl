@@ -44,3 +44,9 @@ When a fix starts turning into a chain of workarounds, stop patching symptoms an
 - Two or three fixes in a row for the same kind of failure (a lost byte, a hang, a race) usually means the cause is above the code being patched: a protocol that relies on behaviour the layer below doesn't guarantee, a lifecycle the code doesn't own, or a check that hides the real failure.
 - Before adding a retry, timeout, delay or fallback, say what it compensates for and why that can't be fixed where it starts.
 - Name the layer and the assumption in the findings, not just the symptom and the patch.
+
+## Branches and milestones
+
+Milestones are named after chemical elements (Helium, Lithium, ... Sulfur), in atomic-number order. Take the next unused element for a new milestone, and give it a one-line goal. Put the detail in its issues.
+
+Work on one issue per branch, named `msl-<milestone>-<issue>` in lowercase, for example `msl-sulfur-3`. Branch from `main` and land the work through a pull request that closes the issue.

@@ -345,9 +345,9 @@ public final class Service: @unchecked Sendable {
         let s = vm.acceptStream(token: token)
         Thread.detachNewThread {
             guard let fd = try? s.wait() else { return }  // the guest failed first: its error is the reply
-            try? conn.sendRetaining(Reply.stream, fds: [fd])
-            close(fd)
-            conn.awaitAcknowledgement()  // nothing else reads msl's side during the request
+            let sent = (try? conn.sendRetaining(Reply.stream, fds: [fd])) != nil
+            close(fd)  // if it wasn't sent, the guest sees eof and its error is the reply
+            if sent { conn.awaitAcknowledgement() }  // nothing else reads msl's side during the request
         }
         return .with { $0.token = Data(token); $0.port = s.port }
     }
