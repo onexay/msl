@@ -81,7 +81,8 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         }
         return VMSettings(memoryBytes: memory, processors: cpus, kernel: kernel,
                           kernelCommandLine: [baseCommandLine, cfg.kernelCommandLine].filter { !$0.isEmpty }.joined(separator: " "),
-                          localhostForwarding: cfg.localhostForwarding, dnsTunneling: cfg.dnsTunneling,
+                          localhostForwarding: cfg.localhostForwarding, autoProxy: cfg.autoProxy,
+                          dnsProxy: cfg.dnsProxy, dnsTunneling: cfg.dnsTunneling,
                           vmIdleTimeoutMs: cfg.vmIdleTimeoutMs, instanceIdleTimeoutMs: cfg.instanceIdleTimeoutMs,
                           nestedVirtualization: cfg.nestedVirtualization && VZGenericPlatformConfiguration.isNestedVirtualizationSupported)
     }

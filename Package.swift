@@ -23,7 +23,8 @@ let package = Package(
     targets: [
         // CLI parsing, messages, registry model, msl<->msld IPC. No heavy deps: `msl` links only this.
         .target(name: "CMSLSupport", path: "core/CMSLSupport"),
-        .target(name: "MSLCore", dependencies: ["CMSLSupport"], path: "core/MSLCore", swiftSettings: v5),
+        .target(name: "MSLCore", dependencies: ["CMSLSupport"], path: "core/MSLCore",
+                swiftSettings: v5, linkerSettings: [.linkedFramework("SystemConfiguration")]),
         // Generated from core/proto/msl/v1/msl.proto by scripts/gen-proto.sh (checked in).
         .target(
             name: "MSLProtocol",

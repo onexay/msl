@@ -131,7 +131,8 @@ public enum JSONOutput {
         func fields(_ v: VMSettings) -> [String: String] {
             ["memoryBytes": "\(v.memoryBytes)", "processors": "\(v.processors)", "kernel": v.kernel,
              "kernelCommandLine": v.kernelCommandLine, "localhostForwarding": "\(v.localhostForwarding)",
-             "dnsTunneling": "\(v.dnsTunneling)", "vmIdleTimeoutMs": "\(v.vmIdleTimeoutMs)",
+             "autoProxy": "\(v.autoProxy)", "dnsProxy": "\(v.dnsProxy)", "dnsTunneling": "\(v.dnsTunneling)",
+             "vmIdleTimeoutMs": "\(v.vmIdleTimeoutMs)",
              "instanceIdleTimeoutMs": "\(v.instanceIdleTimeoutMs)", "nestedVirtualization": "\(v.nestedVirtualization)"]
         }
         let x = fields(a), y = fields(b)

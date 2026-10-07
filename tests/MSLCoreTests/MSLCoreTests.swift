@@ -250,6 +250,8 @@ import Testing
             memory=8GB
             processors = 4
             vmIdleTimeout=-1
+            autoProxy=false
+            dnsProxy=no
             memory2 = x
             processors=abc
             nestedVirtualization=false
@@ -258,14 +260,51 @@ import Testing
             """, path: "t")
         #expect(c.memoryBytes == 8 << 30)
         #expect(c.processors == 4)
+        #expect(!c.autoProxy && !c.dnsProxy)
         #expect(c.vmIdleTimeoutMs == -1)
         #expect(c.instanceIdleTimeoutMs == 5000)
         #expect(!c.nestedVirtualization && MSLConfig().nestedVirtualization)
-        #expect(c.warnings == ["Invalid integer 'abc' for .mslconfig entry 'msl2.processors' in t:6"])
+        #expect(c.warnings == ["Invalid integer 'abc' for .mslconfig entry 'msl2.processors' in t:8"])
         let w = MSLConfig.parse("[wsl2]\nprocessors = 2\nmemory = lots\n", path: "w")  // .wslconfig section name
         #expect(w.processors == 2)
         #expect(w.warnings == ["Invalid memory string 'lots' for .mslconfig entry 'wsl2.memory' in w:3"])
         #expect(MSLConfig.parseSize("512MB") == 512 << 20 && MSLConfig.parseSize("1024") == 1024 && MSLConfig.parseSize("x") == nil)
+        #expect(MSLConfig().autoProxy && MSLConfig().dnsProxy)
+    }
+
+    @Test func proxyEnvironment() {
+        let http = ProxyEnvironment.make(from: [
+            "HTTPEnable": 1, "HTTPProxy": "proxy.corp", "HTTPPort": 8080,
+        ])
+        #expect(http.values == [
+            "http_proxy": "http://proxy.corp:8080", "HTTP_PROXY": "http://proxy.corp:8080",
+        ])
+        #expect(http.warnings.isEmpty)
+
+        let https = ProxyEnvironment.make(from: [
+            "HTTPSEnable": 1, "HTTPSProxy": "secure.corp", "HTTPSPort": 8443,
+        ])
+        #expect(https.values["https_proxy"] == "http://secure.corp:8443")
+        #expect(https.values["HTTPS_PROXY"] == "http://secure.corp:8443")
+
+        let exceptions = ProxyEnvironment.make(from: [
+            "ExceptionsList": ["localhost", "*.corp"],
+        ])
+        #expect(exceptions.values["no_proxy"] == "localhost,*.corp")
+        #expect(exceptions.values["NO_PROXY"] == "localhost,*.corp")
+
+        let pac = ProxyEnvironment.make(from: [
+            "ProxyAutoConfigEnable": 1, "ProxyAutoConfigURLString": "https://pac.corp/proxy.pac",
+        ])
+        #expect(pac.values["MSL_PAC_URL"] == "https://pac.corp/proxy.pac")
+        #expect(pac.values["WSL_PAC_URL"] == "https://pac.corp/proxy.pac")
+
+        let loopback = ProxyEnvironment.make(from: [
+            "HTTPEnable": 1, "HTTPProxy": "127.0.0.1", "HTTPPort": 8080,
+            "HTTPSEnable": 1, "HTTPSProxy": "[::1]", "HTTPSPort": 8443,
+        ])
+        #expect(loopback.values.isEmpty)
+        #expect(loopback.warnings.count == 2)
     }
 
     /// An ONC RPC call (first fragment, no record mark) with AUTH_SYS or AUTH_NONE.
@@ -379,6 +418,7 @@ import Testing
         #expect(text.contains("Virtual machine: Running (up 2m 5s)"))
         let row = { (k: String) in text.split(separator: "\n").first { $0.hasPrefix("  \(k):") }.map { $0.split(separator: ":", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces) } }
         #expect(row("Memory") == "8 GB")
+        #expect(row("Auto proxy") == "on" && row("DNS proxy") == "on")
         #expect(row("Distribution idle timeout") == "never")
         #expect(text.contains("Pending changes in ~/.mslconfig (applied after 'msl --shutdown'):"))
         #expect(text.contains("Memory: 8 GB → 4 GB") && text.contains("DNS tunneling: on → off"))
@@ -468,10 +508,14 @@ import Testing
         var b = a
         b.memoryBytes = 4 << 30
         b.dnsTunneling = false
+        b.dnsProxy = false
         let s = VMStatus(running: true, uptimeSeconds: 1.5, effective: a, configured: b, configPath: "/x/.mslconfig", configExists: true)
         let j = JSONOutput.status(defaultDistro: "Ubuntu", s, warnings: ["bad key"])
         #expect(j.vm.uptimeMs == 1500 && j.vm.settings == a && j.warnings == ["bad key"])
-        #expect(j.vm.pendingChanges == [.init(setting: "dnsTunneling", from: "true", to: "false"),
+        let statusJSON = JSONOutput.encode(j, pretty: false)
+        #expect(statusJSON.contains(#""autoProxy":true"#) && statusJSON.contains(#""dnsProxy":true"#))
+        #expect(j.vm.pendingChanges == [.init(setting: "dnsProxy", from: "true", to: "false"),
+                                        .init(setting: "dnsTunneling", from: "true", to: "false"),
                                         .init(setting: "memoryBytes", from: "\(8 << 30)", to: "\(4 << 30)")])
         // Stopped: no uptime field at all, no pending changes.
         let stopped = JSONOutput.status(defaultDistro: "Ubuntu", VMStatus(running: false, uptimeSeconds: nil, effective: nil, configured: b, configPath: "/x", configExists: false), warnings: [])

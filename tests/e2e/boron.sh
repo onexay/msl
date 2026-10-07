@@ -128,6 +128,17 @@ check_not "dnsTunneling=false → vmnet DNS" "10.255.255.254" "$($MSL cat /etc/r
 check "fileViewTransport=tcp mounts from 127.0.0.1" "127.0.0.1:/Ubuntu-24.04 on" "$(mount | grep "$(basename $MSL_HOME)/view/Ubuntu-24.04 ")"
 check "fileViewTransport=tcp: files readable" "Ubuntu 24.04" "$(cat $MSL_VIEW_DIR/Ubuntu-24.04/etc/os-release)"
 
+# dnsProxy=false uses the Mac's global DNS servers instead of vmnet's gateway.
+mac_dns=$(/usr/sbin/scutil --dns | awk '
+  /^resolver #1/ { in_default=1; next }
+  /^resolver #/ && in_default { exit }
+  in_default && /nameserver\[[0-9]+\]/ { sub(/^.*: /, ""); print }
+' | sort -u)
+printf '[msl2]\nlocalhostForwarding=false\ndnsTunneling=false\ndnsProxy=false\nfileViewTransport=tcp\n' > "$MSL_CONFIG"
+$MSL --shutdown
+guest_dns=$($MSL cat /etc/resolv.conf | awk '/^nameserver / { print $2 }' | sort -u)
+check "dnsProxy=false uses Mac DNS servers" "$mac_dns" "$guest_dns"
+
 echo; echo "$pass passed, $fails failed  (MSL_HOME=$MSL_HOME)"
 $MSL --shutdown --force >/dev/null 2>&1
 # Stop only this test's msld (the one started with our MSL_HOME), not yours.

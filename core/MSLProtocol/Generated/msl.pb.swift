@@ -616,6 +616,11 @@ public nonisolated struct Msl_V1_StartDistroRequest: Sendable {
   /// The distro lives on its own disk, which must be attached (AttachDisk).
   public var ownDisk: Bool = false
 
+  /// dnsProxy=false uses the host's DNS servers when DNS tunneling is off.
+  public var dnsProxy: Bool = false
+
+  public var hostDnsServers: [String] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1892,7 +1897,7 @@ nonisolated extension Msl_V1_ExportDistroDone: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Msl_V1_StartDistroRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartDistroRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}hostname\0\u{3}dns_tunneling\0\u{3}own_disk\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}hostname\0\u{3}dns_tunneling\0\u{3}own_disk\0\u{3}dns_proxy\0\u{3}host_dns_servers\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1905,6 +1910,8 @@ nonisolated extension Msl_V1_StartDistroRequest: SwiftProtobuf.Message, SwiftPro
       case 3: try { try decoder.decodeSingularStringField(value: &self.hostname) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.dnsTunneling) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.ownDisk) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.dnsProxy) }()
+      case 7: try { try decoder.decodeRepeatedStringField(value: &self.hostDnsServers) }()
       default: break
       }
     }
@@ -1926,6 +1933,12 @@ nonisolated extension Msl_V1_StartDistroRequest: SwiftProtobuf.Message, SwiftPro
     if self.ownDisk != false {
       try visitor.visitSingularBoolField(value: self.ownDisk, fieldNumber: 5)
     }
+    if self.dnsProxy != false {
+      try visitor.visitSingularBoolField(value: self.dnsProxy, fieldNumber: 6)
+    }
+    if !self.hostDnsServers.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.hostDnsServers, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1935,6 +1948,8 @@ nonisolated extension Msl_V1_StartDistroRequest: SwiftProtobuf.Message, SwiftPro
     if lhs.hostname != rhs.hostname {return false}
     if lhs.dnsTunneling != rhs.dnsTunneling {return false}
     if lhs.ownDisk != rhs.ownDisk {return false}
+    if lhs.dnsProxy != rhs.dnsProxy {return false}
+    if lhs.hostDnsServers != rhs.hostDnsServers {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
