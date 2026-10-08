@@ -117,7 +117,7 @@ fn clear_root(dir: &Path) {
     }
 }
 
-/// What `grow_data_disk` did at this boot, for PingReply (empty: nothing to do).
+/// What was checked or grown on data.img at this boot, for PingReply.
 static GROW: OnceLock<String> = OnceLock::new();
 
 /// What mini-init needs from an ext4 superblock.
@@ -127,6 +127,7 @@ struct Superblock {
     uuid: String, // lowercase, hyphenated
     clean: bool,  // EXT4_VALID_FS
     errors: bool, // EXT4_ERROR_FS
+    error_count: u32, // errors recorded since the last fsck
 }
 
 /// Parse the 1024-byte superblock (the bytes at offset 1024 of the device).
@@ -143,6 +144,7 @@ fn parse_superblock(sb: &[u8]) -> std::io::Result<Superblock> {
         uuid: format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32]),
         clean: state & 1 != 0,
         errors: state & 2 != 0,
+        error_count: u32::from_le_bytes(sb[0x194..0x198].try_into().unwrap()),
     })
 }
 
@@ -194,37 +196,34 @@ fn run_tool(tool: &str, args: &[&str]) -> Result<(i32, String), String> {
 /// the formatter's sparse_super2 rules out online resize. e2fsck -f first
 /// (resize2fs requires a checked filesystem; it also replays the journal).
 /// `run` runs a tool and returns its exit code.
-fn grow_fs(dev: &str, fs: u64, target: u64, run: &dyn Fn(&str, &[&str]) -> Result<i32, String>) -> String {
+fn grow_fs(dev: &str, fs: u64, target: u64, run: &dyn Fn(&str, &[&str]) -> Result<i32, String>) -> Result<String, String> {
     let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
     let t0 = Instant::now();
     let size = format!("{}K", target / 1024);
-    // e2fsck: 0 clean, 1 errors fixed; anything else leaves the size alone.
+    // e2fsck: 0 clean; 1 or 2 means errors fixed. Other results stop the mount.
     match run("/bin/e2fsck", &["-f", "-p", dev]) {
-        Ok(0 | 1) => match run("/bin/resize2fs", &[dev, &size]) {
+        Ok(0 | 1 | 2) => match run("/bin/resize2fs", &[dev, &size]) {
             Ok(0) => match ext4_size(dev) {
-                Ok(new) => format!("grew {:.1} GiB → {:.1} GiB in {:.1} s", gib(fs), gib(new), t0.elapsed().as_secs_f64()),
-                Err(e) => format!("resize2fs finished but the superblock can't be read: {e}"),
+                Ok(new) => Ok(format!("grew {:.1} GiB → {:.1} GiB in {:.1} s", gib(fs), gib(new), t0.elapsed().as_secs_f64())),
+                Err(e) => Ok(format!("resize2fs finished but the superblock can't be read: {e}")),
             },
-            Ok(c) => format!("resize2fs failed (exit {c}); size unchanged at {:.1} GiB", gib(fs)),
-            Err(e) => format!("{e}; size unchanged"),
+            Ok(c) => Ok(format!("resize2fs failed (exit {c}); size unchanged at {:.1} GiB", gib(fs))),
+            Err(e) => Ok(format!("{e}; size unchanged")),
         },
-        Ok(c) => format!("e2fsck found problems it didn't fix (exit {c}); not resizing"),
-        Err(e) => format!("{e}; size unchanged"),
+        Ok(c) => Err(format!("e2fsck found problems it didn't fix (exit {c})")),
+        Err(e) => Err(e),
     }
 }
 
-/// Grow the data filesystem to fill its disk. `msl --manage --resize` only
-/// makes data.img larger; resizing happens here, before the mount.
-fn grow_data_disk(name: &str) {
+/// Check data.img for ext4 errors and grow it to fill its disk before mounting.
+/// `msl --manage --resize` only makes the image larger; resizing happens here.
+fn grow_data_disk(name: &str) -> sys::Result<()> {
     let dev = format!("/dev/{name}");
     let size = std::fs::read_to_string(format!("{SYS_BLOCK}/{name}/size"))
         .ok()
         .and_then(|s| s.trim().parse::<u64>().ok())
         .map(|sectors| sectors * 512);
-    let (Some(size), Ok(fs)) = (size, ext4_size(&dev)) else { return };
-    if size < fs + (64 << 20) {
-        return; // same size (or a sliver resize2fs can't use)
-    }
+    let Ok(sb) = read_superblock(&std::fs::File::open(&dev)?) else { return Ok(()) };
     // Before the reaper starts, so waiting on the tool ourselves is safe.
     let run = |tool: &str, args: &[&str]| -> Result<i32, String> {
         let out = Command::new(tool).args(args).output().map_err(|e| format!("{tool}: {e}"))?;
@@ -233,9 +232,21 @@ fn grow_data_disk(name: &str) {
         sys::log(&format!("{tool} {}: exit {code}\n{}", args.join(" "), text.trim()));
         Ok(code)
     };
-    let result = grow_fs(&dev, fs, size, &run);
+    let grow_to = size.filter(|n| *n >= sb.size + (64 << 20));
+    let result = if let Some(size) = grow_to {
+        grow_fs(&dev, sb.size, size, &run).map_err(std::io::Error::other)?
+    } else if sb.errors || !sb.clean || sb.error_count > 0 {
+        match run("/bin/e2fsck", &["-f", "-p", &dev]).map_err(std::io::Error::other)? {
+            0 => "checked filesystem".to_string(),
+            c @ (1 | 2) => format!("e2fsck repaired filesystem (exit {c})"),
+            c => return Err(std::io::Error::other(format!("e2fsck could not safely repair data disk (exit {c})")).into()),
+        }
+    } else {
+        return Ok(());
+    };
     sys::log(&format!("data disk: {result}"));
     let _ = GROW.set(result);
+    Ok(())
 }
 
 /// /etc/machine-id from `msl.machine_id=` (the VM's VZGenericMachineIdentifier
@@ -273,7 +284,7 @@ pub fn main() -> sys::Result<()> {
     }
     // data.img has the serial "data" (the distros' own disks follow it: d0, d1, ...).
     let data = find_by_serial(Path::new(SYS_BLOCK), "data").unwrap_or_else(|| "vda".into());
-    grow_data_disk(&data);
+    grow_data_disk(&data)?;
     sys::mount_fs(&format!("/dev/{data}"), DATA, "ext4", MsFlags::MS_NOATIME, None)?;
     sys::mkdir_p(format!("{DATA}/distros"))?;
     if Path::new("/run/rosetta/rosetta").exists() {
@@ -658,9 +669,9 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
         Ok(code)
     };
     let mut repaired = Vec::new();
-    if sb.errors || !sb.clean {
-        // e2fsck -p: 0 clean, 1 fixed, 2 fixed (reboot advised: not for us).
-        match run("/bin/e2fsck", &["-p", &dev]) {
+    if sb.errors || !sb.clean || sb.error_count > 0 {
+        // e2fsck -f -p: 0 clean, 1 fixed, 2 fixed (reboot advised: not for us).
+        match run("/bin/e2fsck", &["-f", "-p", &dev]) {
             Ok(0) => repaired.push("checked".to_string()),
             Ok(c @ (1 | 2)) => repaired.push(format!("e2fsck fixed errors (exit {c})")),
             Ok(c) => {
