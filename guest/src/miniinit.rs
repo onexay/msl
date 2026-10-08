@@ -683,7 +683,7 @@ fn attach_blocking(req: pb::AttachDiskRequest) -> Result<pb::AttachDiskReply, St
         }
     }
     if req.size_bytes >= sb.size + (64 << 20) {
-        repaired.push(grow_fs(&dev, sb.size, req.size_bytes, &run));
+        repaired.push(grow_fs(&dev, sb.size, req.size_bytes, &run).map_err(Status::failed_precondition)?);
     }
     let dir = own_root(&req.id);
     sys::mount_fs(&dev, &dir, "ext4", MsFlags::MS_NOATIME, None).map_err(status)?;
