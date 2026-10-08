@@ -7,6 +7,9 @@ All notable changes to MSL are listed here. The format follows [Keep a Changelog
 ### Added
 - Mirror macOS proxy settings into new distro sessions with `autoProxy`, and optionally use the Mac's DNS servers with `dnsProxy` when DNS tunneling is off.
 
+### Fixed
+- Check ext4 disks with recorded filesystem errors before mounting them.
+
 ## [0.1.0] - 2026-10-04
 
 Initial release.
