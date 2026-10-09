@@ -16,15 +16,9 @@ VERSION=$(python3 scripts/next-version.py)
 REPO=${MSL_REPO:-onexay/msl}
 TAG=v$VERSION
 NAME=msl-$VERSION-macos-arm64.tar.gz
-KREPO=${MSL_KERNEL_REPO:-onexay/msl-kernel}
-XREPO=${MSL_VSCODE_REPO:-onexay/msl-vscode-extension}
 
 # Check that the repository's source version files agree.
 scripts/check-version.sh >/dev/null
-
-# Release notes come from the current Unreleased section.
-CHANGES=$(awk '$0 == "## [Unreleased]" {s=1; next} /^## \[/ {if (s) exit; s=0} /^\[.*\]: / {if (s) exit} s' CHANGELOG.md)
-[ -n "$(printf '%s' "$CHANGES" | tr -d '[:space:]')" ] || { echo "CHANGELOG.md has no section for $VERSION" >&2; exit 1; }
 
 [ -z "$(git status --porcelain)" ] || { echo "commit your changes first" >&2; exit 1; }
 git fetch -q origin main --tags && [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || { echo "release HEAD must match origin/main" >&2; exit 1; }
@@ -85,21 +79,6 @@ E2FS_SRC=$(scripts/gpl-sources.sh e2fsprogs | tr '\n' ' ')
 
 set -- --repo "$REPO" --target "$(git rev-parse HEAD)" --title "$TAG"
 if [ "$PRE" = --prerelease ]; then set -- "$@" --prerelease; else set -- "$@" --latest; fi
-gh release create "$TAG" "dist/$NAME" "dist/$NAME.sha256" $SIG dist/update.json $BUSYBOX_SRC $E2FS_SRC "$@" --notes "$(cat <<NOTES
-$CHANGES
-
-Install: \`sh install.sh\` (or \`sh install.sh --version $VERSION\`). Update an existing install with \`msl --update\`.
-
-| | |
-|---|---|
-| Kernel | Linux $(cat "$PKG/msl-$VERSION/share/msl/kernel.version"), release [\`$KTAG\`](https://github.com/$KREPO/releases/tag/$KTAG) |
-| VS Code extension | release [\`$XTAG\`](https://github.com/$XREPO/releases/tag/$XTAG), installed by \`msl --manage-ide\` |
-| Commit | $(git rev-parse --short HEAD) |
-| Requires | Apple silicon, macOS $MIN or later |
-| GPL sources | BusyBox and e2fsprogs: the attached Debian source packages \`busybox_*\` and \`e2fsprogs_*\`. Kernel: attached to [\`$KTAG\`](https://github.com/$KREPO/releases/tag/$KTAG). |
-| Built by | GitHub Actions, $XCODE |
-| Signing | ad-hoc (not notarised); checksum $( [ -n "$SIG" ] && echo "PGP-signed (\`.sha256.asc\`, see SECURITY.md)" || echo "not PGP-signed") |
-
-\`$NAME\` SHA-256: \`$(cut -d' ' -f1 "dist/$NAME.sha256")\`
-NOTES
-)"
+gh release create "$TAG" \
+  "dist/$NAME" "dist/$NAME.sha256" $SIG dist/update.json $BUSYBOX_SRC $E2FS_SRC \
+  "$@" --generate-notes
