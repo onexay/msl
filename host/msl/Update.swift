@@ -14,10 +14,24 @@ enum Installation {
     static let managedPaths = ["bin/msl", "libexec/msl", "share/msl", "share/doc/msl"]
 
     /// Stop the VM; a replaced/removed msld then exits by itself (see Service.handle).
-    static func stopService() {
-        guard let c = try? IPCConnection.connect(path: Paths().socket.path) else { return }
+    static func stopService(paths: Paths = Paths()) {
+        guard let c = try? IPCConnection.connect(path: paths.socket.path) else { return }
         try? c.send(Request.shutdown(force: false))
         _ = try? c.receive(Reply.self)
+    }
+
+    /// `sudo msl --update` must reach the daemon owned by the invoking user.
+    static func servicePaths() -> Paths {
+        var environment = ProcessInfo.processInfo.environment
+        if (environment["MSL_HOME"] ?? "").isEmpty,
+           getuid() == 0,
+           let value = environment["SUDO_UID"],
+           let uid = uid_t(value),
+           let user = getpwuid(uid) {
+            environment["MSL_HOME"] = URL(fileURLWithPath: String(cString: user.pointee.pw_dir))
+                .appendingPathComponent("Library/Application Support/msl", isDirectory: true).path
+        }
+        return Paths(environment: environment)
     }
 
     struct Channel: Decodable { var version: String; var url: String; var sha256: String; var minimumMacOS: Int }
@@ -64,13 +78,17 @@ enum Installation {
               FileManager.default.fileExists(atPath: root.appendingPathComponent("libexec/msl/msld").path) else {
             fail("Update failed: the downloaded archive is not an msl release.", ErrorCode.service)
         }
-        stopService()
+        let paths = servicePaths()
+        stopService(paths: paths)
+        let launchAgentUnloaded = LaunchAgent.unload(paths: paths)
         do {
             try replaceTree(from: root, to: prefix)
         } catch {
             fail("Update failed: \(error.localizedDescription)", ErrorCode.service)
         }
-        stopService()  // the old msld notices its executable was replaced and exits
+        if !launchAgentUnloaded {
+            stopService(paths: paths)  // the old, directly-started msld notices its executable was replaced
+        }
         ManageIDE.refreshInstalled()
         out(Messages.operationCompleted)
         exit(0)

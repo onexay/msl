@@ -70,6 +70,20 @@ enum LaunchAgent {
         return Installation.shell("/bin/launchctl", ["bootstrap", "gui/\(getuid())", url.path]) == 0
     }
 
+    /// Stop the installed agent without removing its plist. Keeping the job
+    /// unloaded lets an update replace msld without a socket connection
+    /// activating the new binary just to shut it down again.
+    static func unload(paths: Paths) -> Bool {
+        guard wanted else { return false }
+        let uid: uid_t
+        if getuid() == 0, let value = ProcessInfo.processInfo.environment["SUDO_UID"], let invokingUser = uid_t(value) {
+            uid = invokingUser
+        } else {
+            uid = getuid()
+        }
+        return Installation.shell("/bin/launchctl", ["bootout", "gui/\(uid)/\(label(paths))"]) == 0
+    }
+
     /// `msl --uninstall`: unload and delete the agent (also under sudo, for the invoking user).
     static func remove(paths: Paths) {
         var uid = getuid()
