@@ -43,9 +43,12 @@ enum Online {
             fail(refusal, ErrorCode.unsupported)
         }
         let dl = (entry.Arm64Url ?? entry.Amd64Url)!
+        guard let expected = manifestSHA256(dl.Sha256) else {
+            fail("The distribution list has an invalid SHA-256 for '\(entry.Name)'.", ErrorCode.service)
+        }
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        let dest = cacheDir.appendingPathComponent("\(dl.Sha256.lowercased()).wsl")
-        if FileManager.default.fileExists(atPath: dest.path), sha256(dest) == dl.Sha256.lowercased() {
+        let dest = cacheDir.appendingPathComponent("\(expected).wsl")
+        if FileManager.default.fileExists(atPath: dest.path), sha256(dest) == expected {
             return dest
         }
         out("Downloading: \(entry.FriendlyName)")
@@ -58,7 +61,7 @@ enum Online {
         progress.finish()
         switch delegate.result {
         case .success(let tmp)?:
-            guard sha256(tmp) == dl.Sha256.lowercased() else {
+            guard sha256(tmp) == expected else {
                 try? FileManager.default.removeItem(at: tmp)
                 fail("The downloaded file's SHA-256 does not match the distribution list.", ErrorCode.importFailed)
             }
@@ -70,6 +73,16 @@ enum Online {
         case nil:
             fail("Download failed.", ErrorCode.service)
         }
+    }
+
+    /// Microsoft's distro list may prefix SHA-256 values with `0x`.
+    /// Normalize that notation before comparing it with CryptoKit's hex digest.
+    static func manifestSHA256(_ value: String) -> String? {
+        let digest = value.lowercased()
+        let hex = digest.hasPrefix("0x") ? String(digest.dropFirst(2)) : digest
+        guard hex.utf8.count == 64,
+              hex.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return nil }
+        return hex
     }
 
     /// Download a URL (file:// too) to a temp file, verifying its SHA-256.

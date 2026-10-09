@@ -10,6 +10,7 @@ All notable changes to MSL are listed here. The format follows [Keep a Changelog
 ### Fixed
 - Check ext4 disks with recorded filesystem errors before mounting them.
 - Stop the launchd-managed service cleanly during updates.
+- Verify `0x`-prefixed SHA-256 values in the distro list.
 
 ## [0.1.0] - 2026-10-04
 
