@@ -15,7 +15,7 @@ jobs:
     name: Host (Swift)
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Select Xcode for the minimum macOS
         id: xcode
         run: |
@@ -32,7 +32,7 @@ jobs:
       # the job's ~6 minutes to fetch and compile, and change only with
       # Package.resolved. The package check stays uncached (clean builds).
       - name: Cache SwiftPM checkouts and the debug build
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved') }}
@@ -51,7 +51,7 @@ jobs:
     runs-on: xcode-27
     env: { GH_TOKEN: "${{ github.token }}" }
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Select Xcode for the minimum macOS
         run: |
           MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
@@ -76,7 +76,7 @@ jobs:
             scripts/package.sh "$V"
           { echo "commit ${{ github.sha }}"; echo "version $V"; xcodebuild -version | head -1; swift --version 2>&1 | head -1; } > dist/build-info.txt
           cat dist/build-info.txt
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: package
           path: |
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     defaults: { run: { working-directory: guest } }
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
       - name: Unit tests (native Linux, as scripts/test-guest.sh)
         run: cargo test --target aarch64-unknown-linux-gnu --config 'build.target="aarch64-unknown-linux-gnu"'
@@ -102,7 +102,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Version numbers agree
         run: scripts/check-version.sh
       - name: Links in Markdown files point to existing files and headings
