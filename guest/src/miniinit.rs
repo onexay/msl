@@ -523,26 +523,28 @@ fn prepare_distro_cgroup(id: &str) -> Result<PendingCgroup, Status> {
         return Err(Status::failed_precondition("old distro cgroup is still busy"));
     }
     std::fs::create_dir(&path).map_err(|e| status(format!("create distro cgroup: {e}")))?;
-    let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sys::write_file(path.join("cgroup.subtree_control"), "+cpu +memory +pids +io")?;
-        let enabled = std::fs::read_to_string(path.join("cgroup.subtree_control"))?;
-        let available = std::fs::read_to_string(path.join("cgroup.controllers"))?;
-        let required = ["cpu", "memory", "pids", "io"];
-        if required.iter().any(|name| {
-            !enabled.split_whitespace().any(|v| v == *name)
-                || !available.split_whitespace().any(|v| v == *name)
-        }) {
-            return Err("required cgroup controllers were not delegated to distro".into());
-        }
-        sys::mkdir_p(path.join("msl-agent"))?;
-        Ok(())
-    })();
+    let result = sys::mkdir_p(path.join("msl-agent"));
     if let Err(e) = result {
         let _ = sys::write_file(path.join("cgroup.kill"), "1");
         remove_cgroup_tree(&path);
         return Err(status(e));
     }
     Ok(PendingCgroup { path, keep: false })
+}
+
+fn enable_distro_cgroup(id: &str) -> Result<(), Status> {
+    let path = cgroup_of(id);
+    sys::write_file(path.join("cgroup.subtree_control"), "+cpu +memory +pids +io").map_err(status)?;
+    let enabled = std::fs::read_to_string(path.join("cgroup.subtree_control")).map_err(status)?;
+    let available = std::fs::read_to_string(path.join("cgroup.controllers")).map_err(status)?;
+    let required = ["cpu", "memory", "pids", "io"];
+    if required.iter().any(|name| {
+        !enabled.split_whitespace().any(|v| v == *name)
+            || !available.split_whitespace().any(|v| v == *name)
+    }) {
+        return Err(Status::failed_precondition("required cgroup controllers were not delegated to distro"));
+    }
+    Ok(())
 }
 
 /// Blocking: launch msl-distro-init and wait for its agent to be ready.
@@ -580,9 +582,13 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     let (rd, wr) = nix::unistd::pipe().map_err(status)?;
     sys::set_cloexec(rd.as_raw_fd(), true);
     sys::set_cloexec(wr.as_raw_fd(), false);
+    let (delegation_rd, delegation_wr) = nix::unistd::pipe().map_err(status)?;
+    sys::set_cloexec(delegation_rd.as_raw_fd(), false);
+    sys::set_cloexec(delegation_wr.as_raw_fd(), true);
     let cfg = serde_json::json!({
         "id": req.id, "name": req.name, "hostname": req.hostname,
         "rootfs": rootfs, "port": port, "ready_fd": wr.as_raw_fd(),
+        "delegation_fd": delegation_rd.as_raw_fd(),
         "nameservers": if req.dns_tunneling {
             vec![crate::dns::STUB_ADDR.to_string()]
         } else if !req.dns_proxy && !req.host_dns_servers.is_empty() {
@@ -597,6 +603,7 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     let supervisor = child.id() as i32;
     drop(cmd);
     drop(wr);
+    drop(delegation_rd);
 
     let (tx, rx) = std::sync::mpsc::channel();
     let rd = rd.into_raw_fd();
@@ -613,6 +620,21 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     loop {
         match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(l) if l.starts_with("pid ") => pid = l[4..].trim().parse().unwrap_or(0),
+            Ok(l) if l == "delegated" => {
+                let result = enable_distro_cgroup(&req.id);
+                let ack = [u8::from(result.is_ok())];
+                let written = unsafe {
+                    libc::write(
+                        delegation_wr.as_raw_fd(),
+                        ack.as_ptr() as *const libc::c_void,
+                        ack.len(),
+                    )
+                };
+                if written != 1 {
+                    return Err(status("could not confirm distro cgroup delegation"));
+                }
+                result?;
+            }
             Ok(l) if l.starts_with("systemd ") => {
                 systemd = l.ends_with('1');
                 mount_guard.take();

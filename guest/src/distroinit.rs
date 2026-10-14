@@ -25,6 +25,7 @@ pub struct Cfg {
     pub rootfs: String,
     pub port: u32,
     pub ready_fd: RawFd,
+    pub delegation_fd: RawFd,
     pub nameservers: Vec<String>,
 }
 
@@ -70,6 +71,14 @@ pub fn main(args: &[String]) -> sys::Result<()> {
         .and_then(|_| unshare(CloneFlags::CLONE_NEWCGROUP).map_err(Into::into))
         .and_then(|_| move_into_agent_cgroup());
     if let Err(e) = joined {
+        fail(&e);
+        return Err(e);
+    }
+    // The manager cannot enable domain controllers while init is in the
+    // delegated root. Ask mini-init to enable them only after this process is
+    // in msl-agent, then wait for confirmation before booting the distro.
+    sys::write_fd_line(fd, "delegated");
+    if let Err(e) = wait_for_delegation(cfg.delegation_fd) {
         fail(&e);
         return Err(e);
     }
@@ -144,6 +153,16 @@ fn move_into_agent_cgroup() -> sys::Result<()> {
         .map_err(|e| format!("unmount temporary cgroup namespace view: {e}"));
     moved?;
     unmounted?;
+    Ok(())
+}
+
+fn wait_for_delegation(fd: RawFd) -> sys::Result<()> {
+    let mut ack = 0u8;
+    let count = unsafe { libc::read(fd, &mut ack as *mut _ as *mut libc::c_void, 1) };
+    unsafe { libc::close(fd) };
+    if count != 1 || ack != 1 {
+        return Err("mini-init did not confirm cgroup delegation".into());
+    }
     Ok(())
 }
 
