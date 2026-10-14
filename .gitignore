@@ -3,6 +3,7 @@ build/
 .build/
 dist/
 .swiftpm/
+graphify-out/
 
 # Local tooling and editor state
 .claude/settings.local.json

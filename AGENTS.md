@@ -1,6 +1,6 @@
 # Instructions for agents working on msl
 
-## Reporting findings
+## Reporting findings for issues/bugs
 
 Present research, investigations and test results in three parts, in this order:
 
