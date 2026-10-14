@@ -7,7 +7,6 @@ use crate::rpc::{dial_host, status};
 use crate::{config, reaper, users};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
@@ -136,9 +135,6 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
         None
     };
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let sandbox = crate::sandbox::Limits::configured()?
-        .map(|limits| crate::sandbox::Sandbox::create(id, &limits))
-        .transpose()?;
     // The streams: the host ports to dial, one per stream (0 = not used).
     let d = req.dial_back.clone().filter(|d| !d.token.is_empty()).ok_or_else(|| Status::invalid_argument("no dial_back"))?;
     async fn dial(port: u32, token: &[u8]) -> Result<Option<File>, Status> {
@@ -167,30 +163,9 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
     cmd.args(&argv[1..]).env_clear().envs(&env).current_dir(&cwd).stdin(stdin).stdout(stdout).stderr(stderr);
     let groups: Vec<libc::gid_t> = user.groups.clone();
     let (uid, gid) = (user.uid, user.gid);
-    let (pid_reader, pid_writer, gate_reader, gate_writer) = if sandbox.is_some() {
-        let (pid_reader, pid_writer) = std::io::pipe().map_err(status)?;
-        let (gate_reader, gate_writer) = std::io::pipe().map_err(status)?;
-        (Some(pid_reader), Some(pid_writer), Some(gate_reader), Some(gate_writer))
-    } else {
-        (None, None, None, None)
-    };
-    let pid_writer_fd = pid_writer.as_ref().map_or(-1, AsRawFd::as_raw_fd);
-    let gate_reader_fd = gate_reader.as_ref().map_or(-1, AsRawFd::as_raw_fd);
     unsafe {
         cmd.pre_exec(move || {
             // Only async-signal-safe calls here.
-            if pid_writer_fd >= 0 {
-                let pid = libc::getpid();
-                if libc::write(pid_writer_fd, &pid as *const _ as *const libc::c_void, std::mem::size_of_val(&pid))
-                    != std::mem::size_of_val(&pid) as isize
-                {
-                    return Err(std::io::Error::last_os_error());
-                }
-                let mut release = 0u8;
-                if libc::read(gate_reader_fd, &mut release as *mut _ as *mut libc::c_void, 1) != 1 || release != 1 {
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "sandbox setup failed"));
-                }
-            }
             libc::setsid();
             if ctty_fd >= 0 && libc::ioctl(ctty_fd, libc::TIOCSCTTY as _, 0) != 0 {
                 return Err(std::io::Error::last_os_error());
@@ -201,30 +176,8 @@ pub async fn run(req: RunRequest, tx: mpsc::Sender<Result<RunEvent, Status>>, di
             Ok(())
         });
     }
-    let mut child = if let (Some(sandbox), Some(mut pid_reader), Some(pid_writer), Some(gate_reader), Some(mut gate_writer)) =
-        (sandbox.as_ref(), pid_reader, pid_writer, gate_reader, gate_writer)
-    {
-        drop(gate_reader);
-        let spawning = std::thread::spawn(move || {
-            let result = cmd.spawn();
-            drop(cmd);
-            result
-        });
-        let mut bytes = [0u8; std::mem::size_of::<libc::pid_t>()];
-        pid_reader.read_exact(&mut bytes).map_err(|e| Status::failed_precondition(format!("read sandbox child pid: {e}")))?;
-        let pid = i32::from_ne_bytes(bytes);
-        let attached = sandbox.attach(pid);
-        let release = if attached.is_ok() { 1u8 } else { 0u8 };
-        gate_writer.write_all(&[release]).map_err(status)?;
-        drop(pid_writer);
-        attached?;
-        spawning.join().map_err(|_| Status::internal("sandbox spawn thread panicked"))?
-            .map_err(|e| Status::failed_precondition(format!("{}: {e}", argv[0])))?
-    } else {
-        let child = cmd.spawn().map_err(|e| Status::failed_precondition(format!("{}: {e}", argv[0])))?;
-        drop(cmd);
-        child
-    };
+    let mut child = cmd.spawn().map_err(|e| Status::failed_precondition(format!("{}: {e}", argv[0])))?;
+    drop(cmd); // closes our copies of the slave dups
     let pid = child.id() as i32;
     let exit_rx = reaper::wait_async(pid);
 

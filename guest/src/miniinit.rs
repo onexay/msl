@@ -312,10 +312,22 @@ pub fn main() -> sys::Result<()> {
     sys::mount_fs("tmpfs", "/mnt/msl", "tmpfs", MsFlags::MS_NOSUID | MsFlags::MS_NODEV, Some("mode=0755"))?;
     nix::mount::mount(None::<&str>, "/mnt/msl", None::<&str>, MsFlags::MS_SHARED, None::<&str>)?;
 
-    // cgroup v2: delegate controllers to /msl/<distro>.
-    let _ = sys::write_file("/sys/fs/cgroup/cgroup.subtree_control", "+cpu +memory +pids +io");
-    let _ = sys::mkdir_p("/sys/fs/cgroup/msl");
-    let _ = sys::write_file("/sys/fs/cgroup/msl/cgroup.subtree_control", "+cpu +memory +pids +io");
+    // cgroup v2: delegate controllers to /msl/<distro>. A distro must not
+    // report ready if its manager cannot create per-launch cgroups.
+    let controllers = ["cpu", "memory", "pids", "io"];
+    sys::write_file("/sys/fs/cgroup/cgroup.subtree_control", "+cpu +memory +pids +io")?;
+    sys::mkdir_p("/sys/fs/cgroup/msl")?;
+    sys::write_file("/sys/fs/cgroup/msl/cgroup.subtree_control", "+cpu +memory +pids +io")?;
+    for root in ["/sys/fs/cgroup", "/sys/fs/cgroup/msl"] {
+        let enabled = std::fs::read_to_string(format!("{root}/cgroup.subtree_control"))?;
+        let available = std::fs::read_to_string(format!("{root}/cgroup.controllers"))?;
+        if controllers.iter().any(|controller| {
+            !enabled.split_whitespace().any(|v| v == *controller)
+                || !available.split_whitespace().any(|v| v == *controller)
+        }) {
+            return Err(format!("cgroup controllers were not delegated at {root}").into());
+        }
+    }
 
     // BusyBox applets for `msl --debug-shell` (the VM root namespace has no distro).
     if Path::new("/bin/busybox").exists() {
@@ -511,8 +523,20 @@ fn prepare_distro_cgroup(id: &str) -> Result<PendingCgroup, Status> {
         return Err(Status::failed_precondition("old distro cgroup is still busy"));
     }
     std::fs::create_dir(&path).map_err(|e| status(format!("create distro cgroup: {e}")))?;
-    let result = sys::write_file(path.join("cgroup.subtree_control"), "+cpu +memory +pids +io")
-        .and_then(|_| sys::mkdir_p(path.join("msl-agent")));
+    let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        sys::write_file(path.join("cgroup.subtree_control"), "+cpu +memory +pids +io")?;
+        let enabled = std::fs::read_to_string(path.join("cgroup.subtree_control"))?;
+        let available = std::fs::read_to_string(path.join("cgroup.controllers"))?;
+        let required = ["cpu", "memory", "pids", "io"];
+        if required.iter().any(|name| {
+            !enabled.split_whitespace().any(|v| v == *name)
+                || !available.split_whitespace().any(|v| v == *name)
+        }) {
+            return Err("required cgroup controllers were not delegated to distro".into());
+        }
+        sys::mkdir_p(path.join("msl-agent"))?;
+        Ok(())
+    })();
     if let Err(e) = result {
         let _ = sys::write_file(path.join("cgroup.kill"), "1");
         remove_cgroup_tree(&path);

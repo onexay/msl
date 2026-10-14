@@ -56,11 +56,19 @@ pub fn main(args: &[String]) -> sys::Result<()> {
     }
 
     // --- B: PID 1 of the distro ---
-    // Move init out of the cgroup namespace root before enabling its
-    // controllers for per-session sibling cgroups.
-    let cg = format!("/sys/fs/cgroup/msl/{}/msl-agent", cfg.id);
+    // Stop mount events from propagating back to the utility VM before making
+    // the temporary cgroup namespace mount below.
+    if let Err(e) = mount(None::<&str>, "/", None::<&str>, MsFlags::MS_REC | MsFlags::MS_SLAVE, None::<&str>) {
+        fail(&e);
+        return Err(e.into());
+    }
+    // Make the delegated per-distro cgroup the namespace root, then move init
+    // into the ordinary-process leaf. This leaves the namespace root empty and
+    // its controllers available to a distro-local sandbox manager.
+    let cg = format!("/sys/fs/cgroup/msl/{}", cfg.id);
     let joined = sys::write_file(format!("{cg}/cgroup.procs"), "0")
-        .and_then(|_| unshare(CloneFlags::CLONE_NEWCGROUP).map_err(Into::into));
+        .and_then(|_| unshare(CloneFlags::CLONE_NEWCGROUP).map_err(Into::into))
+        .and_then(|_| move_into_agent_cgroup());
     if let Err(e) = joined {
         fail(&e);
         return Err(e);
@@ -73,6 +81,11 @@ pub fn main(args: &[String]) -> sys::Result<()> {
         fail(&e);
         return Err(e);
     }
+    if let Err(e) = verify_cgroup_delegation() {
+        fail(&e);
+        return Err(e);
+    }
+    std::fs::write("/run/msl/distro-id", format!("{}\n", cfg.id))?;
     let _ = nix::unistd::sethostname(&hostname);
     // `mslpath` on PATH, like WSL's /usr/bin/wslpath -> /init.
     if std::fs::symlink_metadata("/usr/bin/mslpath").is_err() {
@@ -100,6 +113,38 @@ pub fn main(args: &[String]) -> sys::Result<()> {
     } else {
         run_agent(&cfg, false)
     }
+}
+
+fn verify_cgroup_delegation() -> sys::Result<()> {
+    let required = ["cpu", "memory", "pids", "io"];
+    let controllers = std::fs::read_to_string("/sys/fs/cgroup/cgroup.controllers")?;
+    let enabled = std::fs::read_to_string("/sys/fs/cgroup/cgroup.subtree_control")?;
+    if required.iter().any(|name| {
+        !controllers.split_whitespace().any(|v| v == *name)
+            || !enabled.split_whitespace().any(|v| v == *name)
+    }) {
+        return Err("distro cgroup root lacks delegated controllers".into());
+    }
+    if !std::fs::read_to_string("/sys/fs/cgroup/cgroup.procs")?.trim().is_empty() {
+        return Err("distro cgroup namespace root is not empty".into());
+    }
+    let cgroup = std::fs::read_to_string("/proc/self/cgroup")?;
+    if !cgroup.lines().any(|line| line == "0::/msl-agent") {
+        return Err("distro init is not contained by msl-agent below its cgroup root".into());
+    }
+    Ok(())
+}
+
+fn move_into_agent_cgroup() -> sys::Result<()> {
+    let mountpoint = "/run/msl-cgroup";
+    let flags = MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC;
+    sys::mount_fs("cgroup2", mountpoint, "cgroup2", flags, Some("nsdelegate"))?;
+    let moved = sys::write_file(format!("{mountpoint}/msl-agent/cgroup.procs"), "0");
+    let unmounted = umount2(mountpoint, MntFlags::MNT_DETACH)
+        .map_err(|e| format!("unmount temporary cgroup namespace view: {e}"));
+    moved?;
+    unmounted?;
+    Ok(())
 }
 
 fn setup_root(cfg: &Cfg, hostname: &str) -> sys::Result<()> {

@@ -24,7 +24,6 @@ mod portwatch;
 mod reaper;
 mod rpc;
 mod session;
-mod sandbox;
 mod sys;
 mod users;
 

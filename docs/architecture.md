@@ -125,12 +125,12 @@ When available, `launchd` holds the service socket and starts `msld` on the firs
   - `wsl.conf`: a small INI reader in `guest/src/config.rs`.
 - **Process-model rules:**
   - mini-init starts `msl-distro-init`, which creates the distro's mount, UTS, IPC, PID, and cgroup namespaces. The distro process sets mount propagation, pivots into the root filesystem, then starts the agent or systemd. User processes are spawned with `Command::pre_exec` to set the session, controlling terminal, credentials, and supplementary groups from the distro's `/etc/group`.
-  - Before starting it, mini-init enables cgroup controllers on the empty distro cgroup. `msl-distro-init` moves into `/msl-agent` before creating the cgroup namespace, leaving its root available for per-session sibling cgroups.
+  - Before starting it, mini-init enables cgroup controllers on the empty per-distro cgroup. `msl-distro-init` enters that cgroup, creates the cgroup namespace, then moves into `/msl-agent`; the distro-local manager sees the delegated distro root and can create per-launch siblings.
   - **Only async-signal-safe calls** are allowed between `fork` and `exec`. Fork before starting the tokio runtime, or from a dedicated spawn path that doesn't allocate.
   - **systemd distros:** `msl-distro-init` forks. The parent execs `/sbin/init` (systemd becomes PID 1 of the namespace) and the child stays as the agent, re-parented to systemd. Without systemd, `msl-distro-init` is PID 1 itself.
   - **Reaping:** a single reaper thread blocks in `waitpid(-1)` and hands exit statuses to waiters by PID; with no children it sleeps on an eventfd that a SIGCHLD handler bumps (a new child can be an orphan reparented to it). Nothing else waits on children. The agent sets `PR_SET_CHILD_SUBREAPER` when it isn't PID 1.
   - Sessions run as Tokio tasks inside the distro agent; MSL does not create a separate relay process for each command. The guest also runs system services such as systemd when configured.
-  - Optional [`[sandbox]` policy](sandbox.md) in `/etc/msl.conf` creates a root-level sibling cgroup for each Agent `Run`. The launcher waits before exec while the agent moves it into the cgroup, so a Bubblewrap command and its descendants inherit CPU, memory, PID, and I/O limits. If requested, a cgroup BPF egress program drops every outbound packet. The cgroup is killed and removed after the session; policy setup errors fail the launch.
+  - MSL delegates CPU, memory, PID, and I/O cgroup controllers to each distro. Ordinary `Agent.Run` calls are not sandbox-manager operations; a protected manager installed inside the distro creates and owns per-launch cgroups under the delegated root. MSL verifies controller delegation and cgroup namespace placement before reporting the distro ready.
 - **`msl-mini-init`** (PID 1):
   - mounts the base filesystems and the data disk (`/var/lib/msl/distros/<guid>/rootfs`);
   - sets up networking and DNS;
