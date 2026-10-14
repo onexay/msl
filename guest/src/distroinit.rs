@@ -56,10 +56,10 @@ pub fn main(args: &[String]) -> sys::Result<()> {
     }
 
     // --- B: PID 1 of the distro ---
-    // Join /msl/<name> and make it the cgroupns root before mounting cgroup2.
-    let cg = format!("/sys/fs/cgroup/msl/{}", cfg.id);
-    let joined = sys::mkdir_p(&cg)
-        .and_then(|_| sys::write_file(format!("{cg}/cgroup.procs"), "0"))
+    // Move init out of the cgroup namespace root before enabling its
+    // controllers for per-session sibling cgroups.
+    let cg = format!("/sys/fs/cgroup/msl/{}/msl-agent", cfg.id);
+    let joined = sys::write_file(format!("{cg}/cgroup.procs"), "0")
         .and_then(|_| unshare(CloneFlags::CLONE_NEWCGROUP).map_err(Into::into));
     if let Err(e) = joined {
         fail(&e);
@@ -172,10 +172,7 @@ fn setup_root(cfg: &Cfg, hostname: &str) -> sys::Result<()> {
 
 fn run_agent(cfg: &Cfg, systemd: bool) -> ! {
     if systemd {
-        // Leave the cgroupns root to systemd (move into a leaf) and reap our own
-        // orphans instead of handing them to systemd.
-        let _ = sys::mkdir_p("/sys/fs/cgroup/msl-agent");
-        let _ = sys::write_file("/sys/fs/cgroup/msl-agent/cgroup.procs", "0");
+        // Reap our own orphans instead of handing them to systemd.
         unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
     }
     // Without systemd we are the distro's PID 1 and reap everything.

@@ -10,7 +10,7 @@ use crate::rpc::status;
 use crate::{archive, config, reaper, sys};
 use nix::mount::MsFlags;
 use nix::unistd::{chdir, chroot};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::io::{BufRead, BufReader};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
@@ -52,6 +52,19 @@ pub(crate) fn distro_init_pid(id: &str) -> Option<i32> {
 fn running() -> &'static Mutex<HashMap<String, Running>> {
     static R: OnceLock<Mutex<HashMap<String, Running>>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn starting() -> &'static Mutex<HashSet<String>> {
+    static S: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+struct StartingDistro(String);
+
+impl Drop for StartingDistro {
+    fn drop(&mut self) {
+        starting().lock().unwrap().remove(&self.0);
+    }
 }
 
 /// Distros being stopped: out of `running()`, but their processes (and mount
@@ -477,12 +490,50 @@ fn cgroup_of(id: &str) -> PathBuf {
     Path::new("/sys/fs/cgroup/msl").join(id)
 }
 
+struct PendingCgroup {
+    path: PathBuf,
+    keep: bool,
+}
+
+impl Drop for PendingCgroup {
+    fn drop(&mut self) {
+        if !self.keep {
+            let _ = sys::write_file(self.path.join("cgroup.kill"), "1");
+            remove_cgroup_tree(&self.path);
+        }
+    }
+}
+
+fn prepare_distro_cgroup(id: &str) -> Result<PendingCgroup, Status> {
+    check_id(id)?;
+    let path = cgroup_of(id);
+    if path.exists() && !remove_cgroup_tree(&path) {
+        return Err(Status::failed_precondition("old distro cgroup is still busy"));
+    }
+    std::fs::create_dir(&path).map_err(|e| status(format!("create distro cgroup: {e}")))?;
+    let result = sys::write_file(path.join("cgroup.subtree_control"), "+cpu +memory +pids +io")
+        .and_then(|_| sys::mkdir_p(path.join("msl-agent")));
+    if let Err(e) = result {
+        let _ = sys::write_file(path.join("cgroup.kill"), "1");
+        remove_cgroup_tree(&path);
+        return Err(status(e));
+    }
+    Ok(PendingCgroup { path, keep: false })
+}
+
 /// Blocking: launch msl-distro-init and wait for its agent to be ready.
 fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, Status> {
     let t0 = Instant::now();
     if let Some(r) = running().lock().unwrap().get(&req.id) {
         return Ok(pb::StartDistroReply { agent_port: r.port, systemd: r.systemd, start_seconds: 0.0 });
     }
+    {
+        let mut starts = starting().lock().unwrap();
+        if !starts.insert(req.id.clone()) {
+            return Err(Status::failed_precondition("distribution is already starting"));
+        }
+    }
+    let starting = StartingDistro(req.id.clone());
     if req.own_disk && !attached().lock().unwrap().contains_key(&req.id) {
         return Err(Status::failed_precondition("the distribution's disk is not attached"));
     }
@@ -494,7 +545,10 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     // Until the distro has pivoted into its root (it reports `systemd` after
     // that), its mount namespace holds every other distro's disk too.
     let mut mount_guard = Some(mount_lock().lock().unwrap());
-    remove_cgroup_tree(&cgroup_of(&req.id));
+    if let Some(r) = running().lock().unwrap().get(&req.id) {
+        return Ok(pb::StartDistroReply { agent_port: r.port, systemd: r.systemd, start_seconds: 0.0 });
+    }
+    let mut pending_cgroup = prepare_distro_cgroup(&req.id)?;
     let port = {
         let map = running().lock().unwrap();
         (FIRST_AGENT_PORT..).find(|p| !map.values().any(|r| r.port == *p)).unwrap()
@@ -546,6 +600,8 @@ fn start_blocking(req: pb::StartDistroRequest) -> Result<pb::StartDistroReply, S
     }
     let exited = std::sync::Arc::new((Mutex::new(false), std::sync::Condvar::new()));
     running().lock().unwrap().insert(req.id.clone(), Running { pid, supervisor, port, systemd, exited: exited.clone() });
+    pending_cgroup.keep = true;
+    drop(starting);
 
     // The only waiter on the supervisor: forgets the distro when it goes away
     // (stopped, or e.g. `poweroff` inside it) and wakes stop_blocking.
