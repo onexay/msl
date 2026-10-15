@@ -203,9 +203,17 @@ impl FSMap {
         debug!("Relisting entry {:?}: {:?}. Ent: {:?}", id, path, entry);
         if let Ok(mut listing) = tokio::fs::read_dir(&path).await {
             while let Some(entry) = listing.next_entry().await.map_err(|_| nfsstat3::NFS3ERR_IO)? {
+                // An entry can be gone by the time we stat it, or its inode
+                // damaged: leave it out instead of failing the whole listing.
+                let meta = match entry.metadata().await {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        debug!("Skipping {:?} in {:?}: {e}", entry.file_name(), path);
+                        continue;
+                    }
+                };
                 let sym = self.intern.intern(entry.file_name()).unwrap();
                 cur_path.push(sym);
-                let meta = entry.metadata().await.unwrap();
                 let next_id = self.create_entry(&cur_path, meta).await;
                 new_children.push(next_id);
                 cur_path.pop();
@@ -669,3 +677,7 @@ pub async fn serve(root: PathBuf, port: u16) -> std::io::Result<()> {
     let listener = NFSTcpListener::bind(&format!("127.0.0.1:{port}"), fs).await?;
     listener.handle_forever().await
 }
+
+#[cfg(test)]
+#[path = "../../tests/guest/nfs.rs"]
+mod tests;
