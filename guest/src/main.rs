@@ -4,6 +4,7 @@
 //! Role is chosen by argv[0] (basename):
 //! - `init` (the initramfs /init, PID 1)   -> utility-VM mini-init
 //! - `msl-distro-init <json>`              -> per-distro namespace setup + agent
+//! - `msl-nfsd <root> <port>`              -> the NFS file-view server (a child of mini-init)
 //! - `mslpath` (symlink in the distro)      -> path translation (wslpath equivalent)
 
 mod agent;
@@ -47,6 +48,7 @@ fn main() {
     }
     let result = match role {
         "msl-distro-init" => distroinit::main(&args[1..]),
+        "msl-nfsd" => nfs::main(&args[1..]),
         _ => miniinit::main(),
     };
     if let Err(e) = result {

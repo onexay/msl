@@ -664,6 +664,19 @@ pub fn is_mac_metadata(name: &[u8]) -> bool {
 /// Serve `root` over NFSv3 on 127.0.0.1:`port` (reached from the Mac through the
 /// vsock forwarder, never exposed on the VM's network interface). macOS metadata
 /// files are kept in memory by `nfsview::MslFS`, never written to Linux.
+/// `msl-nfsd <root> <port>`: the server as a process of its own. It parses
+/// requests from the Mac and walks arbitrary guest files, and the release
+/// profile aborts on panic, so run inside PID 1 a bug here would panic the
+/// VM's kernel. mini-init restarts it when it exits.
+pub fn main(args: &[String]) -> crate::sys::Result<()> {
+    let [root, port] = args else {
+        return Err("usage: msl-nfsd <root> <port>".into());
+    };
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    rt.block_on(serve(PathBuf::from(root), port.parse()?))?;
+    Ok(())
+}
+
 pub async fn serve(root: PathBuf, port: u16) -> std::io::Result<()> {
     let fs = crate::nfsview::MslFS::new(MirrorFS::new(root));
     let listener = NFSTcpListener::bind(&format!("127.0.0.1:{port}"), fs).await?;

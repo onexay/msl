@@ -342,11 +342,7 @@ pub fn main() -> sys::Result<()> {
         }
         let ports = crate::net::spawn_port_watcher();
         let _ = sys::mkdir_p(VIEW);
-        tokio::spawn(async {
-            if let Err(e) = crate::nfs::serve(PathBuf::from(VIEW), crate::net::NFS_PORT).await {
-                sys::log(&format!("nfs: {e}"));
-            }
-        });
+        tokio::spawn(supervise_nfs());
         if let Err(e) = crate::net::spawn_forwarder() {
             sys::log(&format!("forwarder: {e}"));
         }
@@ -360,6 +356,25 @@ pub fn main() -> sys::Result<()> {
             .await?;
         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     })
+}
+
+/// Keep the NFS file-view server running as a child process (`msl-nfsd`). A
+/// crash there costs the file view a second, not the VM (#31). The pause
+/// compensates for a server that fails at once (the port is taken, say),
+/// which would otherwise spin PID 1.
+async fn supervise_nfs() {
+    loop {
+        let mut cmd = Command::new("/init");
+        std::os::unix::process::CommandExt::arg0(&mut cmd, "msl-nfsd");
+        match cmd.arg(VIEW).arg(crate::net::NFS_PORT.to_string()).spawn() {
+            Ok(child) => {
+                let code = reaper::wait_async(child.id() as i32).await.unwrap_or(-1);
+                sys::log(&format!("nfs: server exited ({code}); restarting"));
+            }
+            Err(e) => sys::log(&format!("nfs: spawn: {e}")),
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }
 
 fn stage1() -> sys::Result<()> {
