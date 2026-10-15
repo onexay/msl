@@ -51,6 +51,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
     private var vm: VZVirtualMachine?
     private var bridges: [UInt32: Int32] = [:]  // guest port -> listening fd
     private let lock = NSLock()
+    private var consoleWatch: DispatchSourceFileSystemObject?
     public var onStop: (() -> Void)?
 
     public init(paths: Paths) {
@@ -119,6 +120,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
             let vm = VZVirtualMachine(configuration: vmConfig, queue: queue)
             vm.delegate = self
             self.vm = vm
+            watchConsole(of: vm)
             vm.start { result in
                 if case .failure(let e) = result { startError = e }
                 sem.signal()
@@ -127,6 +129,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         sem.wait()
         if let startError {
             queue.sync { vm = nil }
+            stopWatchingConsole()
             let e = startError as NSError
             log("vm start failed: \(e.domain) \(e.code) \(e.userInfo); disks: \(attached.map(\.path))")
             throw ServiceError("The virtual machine could not be started: \(startError.localizedDescription)", code: ErrorCode.vm)
@@ -275,6 +278,53 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
         return (c, attached)
     }
 
+    // MARK: guest panic
+
+    /// A panicked guest never stops: the kernel has no panic timeout, so its
+    /// vCPUs spin on the host until the VM is stopped, and `panic=N` would only
+    /// have Virtualization.framework reset it behind our back (no
+    /// `guestDidStop`). The banner is on the console, so watch console.log.
+    private func watchConsole(of which: VZVirtualMachine) {
+        let fd = open(paths.consoleLog.path, O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else { return }
+        let q = DispatchQueue(label: "msl.console")
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.extend, .write], queue: q)
+        var scanner = PanicScanner()
+        var offset: off_t = 0
+        let scan = { [weak self, weak which] in
+            var buf = [UInt8](repeating: 0, count: 64 << 10)
+            while true {
+                let n = pread(fd, &buf, buf.count, offset)
+                if n <= 0 { return }
+                offset += off_t(n)
+                guard let line = scanner.feed(Data(buf[..<n])) else { continue }
+                source.cancel()
+                guard let self, let which else { return }
+                log("guest console: \(line); stopping the VM")
+                DispatchQueue.global().async { self.stopIfCurrent(which) }
+                return
+            }
+        }
+        source.setEventHandler(handler: scan)
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        q.async(execute: scan)  // output written before the watch began
+        lock.withLock { consoleWatch = source }
+    }
+
+    private func stopWatchingConsole() {
+        lock.withLock {
+            consoleWatch?.cancel()
+            consoleWatch = nil
+        }
+    }
+
+    /// Stop `which`, unless a newer VM has replaced it.
+    private func stopIfCurrent(_ which: VZVirtualMachine) {
+        guard queue.sync(execute: { vm === which }) else { return }
+        stop()
+    }
+
     // MARK: stop
 
     public func stop() {
@@ -332,6 +382,7 @@ public final class VMHost: NSObject, VZVirtualMachineDelegate, @unchecked Sendab
             return true
         }
         guard current else { return }
+        stopWatchingConsole()
         defer {
             teardown.lock()
             tearingDown -= 1

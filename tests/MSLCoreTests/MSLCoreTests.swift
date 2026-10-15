@@ -667,3 +667,33 @@ import Testing
         #expect(install.contains("-ge \(n) ]") && install.contains("needs macOS \(n) or later"))
     }
 }
+
+@Suite struct PanicScannerTests {
+    func feed(_ chunks: [String]) -> String? {
+        var scanner = PanicScanner()
+        for c in chunks {
+            if let line = scanner.feed(Data(c.utf8)) { return line }
+        }
+        return nil
+    }
+
+    @Test func findsTheBanner() {
+        let log = "[    8.1] EXT4-fs error\n[    8.2] Kernel panic - not syncing: Attempted to kill init! exitcode=0x0000000b\n[    8.2] CPU: 11\n"
+        #expect(feed([log]) == "Kernel panic - not syncing: Attempted to kill init! exitcode=0x0000000b")
+    }
+
+    @Test func findsTheBannerSplitAcrossReads() {
+        #expect(feed(["boot ok\n[ 1.0] Kernel pa", "nic - not sync", "ing: oops\n[ 1.0] CPU: 0\n"])
+            == "Kernel panic - not syncing: oops")
+    }
+
+    @Test func waitsForTheEndOfTheLine() {
+        var scanner = PanicScanner()
+        #expect(scanner.feed(Data("Kernel panic - not syncing: VFS: Unable".utf8)) == nil)
+        #expect(scanner.feed(Data(" to mount root fs\n".utf8)) == "Kernel panic - not syncing: VFS: Unable to mount root fs")
+    }
+
+    @Test func ignoresOtherOutput() {
+        #expect(feed(["Kernel command line: console=hvc0 panic=1\n", "Rebooting in 1 seconds..\n", "[msl] mini-init ready\n"]) == nil)
+    }
+}
