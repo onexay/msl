@@ -21,6 +21,8 @@ $ msl
 
 Read the [MSL documentation](https://onexay.github.io/msl-docs/) for installation options, [commands](https://onexay.github.io/msl-docs/docs/overview/basic-commands/), [VS Code setup](https://onexay.github.io/msl-docs/docs/tutorials/msl-vscode/), configuration and troubleshooting.
 
+MSL keeps the shared Linux clock aligned with macOS at VM startup, after host wake and when the host clock changes.
+
 For development, see [Contributing](CONTRIBUTING.md) and the [architecture notes](docs/architecture.md).
 
 ## License

@@ -54,5 +54,6 @@ let package = Package(
         // The ~/.msl/distros view's relay (RPCFilter + copying), started by msld.
         .executableTarget(name: "msl-fileviewd", dependencies: ["MSLCore"], path: "host/msl-fileviewd", swiftSettings: v5),
         .testTarget(name: "MSLCoreTests", dependencies: ["MSLCore"], path: "tests/MSLCoreTests", swiftSettings: v5),
+        .testTarget(name: "MSLServiceTests", dependencies: ["MSLService"], path: "tests/MSLServiceTests", swiftSettings: v5),
     ]
 )

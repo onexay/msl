@@ -12,6 +12,10 @@ public final class Service: @unchecked Sendable {
     let vm: VMHost
     let guest: GuestClients
     private let bootLock = NSLock()
+    private let clockQueue = DispatchQueue(label: "msl.clock.sync")
+    private lazy var clockMonitor = ClockMonitor { [weak self] in
+        self?.clockQueue.async { [weak self] in self?.syncClockIfRunning() }
+    }
     private let proxyWarningLock = NSLock()
     private var proxyWarningsLogged: Set<String> = []
     private let proxyStateLock = NSLock()
@@ -77,6 +81,7 @@ public final class Service: @unchecked Sendable {
         let lfd = try launchd ?? listenUnix(paths.socket.path)
         _ = executableInode
         handleTermination()
+        clockMonitor.start()
         log("msld \(MSLBuild.displayVersion) listening on \(paths.socket.path)\(launchd != nil ? " (launchd)" : "")")
         startIdleMonitor()
         while true {
@@ -450,11 +455,31 @@ public final class Service: @unchecked Sendable {
                 throw ServiceError("msld was updated on disk while running and can no longer start the virtual machine.\nRun 'msl --shutdown' to restart it.", code: ErrorCode.vm)
             }
             try guest.waitForMiniInit(timeout: 15)
+            try syncClock()
             ownDisks.attachAll(registry.all)
             if config.localhostForwarding { forwarder.start() }
             if config.dnsTunneling { vm.listen(port: DNSProxy.vsockPort) { DNSProxy.handle($0) } }
             files.start(transport: config.fileViewTransport)
             idle.changed()
+        }
+    }
+
+    private func syncClock() throws {
+        let mini = try guest.miniInit
+        let options: CallOptions = {
+            var options = CallOptions.defaults
+            options.timeout = .seconds(5)
+            return options
+        }()
+        _ = try blocking { try await mini.syncClock(Msl_V1_Empty(), options: options) }
+    }
+
+    func syncClockIfRunning() {
+        // Serialize with boot and termination; events must never start a VM.
+        bootLock.withLock {
+            guard !terminating, vm.isRunning else { return }
+            do { try syncClock() }
+            catch { log("clock: synchronization failed: \(error)") }
         }
     }
 

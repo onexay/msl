@@ -45,6 +45,7 @@ $ scripts/test-guest.sh            # guest unit tests (in Linux, via Apple's con
 $ tests/e2e/<milestone>.sh           # end-to-end, against a real VM: helium, lithium,
                                    # beryllium, boron, carbon, neon, sodium, magnesium
 $ tests/e2e/release.sh               # packaging, install, --update, --uninstall
+$ uv run tests/e2e/argon.py          # clock correction in an isolated VM (bundled BusyBox)
 ```
 
 The e2e suites use a throwaway `MSL_HOME` and never touch your real distros or `~/.msl/distros`. Keep it that way in new tests: set `MSL_HOME`, `MSL_CONFIG` and `MSL_VIEW_DIR`.

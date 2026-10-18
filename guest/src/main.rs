@@ -9,6 +9,7 @@
 
 mod agent;
 mod archive;
+mod clock;
 mod compat;
 mod config;
 mod connect;

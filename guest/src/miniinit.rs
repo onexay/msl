@@ -979,6 +979,11 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, Status> + Sen
 
 #[tonic::async_trait]
 impl MiniInit for MiniInitService {
+    async fn sync_clock(&self, _: Request<pb::Empty>) -> Result<Response<pb::Empty>, Status> {
+        crate::clock::sync().map_err(status)?;
+        Ok(Response::new(pb::Empty {}))
+    }
+
     async fn ping(&self, _: Request<pb::Empty>) -> Result<Response<pb::PingReply>, Status> {
         let up = std::fs::read_to_string("/proc/uptime").unwrap_or_default();
         let (total, free) = nix::sys::statvfs::statvfs(DATA)

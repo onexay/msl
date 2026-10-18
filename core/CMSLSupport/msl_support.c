@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "msl_support.h"
 #include <launch.h>
+#include <notify.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -8,6 +9,16 @@
 #include <unistd.h>
 
 #define MSL_MAX_FDS 8
+
+unsigned int msl_observe_clock(const char *name, int *token, dispatch_queue_t queue, dispatch_block_t changed) {
+    return notify_register_dispatch(name, token, queue, ^(int unused) {
+        changed();
+    });
+}
+
+void msl_cancel_clock_observer(int token) {
+    notify_cancel(token);
+}
 
 ssize_t msl_send_with_fds(int sock, const void *buf, size_t len, const int *fds, int nfds) {
     if (nfds < 0 || nfds > MSL_MAX_FDS) return -1;

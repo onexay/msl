@@ -19,6 +19,10 @@ message Empty {}
 service MiniInit {
   rpc Ping(Empty) returns (PingReply);
 
+  // Correct the shared wall clock from the virtual RTC, read at receipt so a
+  // request delayed by host sleep cannot apply a stale host timestamp.
+  rpc SyncClock(Empty) returns (Empty);
+
   // Unpacks a rootfs tar (plain/gzip/xz/zstd, auto-detected) into the distro's
   // directory, read from `stream`. Events: done.
   rpc ImportDistro(ImportDistroRequest) returns (stream ImportDistroEvent);

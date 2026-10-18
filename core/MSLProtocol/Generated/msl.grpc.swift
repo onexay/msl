@@ -43,6 +43,19 @@ public enum Msl_V1_MiniInit: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "SyncClock" metadata.
+        public enum SyncClock: Sendable {
+            /// Request type for "SyncClock".
+            public typealias Input = Msl_V1_Empty
+            /// Response type for "SyncClock".
+            public typealias Output = Msl_V1_Empty
+            /// Descriptor for "SyncClock".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "msl.v1.MiniInit"),
+                method: "SyncClock",
+                type: .unary
+            )
+        }
         /// Namespace for "ImportDistro" metadata.
         public enum ImportDistro: Sendable {
             /// Request type for "ImportDistro".
@@ -280,6 +293,7 @@ public enum Msl_V1_MiniInit: Sendable {
         /// Descriptors for all methods in the "msl.v1.MiniInit" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Ping.descriptor,
+            SyncClock.descriptor,
             ImportDistro.descriptor,
             ExportDistro.descriptor,
             OpenStream.descriptor,
@@ -334,6 +348,30 @@ extension Msl_V1_MiniInit {
             deserializer: some GRPCCore.MessageDeserializer<Msl_V1_PingReply>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_PingReply>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SyncClock" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Correct the shared wall clock from the virtual RTC, read at receipt so a
+        /// > request delayed by host sleep cannot apply a stale host timestamp.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_Empty` message.
+        ///   - serializer: A serializer for `Msl_V1_Empty` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func syncClock<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_Empty>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "ImportDistro" method.
@@ -804,6 +842,41 @@ extension Msl_V1_MiniInit {
             try await self.client.unary(
                 request: request,
                 descriptor: Msl_V1_MiniInit.Method.Ping.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SyncClock" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Correct the shared wall clock from the virtual RTC, read at receipt so a
+        /// > request delayed by host sleep cannot apply a stale host timestamp.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Msl_V1_Empty` message.
+        ///   - serializer: A serializer for `Msl_V1_Empty` messages.
+        ///   - deserializer: A deserializer for `Msl_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func syncClock<Result>(
+            request: GRPCCore.ClientRequest<Msl_V1_Empty>,
+            serializer: some GRPCCore.MessageSerializer<Msl_V1_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Msl_V1_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Msl_V1_MiniInit.Method.SyncClock.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1459,6 +1532,36 @@ extension Msl_V1_MiniInit.ClientProtocol {
         )
     }
 
+    /// Call the "SyncClock" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Correct the shared wall clock from the virtual RTC, read at receipt so a
+    /// > request delayed by host sleep cannot apply a stale host timestamp.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Msl_V1_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func syncClock<Result>(
+        request: GRPCCore.ClientRequest<Msl_V1_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.syncClock(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Msl_V1_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Msl_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ImportDistro" method.
     ///
     /// > Source IDL Documentation:
@@ -2014,6 +2117,40 @@ extension Msl_V1_MiniInit.ClientProtocol {
             metadata: metadata
         )
         return try await self.ping(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SyncClock" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Correct the shared wall clock from the virtual RTC, read at receipt so a
+    /// > request delayed by host sleep cannot apply a stale host timestamp.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func syncClock<Result>(
+        _ message: Msl_V1_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Msl_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Msl_V1_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.syncClock(
             request: request,
             options: options,
             onResponse: handleResponse
