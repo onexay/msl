@@ -230,10 +230,25 @@ def missing_assets(existing, expected):
     return sorted(set(expected) - set(remote))
 
 
+def find_release(repo, tag):
+    # Tag lookup only promises published releases. Drafts may not have a Git
+    # tag yet; list releases with push access and keep their release ID.
+    matches = []
+    page = 1
+    while True:
+        releases = api(f'repos/{repo}/releases?per_page=100&page={page}')
+        matches.extend(r for r in releases if r['tag_name'] == tag)
+        if len(releases) < 100:
+            break
+        page += 1
+    require(len(matches) <= 1, 'multiple releases use this tag')
+    return matches[0] if matches else None
+
+
 def publish_bundle(repo, directory, manifest, prerelease):
     version, source = manifest['version'], manifest['source_revision']
     tag = 'v' + version
-    existing = api(f'repos/{repo}/releases/tags/{tag}', optional=True)
+    existing = find_release(repo, tag)
     tagged = tag_source(repo, tag)
     require(tagged in (None, source), 'release tag points to a different source revision')
     if existing:
@@ -248,7 +263,8 @@ def publish_bundle(repo, directory, manifest, prerelease):
         if prerelease:
             args.append('--prerelease')
         gh(*args)
-        existing = api(f'repos/{repo}/releases/tags/{tag}')
+        existing = find_release(repo, tag)
+        require(existing is not None, 'created draft release is not visible')
     files = dict(manifest['files'], **{'manifest.json': digest(directory / 'manifest.json')})
     signature = f'msl-{version}-macos-arm64.tar.gz.sha256.asc'
     signed = next((a for a in existing['assets'] if a['name'] == signature), None)
@@ -269,7 +285,7 @@ def publish_bundle(repo, directory, manifest, prerelease):
     for name in missing:
         gh('release', 'upload', tag, str(directory / name), '--repo', repo)
     # Check upload digests before exposing the update channel.
-    uploaded = api(f'repos/{repo}/releases/tags/{tag}')
+    uploaded = api(f"repos/{repo}/releases/{existing['id']}")
     require(not missing_assets(uploaded['assets'], files), 'release upload incomplete')
     if existing['draft']:
         gh('release', 'edit', tag, '--repo', repo, '--draft=false',

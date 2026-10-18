@@ -165,14 +165,15 @@ class ReleaseArtifactTests(unittest.TestCase):
                     release.check_guest(guest)
 
     def test_failed_upload_does_not_publish_the_draft(self):
-        existing = dict(draft=True, prerelease=False, target_commitish=self.source, assets=[])
+        existing = dict(id=1, tag_name='v0.1.5', draft=True, prerelease=False, target_commitish=self.source, assets=[])
         calls = []
         def fake_api(path, optional=False):
             return {'tag_name': 'v0.1.4'} if path.endswith('/latest') else existing
         def fake_gh(*args):
             calls.append(args)
             raise subprocess.CalledProcessError(1, args)
-        with patch.object(release, 'api', side_effect=fake_api), \
+        with patch.object(release, 'find_release', return_value=existing), \
+             patch.object(release, 'api', side_effect=fake_api), \
              patch.object(release, 'tag_source', return_value=self.source), \
              patch.object(release, 'gh', side_effect=fake_gh), self.assertRaises(subprocess.CalledProcessError):
             release.publish_bundle('onexay/msl', self.directory, self.manifest, False)
@@ -192,7 +193,7 @@ class ReleaseArtifactTests(unittest.TestCase):
 
     def test_finished_release_retry_only_checks_deployed_bytes(self):
         files = dict(self.manifest['files'], **{'manifest.json': release.digest(self.directory / 'manifest.json')})
-        existing = dict(draft=False, prerelease=False, target_commitish=self.source,
+        existing = dict(id=1, tag_name='v0.1.5', draft=False, prerelease=False, target_commitish=self.source,
                         assets=[{'name': name, 'digest': 'sha256:' + sha} for name, sha in files.items()])
         calls = []
         def fake_gh(*args):
@@ -201,7 +202,8 @@ class ReleaseArtifactTests(unittest.TestCase):
             destination = Path(args[args.index('--dir') + 1])
             for name in files:
                 (destination / name).write_bytes((self.directory / name).read_bytes())
-        with patch.object(release, 'api', return_value=existing), \
+        with patch.object(release, 'find_release', return_value=existing), \
+             patch.object(release, 'api', return_value=existing), \
              patch.object(release, 'tag_source', return_value=self.source), \
              patch.object(release, 'gh', side_effect=fake_gh):
             release.publish_bundle('onexay/msl', self.directory, self.manifest, False)
@@ -209,7 +211,7 @@ class ReleaseArtifactTests(unittest.TestCase):
 
     def test_draft_retry_publishes_once_after_upload_verification(self):
         files = dict(self.manifest['files'], **{'manifest.json': release.digest(self.directory / 'manifest.json')})
-        existing = dict(draft=True, prerelease=False, target_commitish=self.source, assets=[])
+        existing = dict(id=1, tag_name='v0.1.5', draft=True, prerelease=False, target_commitish=self.source, assets=[])
         calls = []
         def fake_api(path, optional=False):
             if path.endswith('/latest'):
@@ -226,7 +228,8 @@ class ReleaseArtifactTests(unittest.TestCase):
                 destination = Path(args[args.index('--dir') + 1])
                 for name in files:
                     (destination / name).write_bytes((self.directory / name).read_bytes())
-        with patch.object(release, 'api', side_effect=fake_api), \
+        with patch.object(release, 'find_release', return_value=existing), \
+             patch.object(release, 'api', side_effect=fake_api), \
              patch.object(release, 'tag_source', return_value=self.source), \
              patch.object(release, 'gh', side_effect=fake_gh):
             release.publish_bundle('onexay/msl', self.directory, self.manifest, False)
@@ -234,13 +237,49 @@ class ReleaseArtifactTests(unittest.TestCase):
         self.assertEqual(len([c for c in calls if c[:2] == ('release', 'upload')]), len(files))
 
     def test_collision_and_incomplete_published_release_are_not_modified(self):
-        existing = dict(draft=False, prerelease=False, target_commitish=self.source, assets=[])
+        existing = dict(id=1, tag_name='v0.1.5', draft=False, prerelease=False, target_commitish=self.source, assets=[])
         for tagged in ['b' * 40, self.source]:
-            with self.subTest(tagged=tagged), patch.object(release, 'api', return_value=existing), \
+            with self.subTest(tagged=tagged), patch.object(release, 'find_release', return_value=existing), \
+                 patch.object(release, 'api', return_value=existing), \
                  patch.object(release, 'tag_source', return_value=tagged), \
                  patch.object(release, 'gh') as mocked, self.assertRaises(ValueError):
                 release.publish_bundle('onexay/msl', self.directory, self.manifest, False)
             mocked.assert_not_called()
+
+    def test_draft_lookup_uses_release_listing_and_handles_pagination(self):
+        draft = dict(id=17, tag_name='v0.1.5', draft=True)
+        with patch.object(release, 'api', side_effect=[
+            [dict(id=i, tag_name='other') for i in range(100)], [draft]]) as mocked:
+            self.assertEqual(release.find_release('onexay/msl', 'v0.1.5'), draft)
+        self.assertEqual(mocked.call_args_list[1].args[0], 'repos/onexay/msl/releases?per_page=100&page=2')
+        self.assertTrue(all('/releases/tags/' not in call.args[0] for call in mocked.call_args_list))
+
+    def test_new_draft_is_found_without_a_git_tag_and_refreshed_by_id(self):
+        files = dict(self.manifest['files'], **{'manifest.json': release.digest(self.directory / 'manifest.json')})
+        draft = dict(id=17, tag_name='v0.1.5', draft=True, prerelease=True,
+                     target_commitish=self.source, assets=[])
+        calls = []
+        def fake_api(path, optional=False):
+            self.assertEqual(path, 'repos/onexay/msl/releases/17')
+            return draft
+        def fake_gh(*args):
+            calls.append(args)
+            if args[:2] == ('release', 'upload'):
+                name = Path(args[3]).name
+                draft['assets'].append({'name': name, 'digest': 'sha256:' + files[name]})
+            elif args[:2] == ('release', 'download'):
+                destination = Path(args[args.index('--dir') + 1])
+                for name in files:
+                    (destination / name).write_bytes((self.directory / name).read_bytes())
+        with patch.object(release, 'find_release', side_effect=[None, draft]), \
+             patch.object(release, 'api', side_effect=fake_api), \
+             patch.object(release, 'tag_source', side_effect=[None, self.source]), \
+             patch.object(release, 'gh', side_effect=fake_gh):
+            release.publish_bundle('onexay/msl', self.directory, self.manifest, True)
+        self.assertEqual(calls[0][:2], ('release', 'create'))
+        edit = next(call for call in calls if call[:2] == ('release', 'edit'))
+        self.assertIn('--latest=false', edit)
+        self.assertIn('--prerelease=true', edit)
 
     def test_publish_tool_contains_no_build_or_restamp_commands(self):
         text = (ROOT / 'scripts/publish.sh').read_text()
