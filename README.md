@@ -1,4 +1,6 @@
-# msl
+<img src="logo.png" alt="MSL logo" width="200">
+
+# Modern Subsystem for Linux
 
 MSL runs Linux distributions on Apple silicon Macs with WSL-compatible commands and distribution images.
 
