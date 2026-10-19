@@ -817,6 +817,10 @@ public final class Service: @unchecked Sendable {
                 $0.ownDisk = own
             })
         }
+        // Distro init can adjust the shared CLOCK_REALTIME while bringing up
+        // systemd. Re-read the virtual RTC after it is ready so that adjustment
+        // cannot leave every distro with a shifted clock.
+        try syncClock()
         return try guest.agent(port: reply.agentPort)
     }
 
