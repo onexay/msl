@@ -18,6 +18,8 @@ Open design questions and decisions are tracked in GitHub issues with the [`desi
 
 ## Project and legal records
 
+- [CI and releases](ci_cd.md) explains integration checks, versioned artifacts, release promotion and retries.
+
 - [Progress log](dev/progress.md) records development milestones and test results in chronological order.
 - [Contributing](../CONTRIBUTING.md), [governance](../GOVERNANCE.md), and [code of conduct](../CODE_OF_CONDUCT.md) cover project participation and releases.
 - [Third-party notices](third_party_notices.md) and the accompanying [license texts](licenses/) ship in release packages.

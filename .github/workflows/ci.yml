@@ -1,113 +1,151 @@
-# Unit tests and lints. The e2e suites (tests/e2e) need a real VM, which hosted
-# runners can't start; run them locally (see CONTRIBUTING.md).
+# SPDX-License-Identifier: Apache-2.0
 name: MSLd
 on:
-  push: { branches: [main] }
+  push:
+    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  merge_group:
+    types: [checks_requested]
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   host:
     name: Host (Swift)
     runs-on: xcode-27
     steps:
+      # Default checkout deliberately tests the PR/merge-group integration SHA.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Select Xcode for the minimum macOS
         id: xcode
-        run: |
-          MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
-          # The newest released Xcode for the minimum macOS; never a beta (the
-          # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
-          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
-          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
-          sudo xcode-select -s "$XC"
-          xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
-          swift --version
-          echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
-      # The dependencies (swift-nio, BoringSSL, swift-certificates, ...) take ~4 of
-      # the job's ~6 minutes to fetch and compile, and change only with
-      # Package.resolved. The package check stays uncached (clean builds).
-      - name: Cache SwiftPM checkouts and the debug build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        run: sh scripts/select-xcode.sh
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.build }}-
-      - run: swift build --build-tests
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-debug-${{ github.sha }}
+          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-debug-
+      - run: swift build --build-tests --force-resolved-versions
       - run: swift test --skip-build
-
-  # Check the package against the Latest kernel and extension releases, matching
-  # the manual Release workflow's dependency selection.
-  # Keep this package job on the Xcode matching msl's minimum macOS: a newer
-  # Swift runtime can link libraries the minimum macOS lacks. xcode-27 is the
-  # GitHub macOS 27 image (preview).
-  package:
-    name: Latest dependency package check
-    if: github.event_name == 'push'  # PRs skip ~10 min of macOS package validation
-    runs-on: xcode-27
-    env: { GH_TOKEN: "${{ github.token }}" }
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Select Xcode for the minimum macOS
-        run: |
-          MIN=$(sed -n 's/.*\.macOS("\([0-9]*\)\..*/\1/p' Package.swift)
-          # The newest released Xcode for the minimum macOS; never a beta (the
-          # xcode-27 image also has betas, some behind Xcode_<n>.app symlinks).
-          XC=$(for x in /Applications/Xcode_"$MIN"*.app; do readlink -f "$x" | grep -q beta || echo "$x"; done | sort -V | tail -1)
-          [ -n "$XC" ] || { echo "no released Xcode $MIN on this runner"; exit 1; }
-          sudo xcode-select -s "$XC"
-          xcodebuild -version | head -1 | grep -q "^Xcode $MIN\." || { echo "selected $(xcodebuild -version | head -1), need Xcode $MIN"; exit 1; }
-          xcodebuild -version && swift --version
-      - name: Guest toolchain
-        run: rustup target add aarch64-unknown-linux-musl && brew install protobuf
-      - name: Resolve latest kernel and extension releases
-        run: |
-          scripts/pin.sh kernel
-          scripts/pin.sh vscode
-      - name: Package
-        run: |
-          V=$(python3 scripts/next-version.py)
-          MSL_RELEASE_BASE_URL=https://github.com/${{ github.repository }}/releases/download/v$V \
-          MSL_UPDATE_CHANNEL_URL=https://github.com/${{ github.repository }}/releases/latest/download/update.json \
-            scripts/package.sh "$V"
-          { echo "commit ${{ github.sha }}"; echo "version $V"; xcodebuild -version | head -1; swift --version 2>&1 | head -1; } > dist/build-info.txt
-          cat dist/build-info.txt
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: package
-          path: |
-            dist/msl-*-macos-arm64.tar.gz
-            dist/msl-*-macos-arm64.tar.gz.sha256
-            dist/update.json
-            dist/build-info.txt
-          if-no-files-found: error
 
   guest:
     name: Guest (Rust)
     runs-on: ubuntu-24.04-arm
-    defaults: { run: { working-directory: guest } }
+    defaults:
+      run:
+        working-directory: guest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
-      - name: Unit tests (native Linux, as scripts/test-guest.sh)
-        run: cargo test --target aarch64-unknown-linux-gnu --config 'build.target="aarch64-unknown-linux-gnu"'
-      - name: Static musl build (what ships in the initrd)
-        run: cargo build --release
+      - name: Identify the Rust and protobuf toolchains
+        id: tools
+        run: |
+          echo "fingerprint=$({ rustc -Vv; protoc --version; } | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            guest/target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.tools.outputs.fingerprint }}-${{ hashFiles('guest/Cargo.lock', 'guest/rust-toolchain.toml', 'guest/.cargo/config.toml') }}-${{ github.sha }}
+          restore-keys: cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.tools.outputs.fingerprint }}-${{ hashFiles('guest/Cargo.lock', 'guest/rust-toolchain.toml', 'guest/.cargo/config.toml') }}-
+      - name: Unit tests (native Linux)
+        run: cargo test --locked --target aarch64-unknown-linux-gnu --config 'build.target="aarch64-unknown-linux-gnu"'
+      - name: Static musl build
+        run: cargo build --locked --release
+      - name: Record the static guest's source and toolchain
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p ../build/guest
+          cp target/aarch64-unknown-linux-musl/release/msl-guest ../build/guest/
+          python3 ../scripts/release-artifact.py guest ../build/guest
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: github.event_name == 'push'
+        with:
+          name: guest
+          path: build/guest/
+          overwrite: true
+          retention-days: 90
+          if-no-files-found: error
 
   lint:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Version numbers agree
-        run: scripts/check-version.sh
-      - name: Links in Markdown files point to existing files and headings
-        run: scripts/check-links.py
+        with:
+          persist-credentials: false
+      - run: scripts/check-version.sh
+      - run: scripts/check-links.py
+      - name: Release and event-path regression tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Workflow syntax and expressions
+        run: |
+          GOBIN="$RUNNER_TEMP" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$RUNNER_TEMP/actionlint"
       - name: shellcheck
         run: |
           shellcheck -S warning install.sh scripts/*.sh
           shellcheck -S error tests/e2e/*.sh
+
+  package:
+    name: Latest dependency package check
+    if: github.event_name == 'push'
+    needs: [host, guest, lint]
+    runs-on: xcode-27
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Determine version before building the distributable
+        id: version
+        run: echo "version=$(python3 scripts/next-version.py)" >> "$GITHUB_OUTPUT"
+      - name: Select Xcode for the minimum macOS
+        id: xcode
+        run: sh scripts/select-xcode.sh
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-release-${{ github.sha }}
+          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-release-
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: guest
+          path: build/guest
+      - name: Verify same-run guest output and resolve release dependencies once
+        run: |
+          python3 scripts/release-artifact.py check-guest build/guest
+          scripts/pin.sh kernel
+          scripts/pin.sh vscode
+      - name: Build and validate the versioned distributable
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          MSL_BUILD_COMMIT: ${{ github.sha }}
+          CONFIG: release
+        run: |
+          export MSL_GUEST_BINARY="$PWD/build/guest/msl-guest"
+          export MSL_RELEASE_BASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+          export MSL_UPDATE_CHANNEL_URL="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/update.json"
+          scripts/package.sh "$VERSION"
+          python3 scripts/check-package.py "dist/msl-$VERSION-macos-arm64.tar.gz" "$VERSION" "$GITHUB_SHA"
+          python3 scripts/release-artifact.py prepare "$VERSION" build/guest dist/release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: package
+          path: dist/release/
+          overwrite: true
+          retention-days: 90
+          if-no-files-found: error
