@@ -37,6 +37,8 @@ check_not "no Windows wording during install/OOBE" "Windows" "$OOBE"
 check "default user from OOBE" "$(id -un)" "$($MSL whoami)"
 check "OOBE groups" "sudo" "$($MSL id)"
 
+$MSL --shutdown >/dev/null
+check "first command after a cold start finds systemd running" "running" "$($MSL systemctl is-system-running)"
 check "Debian no longer degraded" "running" "$($MSL -u root systemctl is-system-running --wait)"
 check "console getty runtime-masked" "masked-runtime" "$($MSL -u root systemctl is-enabled console-getty.service)"
 check "image untouched by masks" "No such file" "$($MSL -u root ls /etc/systemd/system/console-getty.service 2>&1)"

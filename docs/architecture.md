@@ -197,7 +197,7 @@ The guest `compat` layer runs at each distro start. It adapts selected WSL behav
   - OOBE commands that only add Windows wording are replaced by msl's built-in OOBE (`guest/src/compat.rs` `OOBE_OVERRIDES`; currently Debian's `oobe.sh`).
 - **cloud-init:** Ubuntu's is `disabled-by-generator` on msl, so no override is needed.
 - **Interface name:** the NIC stays `eth0`. The kernel command line has `net.ifnames=0`, but systemd 259+ detects the distro's pid namespace as a container and then reads boot options from PID 1's arguments instead. So `99-default.link` is also runtime-masked (`/run/systemd/network/99-default.link` → `/dev/null`; `MASKED_LINKS` in `guest/src/compat.rs`), unless the image has its own in `/etc/systemd/network`.
-- **Readiness:** a systemd distro is reported `Running` only after `/run/systemd/private` exists and `systemctl is-system-running --wait` has returned.
+- **Readiness:** a systemd distro is reported `Running` only after `systemctl is-system-running` returns `running` or `degraded`, or after `[boot] initTimeout` (default 10 s) passes.
 - **Stopping** (`--terminate`, idle timeout, `--shutdown`) is clean. A systemd distro gets `SIGRTMIN+4` and powers off, so services and journald close their files. Otherwise every process in the distro's cgroup gets `SIGTERM`, and the namespace ends once only msl's own processes are left. Anything still running after 10 s is killed with the pid namespace. `--shutdown --force` stops the VM immediately. Stopping also removes the distro's cgroup tree (`msl/<name>`); otherwise a restart fails with `EBUSY`.
 
 ## Repo layout

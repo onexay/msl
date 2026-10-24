@@ -243,14 +243,13 @@ fn run_agent(cfg: &Cfg, systemd: bool) -> ! {
     crate::reaper::spawn_thread();
     let fd = cfg.ready_fd;
     agent::serve(cfg.port, cfg.name.clone(), move || {
-        // Readiness: systemd must have created its bus socket.
-        if systemd {
-            let t0 = Instant::now();
-            while !std::path::Path::new("/run/systemd/private").exists() && t0.elapsed() < Duration::from_secs(30) {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        }
         let conf = config::distro_conf("");
+        // Readiness: systemd has finished booting, so the first session finds its bus.
+        if systemd {
+            // Capped below mini-init's 60 s wait for "ready", so a large value waits instead of failing the start.
+            let ms = conf.get("boot.inittimeout").and_then(|v| v.parse().ok()).unwrap_or(10_000).min(50_000);
+            wait_systemd(Duration::from_millis(ms), Duration::from_millis(50), systemd_state);
+        }
         if !systemd && conf.bool("automount.mountfstab", true) {
             let _ = std::process::Command::new("/bin/mount").arg("-a").status();
         }
@@ -262,3 +261,40 @@ fn run_agent(cfg: &Cfg, systemd: bool) -> ! {
         unsafe { libc::close(fd) };
     })
 }
+
+/// `systemctl is-system-running`'s output. The reaper owns every `waitpid`, so
+/// the exit status is collected through it, not by `Command::output`.
+fn systemd_state() -> String {
+    use std::io::Read;
+    use std::process::Stdio;
+    let child = std::process::Command::new("systemctl")
+        .arg("is-system-running")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else { return String::new() };
+    let mut out = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = o.read_to_string(&mut out);
+    }
+    crate::reaper::wait(child.id() as i32, Some(Duration::from_secs(5)));
+    out
+}
+
+/// Poll `state` (systemctl's `is-system-running`) until systemd is `running` or
+/// `degraded`, or `timeout` passes. Returns the last state seen.
+fn wait_systemd(timeout: Duration, every: Duration, mut state: impl FnMut() -> String) -> String {
+    let t0 = Instant::now();
+    loop {
+        let s = state();
+        if matches!(s.trim(), "running" | "degraded") || t0.elapsed() >= timeout {
+            return s;
+        }
+        std::thread::sleep(every);
+    }
+}
+
+#[cfg(test)]
+#[path = "../../tests/guest/distroinit.rs"]
+mod tests;
