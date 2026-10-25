@@ -1,5 +1,5 @@
 {
-  "originHash" : "63a0517d054b8b72026fa0f03c132b58c38ae0e68e9a2748a08a96a760508d89",
+  "originHash" : "caa4b59d150cade66c9eefb94add2d0175c9177603f850e0f351b4f029ef35a8",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/containerization.git",
       "state" : {
-        "revision" : "c411138bab442564f65d5e2bebd4a807d5a3f990",
-        "version" : "0.51.0"
+        "revision" : "f79e412d7c31b00c65c8a6f80dd0b0bb55f6a4f7",
+        "version" : "0.53.0"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/grpc/grpc-swift-protobuf.git",
       "state" : {
-        "revision" : "176c5a434fd76f6f479848d1a8f7d44967534168",
-        "version" : "2.4.1"
+        "revision" : "83f5cdb2f8b4c7b57ed9419c6f4f6380b683500e",
+        "version" : "2.5.0"
       }
     },
     {
