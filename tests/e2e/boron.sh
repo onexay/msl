@@ -8,7 +8,7 @@ MSL=${1:-$ROOT/build/bin/msl}
 export MSL_HOME=$(mktemp -d /tmp/msl-boron.XXXXXX)
 export MSL_CONFIG=$MSL_HOME/cfg MSL_VIEW_DIR=$MSL_HOME/view
 : > "$MSL_CONFIG"
-MACNAME=$(scutil --get LocalHostName)
+MACNAME=$(scutil --get LocalHostName | tr '[:upper:]' '[:lower:]')
 pass=0; fails=0
 check() {
   if [[ "$3" == *"$2"* ]]; then echo "✔ $1"; pass=$((pass+1)); else echo "✘ $1"; echo "    expected: $2"; echo "    got:      $3"; fails=$((fails+1)); fi
