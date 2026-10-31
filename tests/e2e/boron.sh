@@ -22,7 +22,7 @@ $MSL -u root -e sh -c 'id tester >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/b
 # hostname / hosts
 check "hostname = Mac name" "$MACNAME" "$($MSL hostname)"
 check "/etc/hostname generated" "$MACNAME" "$($MSL cat /etc/hostname)"
-check "/etc/hosts has 127.0.1.1 entry" "127.0.1.1	$MACNAME.	$MACNAME" "$($MSL cat /etc/hosts)"
+check "/etc/hosts has 127.0.1.1 entry" "127.0.1.1	$MACNAME.localdomain	$MACNAME" "$($MSL cat /etc/hosts)"
 check "/etc/hosts has host.internal" "host.internal" "$($MSL cat /etc/hosts)"
 check_not "sudo: no 'unable to resolve host'" "unable to resolve host" "$($MSL -u tester sudo -n true 2>&1)"
 $MSL -u root -e sh -c "printf '[boot]\nsystemd=true\n[network]\nhostname=custom-name\n' > /etc/wsl.conf"; $MSL -t Ubuntu-24.04 >/dev/null

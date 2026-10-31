@@ -15,7 +15,7 @@ fn parses_listeners() {
 #[test]
 fn hosts_file() {
     let h = generate_hosts("mac", Some("192.168.64.1"), "127.0.0.1 localhost\n10.0.0.5 nas nas.lan # home\n::1 localhost\n");
-    assert!(h.contains("127.0.1.1\tmac.\tmac\n"));
+    assert!(h.contains("127.0.1.1\tmac.localdomain\tmac\n"));
     assert!(h.contains("192.168.64.1\thost.internal\n"));
     assert!(h.contains("10.0.0.5\tnas nas.lan\n"));
     assert_eq!(h.matches("localhost\n").count(), 1);
