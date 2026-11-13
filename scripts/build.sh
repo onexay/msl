@@ -13,8 +13,10 @@ export PATH=/opt/homebrew/opt/rustup/bin:$PATH
 OUT="$ROOT/build"
 mkdir -p "$OUT/bin" "$OUT/share/msl"
 
-(cd "$ROOT/guest" && cargo build --release -q)
-python3 "$ROOT/scripts/mkinitrd.py" "$ROOT/guest/target/aarch64-unknown-linux-musl/release/msl-guest" "$OUT/share/msl/initrd.gz" \
+GUEST=${MSL_GUEST_BINARY:-$ROOT/guest/target/aarch64-unknown-linux-musl/release/msl-guest}
+if [ -z "${MSL_GUEST_BINARY:-}" ]; then (cd "$ROOT/guest" && cargo build --locked --release -q); fi
+[ -f "$GUEST" ] || { echo "missing guest binary: $GUEST" >&2; exit 1; }
+python3 "$ROOT/scripts/mkinitrd.py" "$GUEST" "$OUT/share/msl/initrd.gz" \
   "$ROOT/guest/vendor/busybox" "$ROOT/guest/vendor/e2fsck" "$ROOT/guest/vendor/resize2fs"
 
 KOUT=${MSL_KERNEL_OUT:-$ROOT/kernel/out}
@@ -39,7 +41,7 @@ if [ -z "${MSL_BUILD_COMMIT:-}" ] && [ -n "$COMMIT" ] && ! git -C "$ROOT" diff -
 cp "$VFILE" "$VFILE.build"
 trap 'mv -f "$VFILE.build" "$VFILE"' EXIT
 sed -i '' "s|static let commit = \".*\"|static let commit = \"$COMMIT\"|" "$VFILE"
-(cd "$ROOT" && swift build -c "$CONFIG" --product msl -q && swift build -c "$CONFIG" --product msld -q && swift build -c "$CONFIG" --product msl-portd -q && swift build -c "$CONFIG" --product msl-fileviewd -q)
+(cd "$ROOT" && swift build -c "$CONFIG" --force-resolved-versions -q)
 mv -f "$VFILE.build" "$VFILE"; trap - EXIT
 BIN=$(cd "$ROOT" && swift build -c "$CONFIG" --show-bin-path)
 # Install atomically (new inode): overwriting a running msld in place breaks its

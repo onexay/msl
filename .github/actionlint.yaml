@@ -1,0 +1,4 @@
+# The repository already uses this macOS/Xcode preview image; actionlint's
+# built-in hosted-runner list does not yet include it.
+self-hosted-runner:
+  labels: [xcode-27]
